@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 // This file reconciles local generation records with AgentHub session state by
 // polling one session list per interval instead of replaying event history.
-// Run status follows session state. Forge session release is owned here and
+// Run status follows session state. PUA session release is owned here and
 // nowhere else: durable
 // stopped sessions release directly, while archived sessions require the
 // archived-after-stopped proof in agenthub_reconcile.go, which is the only
@@ -114,7 +114,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 				archiveState = taskArchiveState{archived: resource.Archived, err: resourceErr}
 			}
 			if isTask && archiveState.err != nil {
-				// A missing or unreadable resource is not proof that Forge
+				// A missing or unreadable resource is not proof that PUA
 				// intentionally reclaimed the task. Keep the AgentHub session
 				// open and surface the failed inspection instead.
 				failures = append(failures, fmt.Sprintf("%s run %s resource %s: %v", workspace.ID, run.ID, resourceID, archiveState.err))
@@ -226,7 +226,7 @@ func inspectTaskArchiveStates(workspace *app.Workspace, runs []agentRun) map[str
 }
 
 // stopAgentHubSessionForArchivedResource starts a single fail-closed stop for an
-// active AgentHub session whose owning Forge resource is archived. Resource
+// active AgentHub session whose owning PUA resource is archived. Resource
 // generations are also archived after the durable stopped edge. It returns true
 // when normal reconciliation should be skipped for this poll.
 func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Context, cfg config, workspace serveWorkspace, run agentRun, session agentHubSession, client *agentHubClient) bool {
@@ -311,7 +311,7 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 		rt.mu.Lock()
 		rt.agentHubStopRequested = false
 		rt.mu.Unlock()
-		rt.setRecoveryError(m, fmt.Errorf("AgentHub stop response for archived task %s did not match the persisted Forge run source", run.ResourceID))
+		rt.setRecoveryError(m, fmt.Errorf("AgentHub stop response for archived task %s did not match the persisted PUA run source", run.ResourceID))
 		return true
 	}
 	rt.applyAgentHubSessionState(m, stopped)
@@ -373,7 +373,7 @@ func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg confi
 		if id := strings.TrimSpace(run.AgentHubSessionID); id != "" {
 			if fetched, err := client.GetSession(ctx, id); err == nil {
 				if agentHubSourceConflicts(cfg, run, fetched) {
-					rt.setRecoveryError(m, fmt.Errorf("AgentHub session %s source does not match the persisted Forge run source; transient Forge session retained", id))
+					rt.setRecoveryError(m, fmt.Errorf("AgentHub session %s source does not match the persisted PUA run source; transient PUA session retained", id))
 					return
 				}
 				session, found = fetched, true
@@ -421,7 +421,7 @@ func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg confi
 		if session.State == "stopped" {
 			if runtime.run.IdleSleepStopRequested {
 				// Automatic sleep owns the full Stop -> Archive sequence. A stopped
-				// projection alone must not release the Forge session or clear the
+				// projection alone must not release the PUA session or clear the
 				// retry guard before Archive is confirmed.
 				runtime.run.AgentHubStoppedObserved = false
 			} else {
@@ -531,7 +531,7 @@ func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg confi
 			}
 		})
 	} else if !turnFinished && session.State == "stopped" && !updated.IdleSleepStopRequested && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
-		// Idempotent: releases the Forge session on the stopped edge and
+		// Idempotent: releases the PUA session on the stopped edge and
 		// retries a release that failed on an earlier poll.
 		_ = m.enqueueRuntimeOperation(rt, func() { _ = rt.releaseForgeSessionAfterStopped(m) })
 	}
@@ -554,7 +554,7 @@ func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg confi
 	}
 }
 
-// agentHubStateForForgeStatus approximates the AgentHub state behind a Forge
+// agentHubStateForForgeStatus approximates the AgentHub state behind a PUA
 // run status, for runtimes that have not observed a session yet.
 func agentHubStateForForgeStatus(status string) string {
 	switch status {
@@ -580,7 +580,7 @@ func agentHubStateForForgeStatus(status string) string {
 // activeAgentHubTurnID ignores stale currentTurnId values on non-active
 // session snapshots. AgentHub may retain the just-finished Turn ID after the
 // session has already returned to ready; the state transition is authoritative
-// for whether Forge should project an active Turn.
+// for whether PUA should project an active Turn.
 func activeAgentHubTurnID(session agentHubSession) string {
 	if session.State != "running" && session.State != "waiting_approval" {
 		return ""

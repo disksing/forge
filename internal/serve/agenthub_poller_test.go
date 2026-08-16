@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
-	"github.com/disksing/forge/internal/generation"
+	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/generation"
 )
 
 // seedPollerRun registers an AgentHub session in the fake and persists the
@@ -610,7 +610,7 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	indexPath := filepath.Join(workspace.Path, ".forge", "runtime", "resources", key, "current.json")
+	indexPath := filepath.Join(workspace.Path, ".pua", "runtime", "resources", key, "current.json")
 	before := mustReadFile(t, indexPath)
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {

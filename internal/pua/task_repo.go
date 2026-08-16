@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ func taskRepoAdd(args []string) error {
 }
 
 func parseTaskRepoAdd(args []string) (taskRepoAddOptions, error) {
-	const usage = "usage: forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]"
+	const usage = "usage: pua task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]"
 	opts := taskRepoAddOptions{}
 	projectID, task, err := parseTaskSelectorAndApply(args, usage, func(arg string, next func() (string, bool)) error {
 		if !strings.HasPrefix(arg, "--") {
@@ -73,7 +73,7 @@ func taskRepoList(args []string) error {
 }
 
 func taskRepoRemove(args []string) error {
-	const usage = "usage: forge task repo remove [--project=<project>] [--task=<task>] <repo-name>"
+	const usage = "usage: pua task repo remove [--project=<project>] [--task=<task>] <repo-name>"
 	var name string
 	projectID, task, err := parseTaskSelectorAndApply(args, usage, func(arg string, _ func() (string, bool)) error {
 		if strings.HasPrefix(arg, "--") {
@@ -99,7 +99,7 @@ func taskRepoRemove(args []string) error {
 }
 
 func parseTaskRepoTarget(args []string, command string) (string, error) {
-	usage := fmt.Sprintf("usage: forge task repo %s [--project=<project>] [--task=<task>]", command)
+	usage := fmt.Sprintf("usage: pua task repo %s [--project=<project>] [--task=<task>]", command)
 	projectID, task, err := parseTaskSelectorAndApply(args, usage, func(arg string, _ func() (string, bool)) error {
 		return fmt.Errorf("unknown task repo %s option %q", command, arg)
 	})
@@ -182,7 +182,7 @@ func resolveTaskSelector(projectID, task, command string) (string, error) {
 			return "", err
 		}
 		if !ok {
-			return "", fmt.Errorf("could not infer current task; use forge task %s --task=<task>", command)
+			return "", fmt.Errorf("could not infer current task; use pua task %s --task=<task>", command)
 		}
 		return inferred, nil
 	}

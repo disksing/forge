@@ -9,17 +9,17 @@ if [ -z "$workspace" ]; then
 	exit 2
 fi
 
-forge_dev_runtime=$(mktemp -d "${TMPDIR:-/tmp}/forge-frontend-dev.XXXXXX")
-mkdir -p "$forge_dev_runtime/agenthub"
-go -C "$root" build -o "$forge_dev_runtime/forge" ./cli/cmd/forge
-FORGE_SERVE_CONFIG="$forge_dev_runtime/serve.json" \
-AGENTHUB_DATA_DIR="$forge_dev_runtime/agenthub" \
-"$forge_dev_runtime/forge" serve --addr=127.0.0.1:4936 --workspace="$workspace" &
-forge_dev_server_pid=$!
+pua_dev_runtime=$(mktemp -d "${TMPDIR:-/tmp}/pua-frontend-dev.XXXXXX")
+mkdir -p "$pua_dev_runtime/agenthub"
+go -C "$root" build -o "$pua_dev_runtime/pua" ./cli/cmd/pua
+PUA_SERVE_CONFIG="$pua_dev_runtime/serve.json" \
+AGENTHUB_DATA_DIR="$pua_dev_runtime/agenthub" \
+"$pua_dev_runtime/pua" serve --addr=127.0.0.1:4936 --workspace="$workspace" &
+pua_dev_server_pid=$!
 cleanup() {
-	kill "$forge_dev_server_pid" 2>/dev/null || true
-	wait "$forge_dev_server_pid" 2>/dev/null || true
-	rm -rf "$forge_dev_runtime"
+	kill "$pua_dev_server_pid" 2>/dev/null || true
+	wait "$pua_dev_server_pid" 2>/dev/null || true
+	rm -rf "$pua_dev_runtime"
 }
 trap cleanup EXIT HUP INT TERM
 

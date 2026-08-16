@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// This file owns the forge serve side of AgentHub session reconciliation for
+// This file owns the pua serve side of AgentHub session reconciliation for
 // the one case the session poller cannot see in a live list: archived
-// sessions. The plain Forge CLI never probes AgentHub, so serve is the only
-// owner that releases a transient Forge session for an AgentHub-managed run.
+// sessions. The plain PUA CLI never probes AgentHub, so serve is the only
+// owner that releases a transient PUA session for an AgentHub-managed run.
 // Release requires either a locally observed durable
 // stopped edge or a continuous durable event history proving the archived
 // session passed through stopped. Every doubt stays fail closed.
@@ -84,7 +84,7 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 }
 
 // agentHubSourceConflicts reports whether a session fetched by id belongs to
-// a different Forge source than the persisted run. A conflict means the
+// a different PUA source than the persisted run. A conflict means the
 // AgentHub session id no longer identifies this run's session, so no state
 // from it may drive terminal reconciliation.
 func agentHubSourceConflicts(cfg config, run agentRun, session agentHubSession) bool {
@@ -98,11 +98,11 @@ func agentHubSourceConflicts(cfg config, run agentRun, session agentHubSession) 
 }
 
 // reconcileArchivedAgentHubSession resolves a run whose AgentHub session is
-// archived. The Forge session is released only when a durable stopped edge
+// archived. The PUA session is released only when a durable stopped edge
 // was already observed locally or the archived event history continuously
 // proves the session passed through stopped; in both cases the release is
 // idempotent. Every other outcome keeps the run in recovering, retains the
-// transient Forge session record, and publishes a diagnostic notice.
+// transient PUA session record, and publishes a diagnostic notice.
 func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client *agentHubClient, session agentHubSession) {
 	rt.mu.Lock()
 	run := rt.run
@@ -111,7 +111,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 
 	if run.AgentHubStoppedObserved {
 		// The durable stopped edge was observed before the archive, so the
-		// transient Forge session may be released without proving it again.
+		// transient PUA session may be released without proving it again.
 		// Completion history still needs to be reconciled because a transient
 		// event read may have happened after the stopped projection was saved.
 		_, _ = rt.mutateRun(func(run *agentRun) {
@@ -146,14 +146,14 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 			rt.archivedProofFailed = true
 			rt.mu.Unlock()
 		}
-		rt.setRecoveryError(m, fmt.Errorf("cannot prove archived AgentHub session %s passed through durable stopped: %v; transient Forge session retained", session.ID, err))
+		rt.setRecoveryError(m, fmt.Errorf("cannot prove archived AgentHub session %s passed through durable stopped: %v; transient PUA session retained", session.ID, err))
 		return
 	}
 	if !proven {
 		rt.mu.Lock()
 		rt.archivedProofFailed = true
 		rt.mu.Unlock()
-		rt.setRecoveryError(m, fmt.Errorf("archived AgentHub session %s has no continuous durable stopped history; transient Forge session retained", session.ID))
+		rt.setRecoveryError(m, fmt.Errorf("archived AgentHub session %s has no continuous durable stopped history; transient PUA session retained", session.ID))
 		return
 	}
 
@@ -166,7 +166,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	})
 	// The archived projection is the recovery equivalent of the observed
 	// ready/stopped edge. Inspect the durable terminal event before releasing
-	// the Forge session.
+	// the PUA session.
 	rt.prepareTurnCompletion(session)
 	rt.recordTurnCompletionHistory(session, history, latestCursor)
 	if err := rt.releaseForgeSessionAfterStopped(m); err != nil {

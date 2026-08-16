@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 // legacyMetadataMigrationMarker is intentionally isolated from the normal
@@ -20,7 +22,7 @@ type legacyMetadataMigrationMarker struct {
 const legacyMetadataMigrationVersion = 1
 
 func legacyMetadataMigrationPath(root string) string {
-	return filepath.Join(root, ".forge", "runtime", "legacy-metadata-migration.json")
+	return filepath.Join(workspacepath.ControlDir(root), "runtime", "legacy-metadata-migration.json")
 }
 
 func migrateLegacyMetadata(root string) error {
@@ -40,7 +42,7 @@ func migrateLegacyMetadata(root string) error {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path != root && (entry.Name() == ".forge" || entry.Name() == "repos") {
+			if path != root && (entry.Name() == workspacepath.CurrentControlDirName || entry.Name() == workspacepath.LegacyControlDirName || entry.Name() == "repos") {
 				return filepath.SkipDir
 			}
 			return nil

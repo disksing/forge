@@ -12,7 +12,7 @@ import (
 
 // ArchiveWarning records a non-blocking condition observed while archiving.
 // Warnings are deliberately descriptive enough for a caller to decide how to
-// recover without requiring Forge to mutate source code or Git state.
+// recover without requiring PUA to mutate source code or Git state.
 type ArchiveWarning struct {
 	Severity     string `json:"severity"`
 	Code         string `json:"code"`

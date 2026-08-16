@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func TestInitializeCreatesSchedulerResource(t *testing.T) {

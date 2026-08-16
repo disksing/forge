@@ -20,7 +20,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 type agentRun struct {
@@ -45,7 +46,7 @@ type agentRun struct {
 	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
 	// ForgeSessionID is retained only for the unexposed legacy agent-run
 	// compatibility path. Resource generations leave it empty and therefore do
-	// not serialize a Forge Session address.
+	// not serialize a PUA Session address.
 	ForgeSessionID    string `json:"forgeSessionId,omitempty"`
 	AgentHubSessionID string `json:"agentHubSessionId,omitempty"`
 	AgentHubAgentName string `json:"agentHubAgentName,omitempty"`
@@ -70,7 +71,7 @@ type agentRun struct {
 	// generation and clears the marker at the ready boundary.
 	IdleSleepStopRequested bool `json:"idleSleepStopRequested,omitempty"`
 	// LifecycleReceipt is the durable boundary for the last lifecycle effect.
-	// It is deliberately stored on the generation so a Forge restart can retry
+	// It is deliberately stored on the generation so a PUA restart can retry
 	// or observe an idempotent Resume without a process-local state machine.
 	LifecycleReceipt *GenerationLifecycleReceipt `json:"lifecycleReceipt,omitempty"`
 	// SessionResumeUnavailable is set only after AgentHub explicitly reports
@@ -96,7 +97,7 @@ type agentRun struct {
 	UpdatedAt                 string                   `json:"updatedAt"`
 	LastOutputAt              string                   `json:"lastOutputAt,omitempty"`
 	// TurnNumber is the durable ordinal of the latest AgentHub turn observed
-	// for this generation. LastTurnID survives an idle edge so a Forge restart
+	// for this generation. LastTurnID survives an idle edge so a PUA restart
 	// or repeated session projection cannot count the same turn twice.
 	TurnNumber    int    `json:"turnNumber,omitempty"`
 	CurrentTurnID string `json:"currentTurnId,omitempty"`
@@ -374,9 +375,9 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 }
 
 func (m *agentManager) createForgeSession(ctx context.Context, workspace serveWorkspace, run agentRun, cfg config) (string, error) {
-	// Resource generations are now the Forge-side lifecycle record. Legacy
+	// Resource generations are now the PUA-side lifecycle record. Legacy
 	// agent-run compatibility code still carries a synthetic identifier so its
-	// in-memory control flow can converge, but it never creates a Forge Session
+	// in-memory control flow can converge, but it never creates a PUA Session
 	// projection.
 	_ = ctx
 	_ = workspace
@@ -399,7 +400,7 @@ func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace s
 
 func (m *agentManager) endForgeSession(ctx context.Context, workspace serveWorkspace, sessionID string) error {
 	// Kept as a no-op for the unregistered legacy control path. There is no
-	// Forge Session projection to release in the resource lifecycle.
+	// PUA Session projection to release in the resource lifecycle.
 	_ = ctx
 	_ = workspace
 	_ = sessionID
@@ -932,7 +933,7 @@ func ensureAgentDirs(workspacePath string) error {
 }
 
 func agentRoot(workspacePath string) string {
-	return filepath.Join(workspacePath, ".forge", "runtime")
+	return filepath.Join(workspacepath.ControlDir(workspacePath), "runtime")
 }
 
 func agentIndexPath(workspacePath string) string {

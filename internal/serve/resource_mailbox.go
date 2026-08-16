@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 const resourceMailboxVersion = 2
@@ -63,7 +63,7 @@ type resourceMailbox struct {
 	Messages     []resourceMailboxMessage `json:"messages"`
 }
 
-// resourceMailboxMessage is the durable Forge-side ownership record for one
+// resourceMailboxMessage is the durable PUA-side ownership record for one
 // accepted resource message. Delivery is complete when AgentHub has durably
 // accepted the stable message id and assumed its at-least-once responsibility;
 // it does not mean the resulting Turn has completed.
@@ -106,7 +106,7 @@ type resourceMailboxMessage struct {
 }
 
 // UnmarshalJSON keeps the public default (omitted subscribeResult means true)
-// for messages written by older Forge versions while preserving explicit false.
+// for messages written by older PUA versions while preserving explicit false.
 func (message *resourceMailboxMessage) UnmarshalJSON(data []byte) error {
 	type mailboxMessageAlias resourceMailboxMessage
 	var decoded mailboxMessageAlias

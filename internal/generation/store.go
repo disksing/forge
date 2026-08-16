@@ -1,4 +1,4 @@
-// Package generation owns Forge's durable generation runtime store.
+// Package generation owns PUA's durable generation runtime store.
 //
 // The store deliberately knows nothing about Serve or AgentHub. Callers give
 // it a JSON payload and stable generation metadata, while this package owns
@@ -20,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 const (
@@ -42,7 +44,7 @@ var (
 	resourceLocks           sync.Map
 )
 
-// Record is the storage-neutral representation of one Forge generation. The
+// Record is the storage-neutral representation of one PUA generation. The
 // payload is the complete caller-owned projection (normally an agentRun). It
 // is intentionally opaque here so the CLI/application package and Serve can
 // share one persistence boundary without sharing their domain types.
@@ -64,6 +66,7 @@ type Record struct {
 // diagnostics, while writes are serialized only by the affected resource key.
 type Store struct {
 	workspaceRoot string
+	controlRoot   string
 	instanceID    string
 }
 
@@ -124,6 +127,10 @@ func Open(workspaceRoot, instanceID string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	controlRoot, err := workspacepath.ResolveControlDir(root)
+	if err != nil {
+		return nil, err
+	}
 	instanceID = strings.TrimSpace(instanceID)
 	if instanceID == "" {
 		instanceID = fallbackInstanceID(root)
@@ -134,7 +141,7 @@ func Open(workspaceRoot, instanceID string) (*Store, error) {
 	if existing, markerErr := readMarker(root); markerErr == nil && existing != nil && strings.TrimSpace(existing.WorkspaceInstanceID) != "" {
 		instanceID = strings.TrimSpace(existing.WorkspaceInstanceID)
 	}
-	return &Store{workspaceRoot: filepath.Clean(root), instanceID: instanceID}, nil
+	return &Store{workspaceRoot: filepath.Clean(root), controlRoot: controlRoot, instanceID: instanceID}, nil
 }
 
 // ResourceKey returns the unambiguous, path-safe key for a Workspace instance
@@ -609,7 +616,7 @@ func resourceDirAt(root, key string) string {
 }
 
 func (s *Store) runtimeRoot() string {
-	return filepath.Join(s.workspaceRoot, ".forge", "runtime")
+	return filepath.Join(s.controlRoot, "runtime")
 }
 
 func (s *Store) migrateLocked(existing *marker) error {
@@ -627,7 +634,7 @@ func (s *Store) migrateLocked(existing *marker) error {
 			return err
 		}
 	}
-	legacyRecords, err := readLegacyRecords(s.workspaceRoot)
+	legacyRecords, err := readLegacyRecords(s.controlRoot)
 	if err != nil {
 		return err
 	}
@@ -847,10 +854,10 @@ func promoteStagedResource(stagedDir, finalDir string) error {
 	})
 }
 
-func readLegacyRecords(workspaceRoot string) ([]json.RawMessage, error) {
+func readLegacyRecords(controlRoot string) ([]json.RawMessage, error) {
 	paths := []string{
-		filepath.Join(workspaceRoot, ".forge", "runtime", legacyIndexName),
-		filepath.Join(workspaceRoot, ".forge", "gui-agent", "runs.json"),
+		filepath.Join(controlRoot, "runtime", legacyIndexName),
+		filepath.Join(controlRoot, "gui-agent", "runs.json"),
 	}
 	result := make([]json.RawMessage, 0)
 	seenPath := false
@@ -968,7 +975,11 @@ func (s *Store) markerPath() string {
 }
 
 func readMarker(root string) (*marker, error) {
-	data, err := os.ReadFile(filepath.Join(root, ".forge", "runtime", markerFileName))
+	controlRoot, err := workspacepath.ResolveControlDir(root)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(filepath.Join(controlRoot, "runtime", markerFileName))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}

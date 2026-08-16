@@ -24,9 +24,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/disksing/forge/internal/app"
-	"github.com/disksing/forge/internal/buildinfo"
-	"github.com/disksing/forge/web"
+	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/buildinfo"
+	"github.com/disksing/pua/internal/workspacepath"
+	"github.com/disksing/pua/web"
 )
 
 var staticFiles = web.Assets
@@ -153,12 +154,12 @@ const (
 	diffMaxBytes    = 4 * 1024 * 1024
 )
 
-const serveUsage = `usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]
+const serveUsage = `usage: pua serve [--addr=<address>] [--workspace=<path>] [--version]
 
-Start the Forge web service: Workspace API, AgentHub session orchestration and
+Start the PUA web service: Workspace API, AgentHub session orchestration and
 recovery, and the static web UI.
 The service uses the in-process application API rooted at each explicit
-Workspace path; it does not invoke the forge CLI as a child process.
+Workspace path; it does not invoke the pua CLI as a child process.
 
 Options:
   --addr <address>       local address to listen on (default 127.0.0.1:4936)
@@ -166,25 +167,27 @@ Options:
   --version              print build-time branch and sha
 
 Workspace ownership:
-  Each managed Workspace is exclusively owned by one forge serve process via
-  an OS advisory lock at <workspace>/.forge/serve.lock. A second instance
-  using a different FORGE_SERVE_CONFIG cannot manage the same Workspace; it
+  Each managed Workspace is exclusively owned by one pua serve process via
+  an OS advisory lock in the Workspace control directory (.pua, or legacy
+  .forge). A second instance using a different PUA_SERVE_CONFIG cannot manage
+  the same Workspace; it
   fails at startup before session recovery begins. The OS releases the
   lock automatically when the owning process exits.
 
 Environment overrides:
-  FORGE_AGENTHUB_URL    AgentHub endpoint override
-  FORGE_SERVE_CONFIG    serve configuration file path (default ~/.forge/serve.json;
-                        an existing ~/.forge/gui.json keeps being used)
-  FORGE_GUI_CONFIG      legacy alias of FORGE_SERVE_CONFIG
+  PUA_AGENTHUB_URL      AgentHub endpoint override
+  PUA_SERVE_CONFIG      serve configuration file path (default ~/.pua/serve.json)
+  FORGE_AGENTHUB_URL    legacy alias of PUA_AGENTHUB_URL
+  FORGE_SERVE_CONFIG    legacy alias of PUA_SERVE_CONFIG
+  FORGE_GUI_CONFIG      older legacy alias of PUA_SERVE_CONFIG
 `
 
-// PrintHelp writes the forge serve usage text to stdout.
+// PrintHelp writes the pua serve usage text to stdout.
 func PrintHelp() {
 	fmt.Print(serveUsage)
 }
 
-// Main runs the forge serve subcommand.
+// Main runs the pua serve subcommand.
 func Main(args []string) error {
 	for _, arg := range args {
 		if arg == "-h" || arg == "--help" {
@@ -192,7 +195,7 @@ func Main(args []string) error {
 			return nil
 		}
 	}
-	flags := flag.NewFlagSet("forge serve", flag.ContinueOnError)
+	flags := flag.NewFlagSet("pua serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var addr string
 	var initialWorkspace string
@@ -209,7 +212,7 @@ func Main(args []string) error {
 		return fmt.Errorf("unexpected positional argument %q", flags.Arg(0))
 	}
 	if showVersion {
-		fmt.Print(buildinfo.Text("forge"))
+		fmt.Print(buildinfo.Text("pua"))
 		return nil
 	}
 
@@ -266,7 +269,7 @@ func Main(args []string) error {
 	mux.HandleFunc("/api/settings/", s.handleSettings)
 	mux.HandleFunc("/api/doctor", s.handleDoctor)
 
-	log.Printf("forge serve listening on http://%s", addr)
+	log.Printf("pua serve listening on http://%s", addr)
 	return http.ListenAndServe(addr, mux)
 }
 
@@ -990,7 +993,7 @@ func (s *server) worktreeDiff(w http.ResponseWriter, r *http.Request, id string)
 	}
 	cleanRelPath := filepath.ToSlash(filepath.Clean(relPath))
 	if isHiddenAgentsPath(cleanRelPath) {
-		writeError(w, errors.New("project and task AGENTS.md files are hidden in the Forge web UI"), http.StatusNotFound)
+		writeError(w, errors.New("project and task AGENTS.md files are hidden in the PUA web UI"), http.StatusNotFound)
 		return
 	}
 	abs, err := safeWorkspacePath(workspace.Path, relPath)
@@ -1587,7 +1590,7 @@ func (s *server) buildDiff(ctx context.Context, worktreePath string, base string
 	}
 	diff := strings.TrimLeft(strings.Join(parts, "\n"), "\n")
 	if len(diff) > diffMaxBytes {
-		diff = diff[:diffMaxBytes] + "\n\n--- Diff truncated by Forge ---\n"
+		diff = diff[:diffMaxBytes] + "\n\n--- Diff truncated by PUA ---\n"
 	}
 	return diff, nil
 }
@@ -1682,7 +1685,7 @@ func (s *server) loadConfig() (config, error) {
 		cfg.Workspaces = []serveWorkspace{}
 	}
 	if cfg.Version < 3 {
-		return config{}, fmt.Errorf("unsupported Forge serve configuration version %d; migrate the configuration before starting forge serve", cfg.Version)
+		return config{}, fmt.Errorf("unsupported PUA serve configuration version %d; migrate the configuration before starting pua serve", cfg.Version)
 	}
 	needsUpgrade := cfg.Version != agentHubConfigVersion
 	cfg.Version = agentHubConfigVersion
@@ -1708,7 +1711,7 @@ func (s *server) loadConfig() (config, error) {
 
 func (s *server) saveConfig(cfg config) error {
 	if cfg.Version < agentHubConfigVersion {
-		return fmt.Errorf("unsupported Forge serve configuration version %d", cfg.Version)
+		return fmt.Errorf("unsupported PUA serve configuration version %d", cfg.Version)
 	}
 	normalizedProfiles, err := normalizeConfigAgentProfileRoutes(cfg.AgentProfiles)
 	if err != nil {
@@ -1735,24 +1738,44 @@ func (s *server) saveConfig(cfg config) error {
 }
 
 func defaultConfigPath() (string, error) {
-	if path := strings.TrimSpace(os.Getenv("FORGE_SERVE_CONFIG")); path != "" {
-		return path, nil
+	path, err := environmentOverride("PUA_SERVE_CONFIG", "FORGE_SERVE_CONFIG")
+	if err != nil {
+		return "", err
 	}
 	// FORGE_GUI_CONFIG predates the serve rename; keep honoring it so existing
 	// deployments (for example launchd plists) keep working.
-	if path := strings.TrimSpace(os.Getenv("FORGE_GUI_CONFIG")); path != "" {
+	legacyGUIOverride := strings.TrimSpace(os.Getenv("FORGE_GUI_CONFIG"))
+	if path != "" && legacyGUIOverride != "" && path != legacyGUIOverride {
+		return "", fmt.Errorf("PUA_SERVE_CONFIG/FORGE_SERVE_CONFIG and legacy FORGE_GUI_CONFIG are both set to different values")
+	}
+	if path != "" {
 		return path, nil
+	}
+	if legacyGUIOverride != "" {
+		return legacyGUIOverride, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	// Existing installs keep their pre-rename configuration file.
-	legacy := filepath.Join(home, ".forge", "gui.json")
-	if _, err := os.Stat(legacy); err == nil {
-		return legacy, nil
+	current := filepath.Join(home, ".pua", "serve.json")
+	legacyServe := filepath.Join(home, ".forge", "serve.json")
+	legacyGUI := filepath.Join(home, ".forge", "gui.json")
+	existing := make([]string, 0, 3)
+	for _, candidate := range []string{current, legacyServe, legacyGUI} {
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			existing = append(existing, candidate)
+		} else if !os.IsNotExist(statErr) {
+			return "", statErr
+		}
 	}
-	return filepath.Join(home, ".forge", "serve.json"), nil
+	if len(existing) > 1 {
+		return "", fmt.Errorf("multiple PUA serve configuration files exist: %s; set PUA_SERVE_CONFIG explicitly", strings.Join(existing, ", "))
+	}
+	if len(existing) == 1 {
+		return existing[0], nil
+	}
+	return current, nil
 }
 
 func workspaceID(path string) string {
@@ -1769,13 +1792,13 @@ func workspaceName(path string) string {
 }
 
 func uiStatePath(workspacePath string) string {
-	return filepath.Join(workspacePath, ".forge", "ui-state.json")
+	return filepath.Join(workspacepath.ControlDir(workspacePath), "ui-state.json")
 }
 
 // legacyUIStatePath is the pre-rename location, kept as a read fallback and
 // removed once the state is saved under the new name.
 func legacyUIStatePath(workspacePath string) string {
-	return filepath.Join(workspacePath, ".forge", "gui-state.json")
+	return filepath.Join(workspacepath.ControlDir(workspacePath), "gui-state.json")
 }
 
 // readUIStatePath resolves the state file to load, falling back to the legacy

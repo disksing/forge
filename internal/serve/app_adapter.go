@@ -1,7 +1,7 @@
 package serve
 
 import (
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {

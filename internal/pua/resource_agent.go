@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"bytes"
@@ -19,22 +19,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 const (
+	puaWorkspaceRootEnvironment       = "PUA_WORKSPACE_ROOT"
+	puaWorkspaceInstanceEnvironment   = "PUA_WORKSPACE_INSTANCE_ID"
+	puaResourceIDEnvironment          = "PUA_RESOURCE_ID"
 	forgeWorkspaceRootEnvironment     = "FORGE_WORKSPACE_ROOT"
 	forgeWorkspaceInstanceEnvironment = "FORGE_WORKSPACE_INSTANCE_ID"
 	forgeResourceIDEnvironment        = "FORGE_RESOURCE_ID"
-	workspaceStatusUsage              = "usage: forge workspace status [--server=<url>]"
-	projectStatusUsage                = "usage: forge project status [--project=<project>] [--server=<url>]"
-	taskStatusUsage                   = "usage: forge task status [--project=<project>] [--task=<task>] [--server=<url>]"
-	messageSendUsage                  = "usage: forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
-	messageShowUsage                  = "usage: forge message show --id=<message-id> [--server=<url>]"
-	workspaceHistoryUsage             = "usage: forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	projectHistoryUsage               = "usage: forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	taskHistoryUsage                  = "usage: forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	historyShowUsage                  = "usage: forge history turn|event show --ref=<reference> [--server=<url>] [--json]"
+	workspaceStatusUsage              = "usage: pua workspace status [--server=<url>]"
+	projectStatusUsage                = "usage: pua project status [--project=<project>] [--server=<url>]"
+	taskStatusUsage                   = "usage: pua task status [--project=<project>] [--task=<task>] [--server=<url>]"
+	messageSendUsage                  = "usage: pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
+	messageShowUsage                  = "usage: pua message show --id=<message-id> [--server=<url>]"
+	workspaceHistoryUsage             = "usage: pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	projectHistoryUsage               = "usage: pua project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	taskHistoryUsage                  = "usage: pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	historyShowUsage                  = "usage: pua history turn|event show --ref=<reference> [--server=<url>] [--json]"
 )
 
 type resourceServerOptions struct {
@@ -221,17 +225,17 @@ func inferCurrentResourceID() (string, error) {
 func normalizeForgeServerURL(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return "", errors.New("forge serve owner address is empty")
+		return "", errors.New("pua serve owner address is empty")
 	}
 	if !strings.Contains(value, "://") {
 		value = "http://" + value
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" {
-		return "", fmt.Errorf("invalid Forge Server URL %q", value)
+		return "", fmt.Errorf("invalid PUA Server URL %q", value)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", fmt.Errorf("unsupported Forge Server URL scheme %q", parsed.Scheme)
+		return "", fmt.Errorf("unsupported PUA Server URL scheme %q", parsed.Scheme)
 	}
 	host, port, splitErr := net.SplitHostPort(parsed.Host)
 	if splitErr == nil && (host == "" || host == "0.0.0.0" || host == "::") {
@@ -257,21 +261,25 @@ func newResourceServerClient(serverOverride string) (*resourceServerClient, stri
 	}
 	serverURL := strings.TrimSpace(serverOverride)
 	if serverURL == "" {
-		lockPath := filepath.Join(root, ".forge", "serve.lock")
+		controlRoot, controlErr := workspacepath.ResolveControlDir(root)
+		if controlErr != nil {
+			return nil, "", controlErr
+		}
+		lockPath := filepath.Join(controlRoot, "serve.lock")
 		data, readErr := os.ReadFile(lockPath)
 		if readErr != nil {
-			return nil, "", fmt.Errorf("discover Forge Server owner from %s: %w; start forge serve or use --server=<url>", lockPath, readErr)
+			return nil, "", fmt.Errorf("discover PUA Server owner from %s: %w; start pua serve or use --server=<url>", lockPath, readErr)
 		}
 		var metadata serveLockMetadata
 		if err := json.Unmarshal(data, &metadata); err != nil {
-			return nil, "", fmt.Errorf("read Forge Server owner metadata: %w", err)
+			return nil, "", fmt.Errorf("read PUA Server owner metadata: %w", err)
 		}
 		ownerPath := strings.TrimSpace(metadata.WorkspacePath)
 		if canonical, canonicalErr := filepath.EvalSymlinks(ownerPath); canonicalErr == nil {
 			ownerPath = canonical
 		}
 		if ownerPath == "" || filepath.Clean(ownerPath) != filepath.Clean(root) {
-			return nil, "", fmt.Errorf("Forge Server owner metadata changed or belongs to another Workspace; expected %s, got %s", root, ownerPath)
+			return nil, "", fmt.Errorf("PUA Server owner metadata changed or belongs to another Workspace; expected %s, got %s", root, ownerPath)
 		}
 		serverURL = metadata.Address
 	}
@@ -304,7 +312,7 @@ func (client *resourceServerClient) request(ctx context.Context, method, path st
 	}
 	response, err := client.http.Do(request)
 	if err != nil {
-		return fmt.Errorf("contact Forge Server %s: %w; verify the owner is running or use --server=<url>", client.baseURL, err)
+		return fmt.Errorf("contact PUA Server %s: %w; verify the owner is running or use --server=<url>", client.baseURL, err)
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, 64*1024*1024))
@@ -325,15 +333,15 @@ func (client *resourceServerClient) request(ctx context.Context, method, path st
 			message = response.Status
 		}
 		if failure.Code != "" {
-			return fmt.Errorf("Forge Server %s: %s", failure.Code, message)
+			return fmt.Errorf("PUA Server %s: %s", failure.Code, message)
 		}
-		return fmt.Errorf("Forge Server returned %s: %s", response.Status, message)
+		return fmt.Errorf("PUA Server returned %s: %s", response.Status, message)
 	}
 	if output == nil || len(bytes.TrimSpace(data)) == 0 {
 		return nil
 	}
 	if err := json.Unmarshal(data, output); err != nil {
-		return fmt.Errorf("decode Forge Server response: %w", err)
+		return fmt.Errorf("decode PUA Server response: %w", err)
 	}
 	return nil
 }
@@ -434,9 +442,18 @@ func runMessageSend(args []string) error {
 }
 
 func resolveMessageSender() (string, string, error) {
-	root := strings.TrimSpace(os.Getenv(forgeWorkspaceRootEnvironment))
-	instanceID := strings.TrimSpace(os.Getenv(forgeWorkspaceInstanceEnvironment))
-	resourceID := strings.TrimSpace(os.Getenv(forgeResourceIDEnvironment))
+	root, err := senderEnvironmentValue(puaWorkspaceRootEnvironment, forgeWorkspaceRootEnvironment)
+	if err != nil {
+		return "", "", err
+	}
+	instanceID, err := senderEnvironmentValue(puaWorkspaceInstanceEnvironment, forgeWorkspaceInstanceEnvironment)
+	if err != nil {
+		return "", "", err
+	}
+	resourceID, err := senderEnvironmentValue(puaResourceIDEnvironment, forgeResourceIDEnvironment)
+	if err != nil {
+		return "", "", err
+	}
 	if root != "" || instanceID != "" || resourceID != "" {
 		currentWorkspace, currentErr := openApplicationWorkspace()
 		contextMatchesCurrent := currentErr == nil && sameWorkspacePath(root, currentWorkspace.Root())
@@ -449,7 +466,7 @@ func resolveMessageSender() (string, string, error) {
 	}
 	if root != "" || instanceID != "" || resourceID != "" {
 		if root == "" || instanceID == "" || resourceID == "" {
-			return "", "", fmt.Errorf("resource message sender requires %s, %s, and %s", forgeWorkspaceRootEnvironment, forgeWorkspaceInstanceEnvironment, forgeResourceIDEnvironment)
+			return "", "", fmt.Errorf("resource message sender requires %s, %s, and %s", puaWorkspaceRootEnvironment, puaWorkspaceInstanceEnvironment, puaResourceIDEnvironment)
 		}
 		workspace, err := app.OpenWorkspace(root)
 		if err != nil {
@@ -460,7 +477,7 @@ func resolveMessageSender() (string, string, error) {
 			return "", "", fmt.Errorf("validate message sender Workspace runtime: %w", err)
 		}
 		if runtimeConfig.InstanceID != instanceID {
-			return "", "", errors.New("message sender Workspace instance does not match its persisted Forge runtime")
+			return "", "", errors.New("message sender Workspace instance does not match its persisted PUA runtime")
 		}
 		if resourceID != "workspace" && resourceID != app.SchedulerResourceID {
 			resource, resourceErr := workspace.ResourceValue(resourceID)
@@ -486,6 +503,18 @@ func resolveMessageSender() (string, string, error) {
 		return "", "", err
 	}
 	return senderID, runtime.InstanceID, nil
+}
+
+func senderEnvironmentValue(primary, legacy string) (string, error) {
+	primaryValue := strings.TrimSpace(os.Getenv(primary))
+	legacyValue := strings.TrimSpace(os.Getenv(legacy))
+	if primaryValue != "" && legacyValue != "" && primaryValue != legacyValue {
+		return "", fmt.Errorf("%s and legacy %s are both set to different values", primary, legacy)
+	}
+	if primaryValue != "" {
+		return primaryValue, nil
+	}
+	return legacyValue, nil
 }
 
 func sameWorkspacePath(left, right string) bool {

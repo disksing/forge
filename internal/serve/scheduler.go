@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 const (
@@ -28,9 +28,9 @@ func schedulerConfigDigest(config app.SchedulerConfig) (string, error) {
 }
 
 func schedulerTickMessage(reason, messageID string) string {
-	return fmt.Sprintf(`Forge Scheduler tick %s (%s).
+	return fmt.Sprintf(`PUA Scheduler tick %s (%s).
 
-Read ../AGENTS.md, AGENTS.md, scheduler.json, and scheduler.md. Evaluate every current schedule's natural-language condition using the current environment and durable context. For each condition you judge satisfied, send an ordinary Forge message to its target that includes the schedule id, description, and trigger reason. Messages may repeat. Re-read scheduler.json before acting when practical, and maintain scheduler.md only when durable judgment context is useful.`, messageID, reason)
+Read ../AGENTS.md, AGENTS.md, scheduler.json, and scheduler.md. Evaluate every current schedule's natural-language condition using the current environment and durable context. For each condition you judge satisfied, send an ordinary PUA message to its target that includes the schedule id, description, and trigger reason. Messages may repeat. Re-read scheduler.json before acting when practical, and maintain scheduler.md only when durable judgment context is useful.`, messageID, reason)
 }
 
 func pendingSchedulerTick(mailbox resourceMailbox) bool {

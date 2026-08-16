@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"bytes"
@@ -15,8 +15,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/disksing/forge/internal/app"
-	"github.com/disksing/forge/internal/buildinfo"
+	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/buildinfo"
 )
 
 const (
@@ -31,8 +31,8 @@ const (
 	testChineseLanguage  = "zh-CN"
 	testDefaultWikiIndex = "# Workspace Wiki\n\n此索引是 workspace 长期知识的入口。随着 Wiki 内容增长，请在这里添加主题页面链接及简短摘要。\n"
 	defaultWikiIndex     = "# Workspace Wiki\n\nThis index is the entry point for long-lived workspace knowledge. Add links to topic pages with short summaries as the Wiki grows.\n"
-	forgePromptStart     = "<!-- managed by forge cli -->"
-	forgePromptEnd       = "<!-- end of forge cli prompt -->"
+	puaPromptStart       = "<!-- managed by pua cli -->"
+	puaPromptEnd         = "<!-- end of pua cli prompt -->"
 )
 
 func TestVersion(t *testing.T) {
@@ -46,9 +46,28 @@ func TestVersion(t *testing.T) {
 	})
 
 	out := run(t, "--version")
-	if out != "forge branch=task-branch sha=abc123\n" {
+	if out != "pua branch=task-branch sha=abc123\n" {
 		t.Fatalf("unexpected version output: %q", out)
 	}
+}
+
+func TestMigrateCanRenameLegacyWorkspaceStorage(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		if err := os.Rename(filepath.Join(root, ".pua"), filepath.Join(root, ".forge")); err != nil {
+			t.Fatal(err)
+		}
+		out := run(t, "migrate", "--rename-storage")
+		if !strings.Contains(out, "migrated AgentWorkspace") {
+			t.Fatalf("migration output = %q", out)
+		}
+		if _, err := os.Stat(filepath.Join(root, ".pua")); err != nil {
+			t.Fatalf("renamed .pua storage is missing: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(root, ".forge")); !os.IsNotExist(err) {
+			t.Fatalf("legacy .forge storage remains: %v", err)
+		}
+	})
 }
 
 func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
@@ -93,6 +112,9 @@ func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
 }
 
 func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
+	t.Setenv(puaWorkspaceRootEnvironment, "")
+	t.Setenv(puaWorkspaceInstanceEnvironment, "")
+	t.Setenv(puaResourceIDEnvironment, "")
 	t.Setenv(forgeWorkspaceRootEnvironment, "")
 	t.Setenv(forgeWorkspaceInstanceEnvironment, "")
 	t.Setenv(forgeResourceIDEnvironment, "")
@@ -143,7 +165,7 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, ".forge", "serve.lock"), data, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".pua", "serve.lock"), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -238,35 +260,47 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	})
 }
 
+func TestSenderEnvironmentSupportsLegacyAndRejectsConflict(t *testing.T) {
+	t.Setenv(puaResourceIDEnvironment, "")
+	t.Setenv(forgeResourceIDEnvironment, "project1.task1")
+	if got, err := senderEnvironmentValue(puaResourceIDEnvironment, forgeResourceIDEnvironment); err != nil || got != "project1.task1" {
+		t.Fatalf("legacy sender environment = %q, %v", got, err)
+	}
+	t.Setenv(puaResourceIDEnvironment, "project1.task2")
+	if _, err := senderEnvironmentValue(puaResourceIDEnvironment, forgeResourceIDEnvironment); err == nil {
+		t.Fatal("expected conflicting sender environments to fail")
+	}
+}
+
 func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
-		t.Fatalf("expected forge start to be unknown, got %v", err)
+		t.Fatalf("expected pua start to be unknown, got %v", err)
 	}
 	for _, args := range [][]string{{"session"}, {"session", "list"}, {"session", "show", "--id=test"}} {
 		if _, err := runErr(t, args...); err == nil || !strings.Contains(err.Error(), `unknown command "session"`) {
-			t.Fatalf("expected removed forge session command to be unknown for %v, got %v", args, err)
+			t.Fatalf("expected removed pua session command to be unknown for %v, got %v", args, err)
 		}
 	}
 	serveHelp := run(t, "serve", "--help")
 	for _, marker := range []string{
-		"usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]",
+		"usage: pua serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"in-process application API",
 		"FORGE_AGENTHUB_URL",
 		"FORGE_SERVE_CONFIG",
 	} {
 		if !strings.Contains(serveHelp, marker) {
-			t.Fatalf("expected forge serve help to contain %q, got:\n%s", marker, serveHelp)
+			t.Fatalf("expected pua serve help to contain %q, got:\n%s", marker, serveHelp)
 		}
 	}
 	if _, err := runErr(t, "serve", "--bogus"); err == nil {
-		t.Fatal("expected forge serve to reject unknown flags")
+		t.Fatal("expected pua serve to reject unknown flags")
 	}
 	if _, err := runErr(t, "serve", "extra"); err == nil || !strings.Contains(err.Error(), "unexpected positional argument") {
-		t.Fatalf("expected forge serve to reject positional arguments, got %v", err)
+		t.Fatalf("expected pua serve to reject positional arguments, got %v", err)
 	}
 	version := run(t, "serve", "--version")
-	if !strings.HasPrefix(version, "forge branch=") {
-		t.Fatalf("expected forge serve --version to print forge build info, got %q", version)
+	if !strings.HasPrefix(version, "pua branch=") {
+		t.Fatalf("expected pua serve --version to print pua build info, got %q", version)
 	}
 }
 
@@ -301,7 +335,7 @@ func TestSimplifiedChineseInitAndLanguageMigration(t *testing.T) {
 			t.Fatalf("unexpected Chinese Wiki index:\n%s", got)
 		}
 		rootAgentsPath := filepath.Join(root, "AGENTS.md")
-		for _, want := range []string{"# AgentWorkspace Agent 工作指引", "## 5. Forge 资源管理", "有合适模板时优先使用，并保留模板中的规则"} {
+		for _, want := range []string{"# AgentWorkspace Agent 工作指引", "## 5. PUA 资源管理", "有合适模板时优先使用，并保留模板中的规则"} {
 			if got := readFile(t, rootAgentsPath); !strings.Contains(got, want) {
 				t.Fatalf("Chinese Workspace prompt is missing %q:\n%s", want, got)
 			}
@@ -358,11 +392,11 @@ func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 			language: "en",
 			rootAnchors: []string{
 				"# AgentWorkspace Agent Instructions", "## 1. Environment", "## 2. Starting work",
-				"## 3. Finding more information", "## 4. Permissions and Forge CLI",
-				"## 5. Managing Forge resources", "## 6. Agent collaboration", "## 7. Scheduler",
-				"adjust wording and tone", "[[project1.task2]]", "forge message send --to=<resource>",
+				"## 3. Finding more information", "## 4. Permissions and PUA CLI",
+				"## 5. Managing PUA resources", "## 6. Agent collaboration", "## 7. Scheduler",
+				"adjust wording and tone", "[[project1.task2]]", "pua message send --to=<resource>",
 				"A message delivered as steer into an already-running Turn does not subscribe",
-				"Do not also send the same result with forge message send",
+				"Do not also send the same result with pua message send",
 			},
 			projectAnchors:   []string{"# Project Agent Instructions", "AgentWorkspace Project directory", "Resource ID: project1", "../AGENTS.md"},
 			taskAnchors:      []string{"# Task Agent Instructions", "AgentWorkspace Task directory", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"},
@@ -374,11 +408,11 @@ func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 			language: "zh-CN",
 			rootAnchors: []string{
 				"# AgentWorkspace Agent 工作指引", "## 1. 工作环境", "## 2. 开始工作",
-				"## 3. 查询更多信息", "## 4. 权限和 Forge CLI",
-				"## 5. Forge 资源管理", "## 6. Agent 协作", "## 7. Scheduler",
-				"调整表达方式和语气", "[[project1.task2]]", "forge message send --to=<resource>",
+				"## 3. 查询更多信息", "## 4. 权限和 PUA CLI",
+				"## 5. PUA 资源管理", "## 6. Agent 协作", "## 7. Scheduler",
+				"调整表达方式和语气", "[[project1.task2]]", "pua message send --to=<resource>",
 				"注入已有 Turn 的 steer 消息不订阅结果",
-				"不要再用 forge message send 发送同一结果",
+				"不要再用 pua message send 发送同一结果",
 			},
 			projectAnchors:   []string{"# 项目 Agent 指引", "Project 目录", "当前资源 ID：project1", "../AGENTS.md"},
 			taskAnchors:      []string{"# 任务 Agent 指引", "Task 目录", "当前资源 ID：project1.task1", "../AGENTS.md", "../../AGENTS.md"},
@@ -419,7 +453,7 @@ func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 						}
 					}
 					for label, content := range map[string]string{"Project": projectAgents, "Task": taskAgents} {
-						if strings.Contains(content, tc.localOnlyHeading) || strings.Contains(content, "forge message send") || strings.Contains(content, "templates/") {
+						if strings.Contains(content, tc.localOnlyHeading) || strings.Contains(content, "pua message send") || strings.Contains(content, "templates/") {
 							t.Fatalf("%s card after %s copied Workspace guidance:\n%s", label, stage, content)
 						}
 					}
@@ -484,7 +518,7 @@ func TestTaskLifecycle(t *testing.T) {
 		assertDir(t, filepath.Join(root, testWikiDir))
 		assertFile(t, filepath.Join(root, testWikiDir, "index.md"))
 
-		created := run(t, "project", "create", "Implement the forge MVP")
+		created := run(t, "project", "create", "Implement the pua MVP")
 		if !strings.Contains(created, `"id": "project1"`) {
 			t.Fatalf("expected project1 JSON, got:\n%s", created)
 		}
@@ -508,17 +542,17 @@ func TestTaskLifecycle(t *testing.T) {
 				t.Fatalf("Project AGENTS.md is missing %q:\n%s", want, projectAgents)
 			}
 		}
-		if strings.Count(projectAgents, forgePromptStart) != 1 || strings.Count(projectAgents, forgePromptEnd) != 1 {
+		if strings.Count(projectAgents, puaPromptStart) != 1 || strings.Count(projectAgents, puaPromptEnd) != 1 {
 			t.Fatalf("expected Project AGENTS.md to contain one managed block, got:\n%s", projectAgents)
 		}
-		for _, copied := range []string{"## 1. Environment", "forge message send", "templates/", "project.md"} {
+		for _, copied := range []string{"## 1. Environment", "pua message send", "templates/", "project.md"} {
 			if strings.Contains(projectAgents, copied) {
 				t.Fatalf("Project AGENTS.md copied Workspace guidance %q:\n%s", copied, projectAgents)
 			}
 		}
 		projectMDPath := filepath.Join(root, "project1", "project.md")
 		projectMD := readFile(t, projectMDPath)
-		if !strings.Contains(projectMD, "# Implement the forge MVP") || !strings.Contains(projectMD, "Implement the forge MVP") {
+		if !strings.Contains(projectMD, "# Implement the pua MVP") || !strings.Contains(projectMD, "Implement the pua MVP") {
 			t.Fatalf("expected project.md to contain project background, got:\n%s", projectMD)
 		}
 		if !strings.Contains(projectMD, "## Background") || !strings.Contains(projectMD, "## Scope") || !strings.Contains(projectMD, "## Acceptance Criteria") {
@@ -552,7 +586,7 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 
 		listed := run(t, "project", "list")
-		if !strings.Contains(listed, "project1\tImplement the forge MVP") {
+		if !strings.Contains(listed, "project1\tImplement the pua MVP") {
 			t.Fatalf("expected task list to include project1, got:\n%s", listed)
 		}
 
@@ -574,10 +608,10 @@ func TestTaskLifecycle(t *testing.T) {
 				t.Fatalf("Task AGENTS.md is missing %q:\n%s", want, subtaskAgents)
 			}
 		}
-		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
+		if strings.Count(subtaskAgents, puaPromptStart) != 1 || strings.Count(subtaskAgents, puaPromptEnd) != 1 {
 			t.Fatalf("expected Task AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
 		}
-		for _, copied := range []string{"## 1. Environment", "forge message send", "templates/", "task.md", "git worktree add"} {
+		for _, copied := range []string{"## 1. Environment", "pua message send", "templates/", "task.md", "git worktree add"} {
 			if strings.Contains(subtaskAgents, copied) {
 				t.Fatalf("Task AGENTS.md copied Workspace guidance %q:\n%s", copied, subtaskAgents)
 			}
@@ -665,11 +699,11 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatal("project1 should have moved out of the open workspace")
 		}
 		openOnly := run(t, "project", "list")
-		if strings.Contains(openOnly, "project1\tImplement the forge MVP") {
+		if strings.Contains(openOnly, "project1\tImplement the pua MVP") {
 			t.Fatalf("archived task should not be listed by default, got:\n%s", openOnly)
 		}
 		allTasks := run(t, "project", "list", "--all")
-		if !strings.Contains(allTasks, "project1\tImplement the forge MVP") {
+		if !strings.Contains(allTasks, "project1\tImplement the pua MVP") {
 			t.Fatalf("expected task list --all to include archived task, got:\n%s", allTasks)
 		}
 
@@ -711,26 +745,26 @@ func TestRemovedAutomationCommandsAreRejected(t *testing.T) {
 func TestHelpGroupsCommandSections(t *testing.T) {
 	help := run(t, "help")
 	expected := []string{
-		"How Forge works:",
+		"How PUA works:",
 		"All workspace data lives on the filesystem",
 		"Agents may inspect\n  other resources, but write only the Workspace files owned by their starting\n  resource and its task worktrees.",
-		"The web service is provided by forge serve.",
+		"The web service is provided by pua serve.",
 		"Usage:",
-		"  forge --version\n  forge init [--language=<language>]",
-		"  forge migrate [--language=<language>]",
-		"  forge repo <command>",
-		"  forge project <command>",
-		"  forge task <command>",
-		"  forge scheduler <command>",
-		"  forge template <command>",
-		"  forge workspace <command>",
-		"  forge resource <command>",
-		"  forge message <command>",
-		"  forge history <command>",
-		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
-		"  forge help [<command>]",
+		"  pua --version\n  pua init [--language=<language>]",
+		"  pua migrate [--language=<language>] [--rename-storage]",
+		"  pua repo <command>",
+		"  pua project <command>",
+		"  pua task <command>",
+		"  pua scheduler <command>",
+		"  pua template <command>",
+		"  pua workspace <command>",
+		"  pua resource <command>",
+		"  pua message <command>",
+		"  pua history <command>",
+		"  pua serve [--addr=<address>] [--workspace=<path>] [--version]",
+		"  pua help [<command>]",
 		"Commands:",
-		"Use \"forge help <command>\" to see the subcommands of <command>.",
+		"Use \"pua help <command>\" to see the subcommands of <command>.",
 	}
 	offset := 0
 	for _, marker := range expected {
@@ -743,22 +777,22 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 	// The top-level help lists only first-level subcommands; it must not expand
 	// second-level command surfaces.
 	for _, expanded := range []string{
-		"forge repo add [--bare]",
-		"forge project create [--slug <slug>] <description>",
-		"forge task create [<title>]",
-		"forge template list [--project=<project>]",
-		"forge scheduler add",
-		"forge workspace tree --json",
-		"forge resource archive --id=<resource>",
-		"forge message send",
-		"forge history turn show",
+		"pua repo add [--bare]",
+		"pua project create [--slug <slug>] <description>",
+		"pua task create [<title>]",
+		"pua template list [--project=<project>]",
+		"pua scheduler add",
+		"pua workspace tree --json",
+		"pua resource archive --id=<resource>",
+		"pua message send",
+		"pua history turn show",
 	} {
 		if strings.Contains(help, expanded) {
 			t.Fatalf("top-level help expands second-level command %q:\n%s", expanded, help)
 		}
 	}
-	if strings.Contains(help, "forge session") {
-		t.Fatalf("removed forge session command remains in help:\n%s", help)
+	if strings.Contains(help, "pua session") {
+		t.Fatalf("removed pua session command remains in help:\n%s", help)
 	}
 	messageHelp := run(t, "help", "message")
 	for _, marker := range []string{
@@ -781,13 +815,13 @@ func TestTaskHelpVariants(t *testing.T) {
 	} {
 		out := run(t, args...)
 		for _, marker := range []string{
-			"forge task create [<title>]",
-			"forge task list [--project=<project>] [--all]",
-			"forge task show [--project=<project>] [--task=<task>]",
-			"forge task archive [--project=<project>] [--task=<task>]",
-			"forge task status [--project=<project>] [--task=<task>] [--server=<url>]",
-			"forge task history [--project=<project>] [--task=<task>]",
-			"forge task repo <command>",
+			"pua task create [<title>]",
+			"pua task list [--project=<project>] [--all]",
+			"pua task show [--project=<project>] [--task=<task>]",
+			"pua task archive [--project=<project>] [--task=<task>]",
+			"pua task status [--project=<project>] [--task=<task>] [--server=<url>]",
+			"pua task history [--project=<project>] [--task=<task>]",
+			"pua task repo <command>",
 			"Print a task's task.json as formatted JSON",
 		} {
 			if !strings.Contains(out, marker) {
@@ -887,34 +921,34 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 
-		created := run(t, "project", "create", "--slug", "forge-dev", "Develop forge")
+		created := run(t, "project", "create", "--slug", "pua-dev", "Develop pua")
 		if !strings.Contains(created, `"id": "project1"`) {
 			t.Fatalf("expected project id to remain project1, got:\n%s", created)
 		}
-		projectPath := filepath.Join(root, "project1-forge-dev")
+		projectPath := filepath.Join(root, "project1-pua-dev")
 		assertFile(t, filepath.Join(projectPath, "project.json"))
 		assertMissing(t, filepath.Join(root, "project1", "project.json"))
 
 		if err := os.Chdir(projectPath); err != nil {
 			t.Fatal(err)
 		}
-		child := run(t, "task", "create", "develop forge", "--slug", "develop-forge")
+		child := run(t, "task", "create", "develop pua", "--slug", "develop-pua")
 		if err := os.Chdir(root); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(child, `"id": "project1.task1"`) {
 			t.Fatalf("expected task id to remain project1.task1, got:\n%s", child)
 		}
-		taskPath := filepath.Join(projectPath, "task1-develop-forge")
+		taskPath := filepath.Join(projectPath, "task1-develop-pua")
 		assertFile(t, filepath.Join(taskPath, "task.json"))
 		assertMissing(t, filepath.Join(projectPath, "task1", "task.json"))
 
 		listed := run(t, "project", "list")
-		if !strings.Contains(listed, "project1\tDevelop forge") || strings.Contains(listed, "project1.task1") {
+		if !strings.Contains(listed, "project1\tDevelop pua") || strings.Contains(listed, "project1.task1") {
 			t.Fatalf("expected project list to include only slugged project by stable id, got:\n%s", listed)
 		}
 		children := run(t, "task", "list", "--project=1")
-		if !strings.Contains(children, "task1\tdevelop forge") {
+		if !strings.Contains(children, "task1\tdevelop pua") {
 			t.Fatalf("expected task list to include slugged task by short id, got:\n%s", children)
 		}
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
@@ -923,10 +957,10 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 		}
 
 		archivedTask := run(t, "task", "archive", "--project=project1", "--task=task1")
-		if !strings.Contains(archivedTask, "project1-forge-dev/archive/task1-develop-forge") {
+		if !strings.Contains(archivedTask, "project1-pua-dev/archive/task1-develop-pua") {
 			t.Fatalf("expected task archive to preserve slugged directory name, got:\n%s", archivedTask)
 		}
-		assertDir(t, filepath.Join(projectPath, testArchiveDir, "task1-develop-forge"))
+		assertDir(t, filepath.Join(projectPath, testArchiveDir, "task1-develop-pua"))
 
 		nextChild := run(t, "task", "create", "--project=project1", "Next task")
 		if !strings.Contains(nextChild, `"id": "project1.task2"`) {
@@ -939,14 +973,14 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 		}
 
 		archivedNextTask := run(t, "task", "archive", "--project=project1", "--task=task2")
-		if !strings.Contains(archivedNextTask, "project1-forge-dev/archive/task2") {
+		if !strings.Contains(archivedNextTask, "project1-pua-dev/archive/task2") {
 			t.Fatalf("expected second task archive path before project archive, got:\n%s", archivedNextTask)
 		}
 		archivedProject := run(t, "project", "archive", "--project=project1")
-		if !strings.Contains(archivedProject, "archive/project1-forge-dev") {
+		if !strings.Contains(archivedProject, "archive/project1-pua-dev") {
 			t.Fatalf("expected project archive to preserve slugged directory name, got:\n%s", archivedProject)
 		}
-		assertDir(t, filepath.Join(root, testArchiveDir, "project1-forge-dev"))
+		assertDir(t, filepath.Join(root, testArchiveDir, "project1-pua-dev"))
 	})
 }
 
@@ -1031,11 +1065,11 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Archive after merge")
 		run(t, "task", "create", "--project=project1", "Code task")
-		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "pua")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
 		if !strings.Contains(archived, "project1/archive/task1") {
@@ -1046,7 +1080,7 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 		if err := readJSON(filepath.Join(root, "project1", testArchiveDir, "task1", "task.json"), &archivedTask); err != nil {
 			t.Fatal(err)
 		}
-		if got := archivedTask.Repos[0].WorktreePath; got != "project1/archive/task1/worktree/forge" {
+		if got := archivedTask.Repos[0].WorktreePath; got != "project1/archive/task1/worktree/pua" {
 			t.Fatalf("expected archived task worktree path to update, got %q", got)
 		}
 	})
@@ -1057,19 +1091,19 @@ func TestTaskArchiveWarnsUnmergedRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Archive before merge")
 		run(t, "task", "create", "--project=project1", "Code task")
-		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "pua")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
-		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "feature work")
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		runGit(t, worktreePath, "-c", "user.name=PUA Test", "-c", "user.email=pua@example.com", "commit", "-m", "feature work")
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
 
 		out := run(t, "task", "archive", "--project=project1", "--task=task1")
-		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/forge"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "feature work") {
+		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/pua"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "feature work") {
 			t.Fatalf("expected clear unmerged commits warning, got stdout:\n%s", out)
 		}
 		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
@@ -1084,8 +1118,8 @@ func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Archive without a checkout")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "forge"))
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "pua"))
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
 		if !strings.Contains(archived, "project1/archive/task1") || !strings.Contains(archived, "warning[worktree_unverifiable]") {
@@ -1100,20 +1134,20 @@ func TestTaskArchiveWarnsDirtyWorktreeAndMissingTarget(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Archive with Git warnings")
 		run(t, "task", "create", "--project=project1", "Code task")
-		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "pua")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 		if err := os.WriteFile(filepath.Join(worktreePath, "uncommitted.txt"), []byte("preserve me\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "missing-target")
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "missing-target")
 
 		out := run(t, "task", "archive", "--project=project1", "--task=task1")
 		if !strings.Contains(out, "warning[dirty_worktree]") || !strings.Contains(out, "warning[target_branch_unverifiable]") {
 			t.Fatalf("expected dirty and unverifiable-target warnings, got stdout:\n%s", out)
 		}
-		archivedWorktree := filepath.Join(root, "project1", testArchiveDir, "task1", "worktree", "forge", "uncommitted.txt")
+		archivedWorktree := filepath.Join(root, "project1", testArchiveDir, "task1", "worktree", "pua", "uncommitted.txt")
 		if got := readFile(t, archivedWorktree); got != "preserve me\n" {
 			t.Fatalf("archive did not preserve dirty worktree content: %q", got)
 		}
@@ -1211,7 +1245,7 @@ func TestProjectListOnlyIncludesProjects(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected --tree to be rejected, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), "usage: forge project list [--all]") {
+		if !strings.Contains(err.Error(), "usage: pua project list [--all]") {
 			t.Fatalf("expected project list usage error, got: %v\nstdout:\n%s", err, out)
 		}
 	})
@@ -1255,7 +1289,7 @@ func TestMigrateRejectsProjectTasksArgument(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected migrate project-tasks to fail, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), "usage: forge migrate") {
+		if !strings.Contains(err.Error(), "usage: pua migrate") {
 			t.Fatalf("expected migrate usage error, got: %v\nstdout:\n%s", err, out)
 		}
 	})
@@ -1397,19 +1431,19 @@ func TestTaskArchiveWarnsUnmergedSubtaskRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Parent project")
 		run(t, "task", "create", "--project=project1", "Child task")
-		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "pua")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
-		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "child feature work")
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		runGit(t, worktreePath, "-c", "user.name=PUA Test", "-c", "user.email=pua@example.com", "commit", "-m", "child feature work")
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
 
 		out := run(t, "task", "archive", "--project=project1", "--task=task1")
-		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/forge"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "child feature work") {
+		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/pua"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "child feature work") {
 			t.Fatalf("expected clear unmerged commits warning, got stdout:\n%s", out)
 		}
 		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
@@ -1431,34 +1465,34 @@ func TestRepoAddClonesNormalCheckoutByDefaultAndBareWithFlag(t *testing.T) {
 			t.Fatal(err)
 		}
 		runGit(t, source, "add", "README.md")
-		runGit(t, source, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "initial")
+		runGit(t, source, "-c", "user.name=PUA Test", "-c", "user.email=pua@example.com", "commit", "-m", "initial")
 
-		added := run(t, "repo", "add", "disksing/forge", source)
-		if !strings.Contains(added, "repos/disksing/forge") {
+		added := run(t, "repo", "add", "disksing/pua", source)
+		if !strings.Contains(added, "repos/disksing/pua") {
 			t.Fatalf("expected normal repo path, got:\n%s", added)
 		}
-		assertDir(t, filepath.Join(root, testReposDir, "disksing", "forge", ".git"))
-		assertFile(t, filepath.Join(root, testReposDir, "disksing", "forge", "README.md"))
-		if pathExists(filepath.Join(root, testReposDir, "disksing", "forge.git")) {
+		assertDir(t, filepath.Join(root, testReposDir, "disksing", "pua", ".git"))
+		assertFile(t, filepath.Join(root, testReposDir, "disksing", "pua", "README.md"))
+		if pathExists(filepath.Join(root, testReposDir, "disksing", "pua.git")) {
 			t.Fatal("default repo add should not create a bare .git repository")
 		}
 
-		bare := run(t, "repo", "add", "--bare", "disksing/forge-bare", source)
-		if !strings.Contains(bare, "repos/disksing/forge-bare.git") {
+		bare := run(t, "repo", "add", "--bare", "disksing/pua-bare", source)
+		if !strings.Contains(bare, "repos/disksing/pua-bare.git") {
 			t.Fatalf("expected bare repo path, got:\n%s", bare)
 		}
-		assertFile(t, filepath.Join(root, testReposDir, "disksing", "forge-bare.git", "HEAD"))
+		assertFile(t, filepath.Join(root, testReposDir, "disksing", "pua-bare.git", "HEAD"))
 	})
 }
 
 func TestRepoListFindsRepositories(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "forge"))
+		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "pua"))
 		writeFakeBareRepo(t, filepath.Join(root, testReposDir, "disksing", "legacy.git"), "master")
 
 		listed := run(t, "repo", "list")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge") {
+		if !strings.Contains(listed, "disksing/pua\trepos/disksing/pua") {
 			t.Fatalf("expected repo list to include fake normal repo, got:\n%s", listed)
 		}
 		if !strings.Contains(listed, "disksing/legacy\trepos/disksing/legacy.git") {
@@ -1472,9 +1506,9 @@ func TestTaskRepoLifecycle(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Wire repo metadata into task json")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "forge"))
+		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "pua"))
 
-		out, err := runErr(t, "project", "repo", "add", "project1", "disksing/forge")
+		out, err := runErr(t, "project", "repo", "add", "project1", "disksing/pua")
 		if err == nil {
 			t.Fatalf("expected project repo command to fail, got stdout:\n%s", out)
 		}
@@ -1482,7 +1516,7 @@ func TestTaskRepoLifecycle(t *testing.T) {
 			t.Fatalf("expected project repo rejection, got: %v\nstdout:\n%s", err, out)
 		}
 
-		out, err = runErr(t, "task", "repo", "add", "disksing/forge")
+		out, err = runErr(t, "task", "repo", "add", "disksing/pua")
 		if err == nil {
 			t.Fatalf("expected task repo add without task context to fail, got stdout:\n%s", out)
 		}
@@ -1490,19 +1524,19 @@ func TestTaskRepoLifecycle(t *testing.T) {
 			t.Fatalf("expected missing task context error, got: %v\nstdout:\n%s", err, out)
 		}
 
-		added := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--branch", "agent/project1.task1", "--target", "master", "--base", "master")
-		if !strings.Contains(added, `"name": "disksing/forge"`) {
+		added := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--branch", "agent/project1.task1", "--target", "master", "--base", "master")
+		if !strings.Contains(added, `"name": "disksing/pua"`) {
 			t.Fatalf("expected task JSON to include repo, got:\n%s", added)
 		}
-		if !strings.Contains(added, `"repoPath": "repos/disksing/forge"`) {
+		if !strings.Contains(added, `"repoPath": "repos/disksing/pua"`) {
 			t.Fatalf("expected task JSON to include repo path, got:\n%s", added)
 		}
-		if !strings.Contains(added, `"worktreePath": "project1/task1/worktree/forge"`) {
+		if !strings.Contains(added, `"worktreePath": "project1/task1/worktree/pua"`) {
 			t.Fatalf("expected default worktree path, got:\n%s", added)
 		}
 
 		listed := run(t, "task", "repo", "list", "--project=project1", "--task=task1")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge\tproject1/task1/worktree/forge\tagent/project1.task1\tmaster\tmaster") {
+		if !strings.Contains(listed, "disksing/pua\trepos/disksing/pua\tproject1/task1/worktree/pua\tagent/project1.task1\tmaster\tmaster") {
 			t.Fatalf("expected repo list to include metadata, got:\n%s", listed)
 		}
 
@@ -1510,15 +1544,15 @@ func TestTaskRepoLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		inferredList := run(t, "task", "repo", "list")
-		if !strings.Contains(inferredList, "disksing/forge\trepos/disksing/forge\tproject1/task1/worktree/forge\tagent/project1.task1\tmaster\tmaster") {
+		if !strings.Contains(inferredList, "disksing/pua\trepos/disksing/pua\tproject1/task1/worktree/pua\tagent/project1.task1\tmaster\tmaster") {
 			t.Fatalf("expected repo list to infer current task, got:\n%s", inferredList)
 		}
 		if err := os.Chdir(root); err != nil {
 			t.Fatal(err)
 		}
 
-		updated := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/custom", "--branch", "agent/updated", "--target", "main")
-		if strings.Count(updated, `"name": "disksing/forge"`) != 1 {
+		updated := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/custom", "--branch", "agent/updated", "--target", "main")
+		if strings.Count(updated, `"name": "disksing/pua"`) != 1 {
 			t.Fatalf("expected repo add to update existing entry, got:\n%s", updated)
 		}
 		if !strings.Contains(updated, `"worktreePath": "project1/task1/worktree/custom"`) {
@@ -1528,8 +1562,8 @@ func TestTaskRepoLifecycle(t *testing.T) {
 			t.Fatalf("expected updated branch, got:\n%s", updated)
 		}
 
-		removed := run(t, "task", "repo", "remove", "--project=project1", "--task=task1", "disksing/forge")
-		if strings.Contains(removed, `"name": "disksing/forge"`) {
+		removed := run(t, "task", "repo", "remove", "--project=project1", "--task=task1", "disksing/pua")
+		if strings.Contains(removed, `"name": "disksing/pua"`) {
 			t.Fatalf("expected repo to be removed, got:\n%s", removed)
 		}
 	})
@@ -1540,17 +1574,17 @@ func TestTaskRepoLifecycleSupportsLegacyBareRepos(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Wire legacy bare repo metadata into task json")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeBareRepo(t, filepath.Join(root, testReposDir, "disksing", "forge.git"), "master")
+		writeFakeBareRepo(t, filepath.Join(root, testReposDir, "disksing", "pua.git"), "master")
 
-		added := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--branch", "agent/project1.task1")
-		if !strings.Contains(added, `"barePath": "repos/disksing/forge.git"`) {
+		added := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--branch", "agent/project1.task1")
+		if !strings.Contains(added, `"barePath": "repos/disksing/pua.git"`) {
 			t.Fatalf("expected task JSON to include legacy bare path, got:\n%s", added)
 		}
 		if strings.Contains(added, `"repoPath"`) {
 			t.Fatalf("legacy bare repo should not also set repoPath, got:\n%s", added)
 		}
 		listed := run(t, "task", "repo", "list", "--project=project1", "--task=task1")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git\tproject1/task1/worktree/forge\tagent/project1.task1\tmaster") {
+		if !strings.Contains(listed, "disksing/pua\trepos/disksing/pua.git\tproject1/task1/worktree/pua\tagent/project1.task1\tmaster") {
 			t.Fatalf("expected legacy bare repo metadata, got:\n%s", listed)
 		}
 	})
@@ -1572,7 +1606,7 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		for _, want := range []string{
 			"# AgentWorkspace Agent Instructions",
 			"read a small recent page of resource History",
-			"project.json and task.json contain structured information understood by Forge",
+			"project.json and task.json contain structured information understood by PUA",
 			"Read wiki/index.md first",
 			"rather than keeping another permanent progress file",
 		} {
@@ -1580,8 +1614,8 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 				t.Fatalf("Workspace AGENTS.md is missing %q:\n%s", want, first)
 			}
 		}
-		if strings.Count(first, forgePromptStart) != 1 || strings.Count(first, forgePromptEnd) != 1 {
-			t.Fatalf("expected one Forge managed block, got:\n%s", first)
+		if strings.Count(first, puaPromptStart) != 1 || strings.Count(first, puaPromptEnd) != 1 {
+			t.Fatalf("expected one PUA managed block, got:\n%s", first)
 		}
 
 		replaced := strings.Replace(first, "# AgentWorkspace Agent Instructions", "old prompt text", 1)
@@ -1596,7 +1630,7 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(second, "Keep this line.") {
 			t.Fatalf("expected human content to survive replacement, got:\n%s", second)
 		}
-		if strings.Count(second, forgePromptStart) != 1 || strings.Count(second, forgePromptEnd) != 1 {
+		if strings.Count(second, puaPromptStart) != 1 || strings.Count(second, puaPromptEnd) != 1 {
 			t.Fatalf("expected migrate to avoid duplicate managed blocks, got:\n%s", second)
 		}
 	})
@@ -1766,7 +1800,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(taskAfter, "Resource ID: project1") || !strings.Contains(taskAfter, "../AGENTS.md") {
 			t.Fatalf("expected Project launch card to be restored, got:\n%s", taskAfter)
 		}
-		if strings.Count(taskAfter, forgePromptStart) != 1 || strings.Count(taskAfter, forgePromptEnd) != 1 {
+		if strings.Count(taskAfter, puaPromptStart) != 1 || strings.Count(taskAfter, puaPromptEnd) != 1 {
 			t.Fatalf("expected task refresh to keep one managed block, got:\n%s", taskAfter)
 		}
 
@@ -1780,7 +1814,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(subtaskAfter, "Resource ID: project1.task1") || !strings.Contains(subtaskAfter, "../AGENTS.md") || !strings.Contains(subtaskAfter, "../../AGENTS.md") {
 			t.Fatalf("expected Task launch card to be restored, got:\n%s", subtaskAfter)
 		}
-		if strings.Count(subtaskAfter, forgePromptStart) != 1 || strings.Count(subtaskAfter, forgePromptEnd) != 1 {
+		if strings.Count(subtaskAfter, puaPromptStart) != 1 || strings.Count(subtaskAfter, puaPromptEnd) != 1 {
 			t.Fatalf("expected subtask refresh to keep one managed block, got:\n%s", subtaskAfter)
 		}
 
@@ -1940,7 +1974,7 @@ func TestTemplateShowIncludesBodyAndPreservesOutputModes(t *testing.T) {
 		if schema["name"] != "request" || schema["schemaVersion"] != float64(2) || schema["digest"] == "" || schema["fields"] == nil {
 			t.Fatalf("--schema changed schema output contract: %#v", schema)
 		}
-		if _, err := runErr(t, "template", "show", "--project=project1", "--json", "--schema", "request"); err == nil || !strings.Contains(err.Error(), "usage: forge template show") {
+		if _, err := runErr(t, "template", "show", "--project=project1", "--json", "--schema", "request"); err == nil || !strings.Contains(err.Error(), "usage: pua template show") {
 			t.Fatalf("expected mutually exclusive template show modes to return usage, got %v", err)
 		}
 
@@ -2179,7 +2213,7 @@ func writeGitRepo(t *testing.T, path, branch string) {
 		t.Fatal(err)
 	}
 	runGit(t, path, "add", "README.md")
-	runGit(t, path, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "initial")
+	runGit(t, path, "-c", "user.name=PUA Test", "-c", "user.email=pua@example.com", "commit", "-m", "initial")
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

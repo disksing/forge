@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"fmt"
@@ -39,7 +39,7 @@ func parseRepoAdd(args []string) (repoAddOptions, error) {
 		}
 	}
 	if opts.name == "" || opts.url == "" {
-		return repoAddOptions{}, fmt.Errorf("usage: forge repo add [--bare] <name> <url>")
+		return repoAddOptions{}, fmt.Errorf("usage: pua repo add [--bare] <name> <url>")
 	}
 	return opts, nil
 }

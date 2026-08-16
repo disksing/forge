@@ -18,7 +18,7 @@ func OpenWorkspaceFrom(start string) (*Workspace, error) {
 		return nil, &APIError{Operation: "discover Workspace", Kind: "workspace", Path: start, Err: err}
 	}
 	if root == "" {
-		return nil, &APIError{Operation: "discover Workspace", Kind: "workspace", Path: start, Err: errors.New("could not find AgentWorkspace root; run forge init first")}
+		return nil, &APIError{Operation: "discover Workspace", Kind: "workspace", Path: start, Err: errors.New("could not find AgentWorkspace root; run pua init first")}
 	}
 	return OpenWorkspace(root)
 }

@@ -27,7 +27,7 @@ var systemAgentProfileDefinitions = []systemAgentProfileDefinition{
 type agentHubServeConfig struct {
 	Version            int                    `json:"version"`
 	ActiveID           string                 `json:"activeId,omitempty"`
-	Workspaces         []serveWorkspace         `json:"workspaces"`
+	Workspaces         []serveWorkspace       `json:"workspaces"`
 	AgentHubEndpoint   string                 `json:"agentHubEndpoint"`
 	AgentHubInstanceID string                 `json:"agentHubInstanceId"`
 	AgentProfiles      []agentHubProfileRoute `json:"agentProfiles,omitempty"`
@@ -40,7 +40,9 @@ type agentHubProfileRoute struct {
 }
 
 func effectiveAgentHubEndpoint(configured string) (string, error) {
-	if override := strings.TrimSpace(os.Getenv("FORGE_AGENTHUB_URL")); override != "" {
+	if override, err := environmentOverride("PUA_AGENTHUB_URL", "FORGE_AGENTHUB_URL"); err != nil {
+		return "", err
+	} else if override != "" {
 		return normalizeAgentHubEndpoint(override)
 	}
 	return normalizeAgentHubEndpoint(configured)

@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func TestFaviconIsLinkedAndEmbedded(t *testing.T) {
@@ -63,7 +63,7 @@ func TestCanonicalFrontendAssetsAndHistoryFallback(t *testing.T) {
 	if count := strings.Count(index, `type="module"`); count != 1 {
 		t.Fatalf("index module entry count = %d, want 1", count)
 	}
-	for _, want := range []string{`src="/assets/forge-app.js"`, `href="/assets/forge-app.css"`} {
+	for _, want := range []string{`src="/assets/pua-app.js"`, `href="/assets/pua-app.css"`} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("canonical frontend asset is missing %s", want)
 		}
@@ -83,8 +83,8 @@ func TestCanonicalFrontendAssetsAndHistoryFallback(t *testing.T) {
 		path        string
 		contentType string
 	}{
-		{path: "/assets/forge-app.js", contentType: "text/javascript; charset=utf-8"},
-		{path: "/assets/forge-app.css", contentType: "text/css; charset=utf-8"},
+		{path: "/assets/pua-app.js", contentType: "text/javascript; charset=utf-8"},
+		{path: "/assets/pua-app.css", contentType: "text/css; charset=utf-8"},
 	} {
 		recorder := httptest.NewRecorder()
 		serveStatic(staticRoot, recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
@@ -785,7 +785,7 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 		t.Fatalf("expected persisted ui-state, got %+v", loaded)
 	}
 
-	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "ui-state.json"))
+	data, err := os.ReadFile(filepath.Join(workspace, ".pua", "ui-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -862,7 +862,7 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 		t.Fatalf("expected persisted task order, got %+v", loaded.TaskOrder)
 	}
 
-	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "ui-state.json"))
+	data, err := os.ReadFile(filepath.Join(workspace, ".pua", "ui-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

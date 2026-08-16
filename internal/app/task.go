@@ -416,7 +416,7 @@ func updateTaskAgentsMD(root, dir string, resource Resource, language string) er
 }
 
 func taskAgentsBlock(resource Resource, language string) string {
-	return forgePromptStart + "\n" + taskAgentsPrompt(resource, language) + "\n" + forgePromptEnd
+	return puaPromptStart + "\n" + taskAgentsPrompt(resource, language) + "\n" + puaPromptEnd
 }
 
 func projectTaskName(projectID string) *regexp.Regexp {

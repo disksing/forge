@@ -96,7 +96,7 @@ func serveConfigLockConflictError(configPath string, metadata serveConfigLockMet
 	if metadata.Address != "" {
 		owner += fmt.Sprintf(" at %s", metadata.Address)
 	}
-	return fmt.Errorf("serve config %s is already in use%s; stop the existing forge serve process or set FORGE_SERVE_CONFIG to an isolated config path", configPath, owner)
+	return fmt.Errorf("serve config %s is already in use%s; stop the existing pua serve process or set PUA_SERVE_CONFIG to an isolated config path", configPath, owner)
 }
 
 func (lock *serveConfigLock) Close() error {

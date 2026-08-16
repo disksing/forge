@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace serveWorkspace, resourceID, text, mode string, sender *agentHubMessageSender) resourceMailboxMessage {

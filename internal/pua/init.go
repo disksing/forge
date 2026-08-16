@@ -1,10 +1,10 @@
-package forge
+package pua
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func runInit(args []string) error {
@@ -14,7 +14,7 @@ func runInit(args []string) error {
 	}
 	language, err := parseInitOptions(args)
 	if err != nil {
-		return fmt.Errorf("usage: forge init [--language=<language>]: %w", err)
+		return fmt.Errorf("usage: pua init [--language=<language>]: %w", err)
 	}
 	return applicationInit(language)
 }
@@ -24,11 +24,28 @@ func runWorkspaceMigrate(args []string) error {
 		printMigrateHelp()
 		return nil
 	}
-	language, err := parseLanguageOption(args)
+	language, renameStorage, err := parseMigrateOptions(args)
 	if err != nil {
-		return fmt.Errorf("usage: forge migrate [--language=<language>]: %w", err)
+		return fmt.Errorf("usage: pua migrate [--language=<language>] [--rename-storage]: %w", err)
 	}
-	return applicationMigrate(language)
+	return applicationMigrate(language, renameStorage)
+}
+
+func parseMigrateOptions(args []string) (string, bool, error) {
+	languageArgs := make([]string, 0, len(args))
+	renameStorage := false
+	for _, arg := range args {
+		if arg == "--rename-storage" {
+			if renameStorage {
+				return "", false, fmt.Errorf("--rename-storage may only be specified once")
+			}
+			renameStorage = true
+			continue
+		}
+		languageArgs = append(languageArgs, arg)
+	}
+	language, err := parseLanguageOption(languageArgs)
+	return language, renameStorage, err
 }
 
 func parseLanguageOption(args []string) (string, error) {

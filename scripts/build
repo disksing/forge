@@ -19,11 +19,12 @@ if [ -z "$sha" ]; then
 	sha=unknown
 fi
 
-ldflags="-X github.com/disksing/forge/internal/buildinfo.Branch=$branch -X github.com/disksing/forge/internal/buildinfo.SHA=$sha"
+ldflags="-X github.com/disksing/pua/internal/buildinfo.Branch=$branch -X github.com/disksing/pua/internal/buildinfo.SHA=$sha"
 
 mkdir -p "$out_path"
 cd "$root"
 npm --prefix web ci
 npm --prefix web run check
 npm --prefix web run build
+go build -ldflags "$ldflags" -o "$out_path/pua" ./cli/cmd/pua
 go build -ldflags "$ldflags" -o "$out_path/forge" ./cli/cmd/forge

@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
-const doctorUsage = "usage: forge doctor [--json] [--server=<url>]"
+const doctorUsage = "usage: pua doctor [--json] [--server=<url>]"
 
 type doctorExitError struct {
 	code    int
@@ -53,7 +53,7 @@ func runDoctor(args []string) error {
 		} else if message := strings.TrimSpace(settings.Error); message != "" {
 			options.BindingError = message
 		} else if !settings.Connected || !settings.Compatible {
-			options.BindingError = "Forge Server did not provide a connected, compatible AgentHub catalog"
+			options.BindingError = "PUA Server did not provide a connected, compatible AgentHub catalog"
 		} else {
 			catalog := &app.DoctorBindingCatalog{
 				Profiles: make([]app.DoctorProfile, 0, len(settings.Config.AgentProfiles)),
@@ -118,20 +118,20 @@ func printDoctorReport(report app.DoctorReport) {
 
 func printDoctorHelp() {
 	fmt.Print(`Usage:
-  forge doctor [--json] [--server=<url>]
+  pua doctor [--json] [--server=<url>]
 
 Inspect the current open Workspace without changing it. Doctor checks the
 Workspace configuration, open Project and Task metadata, Scheduler targets,
-Forge-managed AGENTS.md sections, templates, repository references, and Agent
+PUA-managed AGENTS.md sections, templates, repository references, and Agent
 bindings. Archive directories are skipped completely.
 
-Agent and Profile checks use the owning forge serve process. If no compatible
+Agent and Profile checks use the owning pua serve process. If no compatible
 catalog can be reached, filesystem checks still run and the report is marked
 incomplete. Exit status is 0 when there are no errors, 1 when errors are found,
 and 2 when the check could not be completed.
 
 Options:
   --json              print the complete machine-readable report
-  --server <url>      override the owning forge serve address
+  --server <url>      override the owning pua serve address
 `)
 }

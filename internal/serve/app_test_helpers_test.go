@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func openTestForgeWorkspace(t *testing.T, path, language string) *app.Workspace {

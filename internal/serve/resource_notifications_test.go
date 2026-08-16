@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func newNotificationTestManager(t *testing.T, hubURL string, workspaces []serveWorkspace) *agentManager {

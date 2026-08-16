@@ -120,7 +120,7 @@ func (w *Workspace) IsSchedulerPath(start string) (bool, error) {
 }
 
 // EnsureScheduler non-destructively creates or validates the Scheduler
-// resource files and refreshes only the Forge-managed AGENTS.md block.
+// resource files and refreshes only the PUA-managed AGENTS.md block.
 func (w *Workspace) EnsureScheduler() (SchedulerConfig, error) {
 	if err := w.require(); err != nil {
 		return SchedulerConfig{}, err
@@ -557,13 +557,13 @@ func newScheduleID() (string, error) {
 
 func defaultSchedulerMarkdown(language string) string {
 	if language == languageSimplifiedChinese {
-		return "# Scheduler 上下文\n\n由 Scheduler Agent 维护后续调度判断所需的最小上下文，不作为长期历史记录。具体调度项保存在 scheduler.json 中，并通过 Forge CLI 修改。\n"
+		return "# Scheduler 上下文\n\n由 Scheduler Agent 维护后续调度判断所需的最小上下文，不作为长期历史记录。具体调度项保存在 scheduler.json 中，并通过 PUA CLI 修改。\n"
 	}
-	return "# Scheduler Context\n\nMaintained by the Scheduler Agent as the minimum context needed for future scheduling decisions, not as long-term history. Schedules live in scheduler.json and are changed through the Forge CLI.\n"
+	return "# Scheduler Context\n\nMaintained by the Scheduler Agent as the minimum context needed for future scheduling decisions, not as long-term history. Schedules live in scheduler.json and are changed through the PUA CLI.\n"
 }
 
 func schedulerAgentsBlock(language string) string {
-	return forgePromptStart + "\n" + schedulerAgentsPrompt(language) + "\n" + forgePromptEnd
+	return puaPromptStart + "\n" + schedulerAgentsPrompt(language) + "\n" + puaPromptEnd
 }
 
 func schedulerAgentsPrompt(language string) string {
@@ -574,10 +574,10 @@ func schedulerAgentsPrompt(language string) string {
 
 - 总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md）、scheduler.json 和 scheduler.md。
 - 将 scheduler/ 视为当前资源边界；Workspace 其他资源只读，不得修改其他 Agent 管理的文件。
-- scheduler.json 是 Forge 管理的结构化调度项列表。必须使用 forge scheduler list/show/add/update/remove 修改，不得直接覆写。
+- scheduler.json 是 PUA 管理的结构化调度项列表。必须使用 pua scheduler list/show/add/update/remove 修改，不得直接覆写。
 - scheduler.md 只用于维护完成后续调度判断所需的最小上下文。不要把它当作长期历史；仅在会影响后续判断时保留上次检查、触发、补跑、重复或时区信息，并及时删除已不再必要的内容。
 - 每个 schedule 的 condition 是自然语言。结合当前时间、环境、资源状态和 scheduler.md 判断是否满足。
-- 条件满足时，使用普通 forge message send 向 schedule.target 发送消息。消息至少包含 schedule ID、description 和本次判断满足条件的原因。
+- 条件满足时，使用普通 pua message send 向 schedule.target 发送消息。消息至少包含 schedule ID、description 和本次判断满足条件的原因。
 - 消息允许重复；接收 Agent 负责结合 schedule ID 自行判断。发送前重新读取 scheduler.json，尽量避免执行已经删除的调度项。
 - 一次性调度触发后通常删除；重复调度通常保留。根据 description 和 condition 具体判断，不使用固定 cron、occurrence 或结果协议。
 - 调度项结构化变化是允许的跨资源操作，不授予你写入目标资源文件的权限。
@@ -589,10 +589,10 @@ You are working in the special Scheduler resource directory of an AgentWorkspace
 
 - Always read the workspace root AGENTS.md (../AGENTS.md), scheduler.json, and scheduler.md.
 - Treat scheduler/ as the current resource boundary. Other Workspace resources are read-only; do not modify files managed by other agents.
-- scheduler.json is the Forge-managed structured schedule list. Use forge scheduler list/show/add/update/remove and never overwrite it directly.
+- scheduler.json is the PUA-managed structured schedule list. Use pua scheduler list/show/add/update/remove and never overwrite it directly.
 - Use scheduler.md only for the minimum context needed to make future scheduling decisions. Do not keep it as long-term history; retain prior checks, triggers, catch-up, repetition, or timezone details only while they affect future decisions, and remove them when no longer needed.
 - Each schedule condition is natural language. Judge it using the current time, environment, resource state, and scheduler.md.
-- When a condition is satisfied, use ordinary forge message send to schedule.target. Include at least the schedule id, description, and why the condition is satisfied.
+- When a condition is satisfied, use ordinary pua message send to schedule.target. Include at least the schedule id, description, and why the condition is satisfied.
 - Messages may repeat; the receiving Agent uses the schedule id to decide. Re-read scheduler.json before sending to avoid acting on a removed schedule when practical.
 - Usually remove one-time schedules after triggering and retain repeating schedules. Decide from description and condition; there is no fixed cron, occurrence, or result protocol.
 - Structured schedule mutation is an allowed cross-resource operation and does not grant write access to the target resource files.

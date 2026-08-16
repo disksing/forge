@@ -2,23 +2,23 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-port=${FORGE_E2E_PORT:-14936}
+port=${PUA_E2E_PORT:-14936}
 temp_root=${TMPDIR:-/tmp}
 temp_root=${temp_root%/}
-runtime_dir=${FORGE_E2E_RUNTIME_DIR:-}
+runtime_dir=${PUA_E2E_RUNTIME_DIR:-}
 if [ -n "$runtime_dir" ]; then
 	case "$runtime_dir" in
-	"$temp_root"/forge-frontend-e2e-"$port") ;;
-	*) echo "FORGE_E2E_RUNTIME_DIR must be $temp_root/forge-frontend-e2e-$port" >&2; exit 2 ;;
+	"$temp_root"/pua-frontend-e2e-"$port") ;;
+	*) echo "PUA_E2E_RUNTIME_DIR must be $temp_root/pua-frontend-e2e-$port" >&2; exit 2 ;;
 	esac
 	rm -rf "$runtime_dir"
 	mkdir -p "$runtime_dir"
 else
-	runtime_dir=$(mktemp -d "$temp_root/forge-frontend-e2e.XXXXXX")
+	runtime_dir=$(mktemp -d "$temp_root/pua-frontend-e2e.XXXXXX")
 fi
 workspace_dir="$runtime_dir/workspace"
 agenthub_data_dir="$runtime_dir/agenthub"
-binary_path="$runtime_dir/forge"
+binary_path="$runtime_dir/pua"
 
 cleanup() {
 	rm -rf "$runtime_dir"
@@ -26,13 +26,13 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$workspace_dir" "$agenthub_data_dir"
-go -C "$root" build -o "$binary_path" ./cli/cmd/forge
+go -C "$root" build -o "$binary_path" ./cli/cmd/pua
 (
 	cd "$workspace_dir"
 	"$binary_path" init --language=en
 )
 
-FORGE_SERVE_CONFIG="$runtime_dir/serve.json" \
-FORGE_AGENTHUB_URL="http://127.0.0.1:1" \
+PUA_SERVE_CONFIG="$runtime_dir/serve.json" \
+PUA_AGENTHUB_URL="http://127.0.0.1:1" \
 AGENTHUB_DATA_DIR="$agenthub_data_dir" \
 "$binary_path" serve --addr="127.0.0.1:$port" --workspace="$workspace_dir"

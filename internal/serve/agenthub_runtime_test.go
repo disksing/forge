@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
-	"github.com/disksing/forge/internal/generation"
+	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/generation"
 )
 
 type runtimeFakeAgentHub struct {

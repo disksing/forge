@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 const doctorScanInterval = time.Minute

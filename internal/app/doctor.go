@@ -24,7 +24,7 @@ type DoctorAgent struct {
 	UnavailableReason string `json:"unavailableReason,omitempty"`
 }
 
-// DoctorProfile describes one Forge Profile and its configured Agent target.
+// DoctorProfile describes one PUA Profile and its configured Agent target.
 type DoctorProfile struct {
 	Key       string `json:"key"`
 	AgentName string `json:"agentName"`
@@ -172,7 +172,7 @@ func (s *doctorScanner) scanWorkspaceConfig() {
 	}
 	if !pathExists(canonical) {
 		s.issue(DoctorSeverityError, "workspace_config_missing", workspaceConfigFile, "workspace",
-			"workspace.json is missing", "Restore workspace.json from backup or reconstruct it before using Forge.")
+			"workspace.json is missing", "Restore workspace.json from backup or reconstruct it before using PUA.")
 		return
 	}
 	if !s.requireRegularFile(canonical, workspaceConfigFile, "workspace", DoctorSeverityError) {
@@ -187,7 +187,7 @@ func (s *doctorScanner) scanWorkspaceConfig() {
 	versionSupported := config.Version == 1
 	if !versionSupported {
 		s.issue(DoctorSeverityError, "workspace_version_unsupported", workspaceConfigFile, "workspace",
-			fmt.Sprintf("workspace version %d is unsupported; expected 1", config.Version), "Run the matching Forge migration after reviewing the file.")
+			fmt.Sprintf("workspace version %d is unsupported; expected 1", config.Version), "Run the matching PUA migration after reviewing the file.")
 	}
 	language, err := NormalizeLanguage(config.Language)
 	if err != nil {
@@ -198,7 +198,7 @@ func (s *doctorScanner) scanWorkspaceConfig() {
 	}
 	if strings.TrimSpace(config.InstanceID) == "" {
 		s.issue(DoctorSeverityError, "workspace_instance_id_missing", workspaceConfigFile, "workspace",
-			"workspace instanceId is missing", "Run forge migrate after backing up the Workspace.")
+			"workspace instanceId is missing", "Run pua migrate after backing up the Workspace.")
 	}
 	if binding, err := NormalizeAgentBinding(config.AgentBinding); err != nil {
 		s.issue(DoctorSeverityError, "agent_binding_invalid", workspaceConfigFile, "workspace", err.Error(), "Select a valid Profile or Agent binding.")
@@ -217,7 +217,7 @@ func (s *doctorScanner) scanWorkspaceConfig() {
 }
 
 func (s *doctorScanner) scanWorkspaceFiles() {
-	s.checkManagedFile(filepath.Join(s.root, "AGENTS.md"), "AGENTS.md", "workspace", forgePromptBlock(s.language))
+	s.checkManagedFile(filepath.Join(s.root, "AGENTS.md"), "AGENTS.md", "workspace", puaPromptBlock(s.language))
 	s.checkOptionalMarkdown(filepath.Join(s.root, wikiDir, "index.md"), filepath.Join(wikiDir, "index.md"), "workspace")
 	for _, dir := range []string{reposDir, wikiDir} {
 		s.requireDirectory(filepath.Join(s.root, dir), dir, "workspace", DoctorSeverityWarning)
@@ -485,9 +485,9 @@ func (s *doctorScanner) scanBindings() {
 		s.report.Complete = false
 		message := strings.TrimSpace(s.options.BindingError)
 		if message == "" {
-			message = "Agent/Profile binding checks were skipped because no Forge Server catalog was available"
+			message = "Agent/Profile binding checks were skipped because no PUA Server catalog was available"
 		}
-		s.issue(DoctorSeverityWarning, "agent_catalog_unavailable", "", "", message, "Start or connect to the owning forge serve process and run doctor again.")
+		s.issue(DoctorSeverityWarning, "agent_catalog_unavailable", "", "", message, "Start or connect to the owning pua serve process and run doctor again.")
 		return
 	}
 	profiles := make(map[string]DoctorProfile)
@@ -543,24 +543,20 @@ func (s *doctorScanner) checkManagedFile(path, rel, resourceID, expected string)
 		return
 	}
 	content := string(data)
-	startCount := strings.Count(content, forgePromptStart)
-	endCount := strings.Count(content, forgePromptEnd)
-	if startCount == 0 && endCount == 0 {
-		s.issue(DoctorSeverityError, "agents_managed_section_missing", rel, resourceID, "Forge managed AGENTS.md section is missing", "Run forge migrate after reviewing local instructions.")
+	start, end, found, boundsErr := managedBlockBounds(content)
+	if !found && boundsErr == nil {
+		s.issue(DoctorSeverityError, "agents_managed_section_missing", rel, resourceID, "PUA managed AGENTS.md section is missing", "Run pua migrate after reviewing local instructions.")
 		return
 	}
-	start := strings.Index(content, forgePromptStart)
-	end := strings.Index(content, forgePromptEnd)
-	if startCount != 1 || endCount != 1 || start < 0 || end < start {
-		s.issue(DoctorSeverityError, "agents_managed_markers_invalid", rel, resourceID, "Forge managed AGENTS.md markers are duplicated, incomplete, or out of order", "Repair the markers, then run forge migrate.")
+	if boundsErr != nil {
+		s.issue(DoctorSeverityError, "agents_managed_markers_invalid", rel, resourceID, "PUA managed AGENTS.md markers are duplicated, incomplete, or out of order", "Repair the markers, then run pua migrate.")
 		return
 	}
-	end += len(forgePromptEnd)
 	if !s.languageKnown {
 		return
 	}
 	if content[start:end] != expected {
-		s.issue(DoctorSeverityError, "agents_managed_section_modified", rel, resourceID, "Forge managed AGENTS.md section is missing current content or has been modified", "Run forge migrate after reviewing local instructions outside the managed section.")
+		s.issue(DoctorSeverityError, "agents_managed_section_modified", rel, resourceID, "PUA managed AGENTS.md section is missing current content or has been modified", "Run pua migrate after reviewing local instructions outside the managed section.")
 	}
 }
 

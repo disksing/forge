@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func TestLoadAgentRunsRejectsTrailingGarbage(t *testing.T) {

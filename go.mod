@@ -1,4 +1,4 @@
-module github.com/disksing/forge
+module github.com/disksing/pua
 
 go 1.22
 

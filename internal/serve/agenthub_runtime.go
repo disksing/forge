@@ -16,7 +16,7 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 		return config{}, nil, err
 	}
 	if cfg.Version < agentHubConfigVersion {
-		return config{}, nil, errors.New("Forge chat requires current AgentHub settings; save AgentHub settings before starting a new run")
+		return config{}, nil, errors.New("PUA chat requires current AgentHub settings; save AgentHub settings before starting a new run")
 	}
 	if strings.TrimSpace(cfg.AgentHubInstanceID) == "" {
 		return config{}, nil, errors.New("AgentHub instance id is not configured")
@@ -32,10 +32,10 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 	return cfg, client, nil
 }
 
-// validateAgentHubRunAgent runs before Forge creates a session or changes the
+// validateAgentHubRunAgent runs before PUA creates a session or changes the
 // task. AgentHub may reject an unavailable configured target during session
 // creation, but validating against the catalog first prevents an unavailable
-// selection from leaving a Forge lock behind.
+// selection from leaving a PUA lock behind.
 func validateAgentHubRunAgent(ctx context.Context, client *agentHubClient, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
@@ -223,7 +223,7 @@ func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
 	}
 }
 
-// releaseForgeSessionAfterStopped synchronously removes the transient Forge
+// releaseForgeSessionAfterStopped synchronously removes the transient PUA
 // session record before reporting success to a caller. Background poller and
 // recovery paths may call the same function; the mutex makes those calls
 // idempotent without racing a close response or a second poll.
@@ -239,7 +239,7 @@ func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) error {
 	}
 	sessionID := strings.TrimSpace(run.ForgeSessionID)
 	if err := m.endForgeSession(context.Background(), rt.workspace, sessionID); err != nil {
-		releaseErr := fmt.Errorf("durable stopped observed but Forge session release failed: %w", err)
+		releaseErr := fmt.Errorf("durable stopped observed but PUA session release failed: %w", err)
 		rt.addForgeNotice(m, "error", "forge/session/end", releaseErr.Error())
 		return releaseErr
 	}
@@ -254,14 +254,14 @@ func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) error {
 		}
 		rt.mu.Unlock()
 		if err != nil {
-			releaseErr := fmt.Errorf("durable stopped observed but Forge run cleanup could not be persisted: %w", err)
+			releaseErr := fmt.Errorf("durable stopped observed but PUA run cleanup could not be persisted: %w", err)
 			rt.addForgeNotice(m, "error", "forge/run/save", releaseErr.Error())
 			return releaseErr
 		}
 		return nil
 	}
 	rt.mu.Unlock()
-	// A resume or another lifecycle transition replaced this Forge session while
+	// A resume or another lifecycle transition replaced this PUA session while
 	// the idempotent release was in flight. Never overwrite the newer runtime projection.
 	return nil
 }
@@ -360,7 +360,7 @@ func (m *agentManager) interruptRunLocked(ctx context.Context, workspaceID strin
 	}
 	currentSession, err := m.interruptibleAgentHubSession(ctx, run, client)
 	if err != nil {
-		// A failed read leaves the current turn unknown. Retain the Forge and
+		// A failed read leaves the current turn unknown. Retain the PUA and
 		// AgentHub sessions and let reconciliation establish the next state;
 		// do not guess and send a non-idempotent interrupt.
 		recoveryErr := fmt.Errorf("AgentHub turn state could not be confirmed; interrupt was not sent: %w", err)
@@ -399,7 +399,7 @@ func (e *agentHubTurnConflictError) Error() string {
 
 // interruptibleAgentHubSession re-reads the AgentHub projection immediately
 // before the non-idempotent interrupt. This closes the stale-page window and
-// refuses to act on a session that no longer belongs to this Forge run.
+// refuses to act on a session that no longer belongs to this PUA run.
 func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run agentRun, client *agentHubClient) (agentHubSession, error) {
 	cfg, _, err := m.agentHubRuntimeConfig()
 	if err != nil {
@@ -413,7 +413,7 @@ func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run age
 	expectedExternalID := strings.TrimSpace(run.SourceExternalID)
 	if source == nil || source.App != agentHubSourceApp || source.InstanceID != runSourceInstanceID(cfg, run) ||
 		expectedExternalID == "" || source.ExternalID != expectedExternalID {
-		return agentHubSession{}, &agentHubTurnConflictError{message: "AgentHub session does not belong to the current Forge run"}
+		return agentHubSession{}, &agentHubTurnConflictError{message: "AgentHub session does not belong to the current PUA run"}
 	}
 	if strings.TrimSpace(session.ID) == "" || session.ID != strings.TrimSpace(run.AgentHubSessionID) {
 		return agentHubSession{}, &agentHubTurnConflictError{message: "AgentHub session identity changed before interrupt"}
@@ -611,7 +611,7 @@ func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config,
 	rt := newAgentHubRuntime(m, workspace, run, client)
 	// Let applyAgentHubSessionState compare the recovered state with the
 	// persisted projection. This preserves a running -> ready/stopped edge across
-	// a Forge restart instead of treating recovery as a fresh idle baseline.
+	// a PUA restart instead of treating recovery as a fresh idle baseline.
 	rt.agentHubState = agentHubStateForForgeStatus(previousStatus)
 	m.registerRuntime(rt)
 	if strings.TrimSpace(run.ForgeSessionID) == "" && activeAgentHubSessionState(session.State) {
@@ -655,7 +655,7 @@ func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config,
 	}
 	if session.State == "archived" {
 		// The service missed the stopped edge while it was down. Release the
-		// Forge session only when the archived session provably passed
+		// PUA session only when the archived session provably passed
 		// through durable stopped; anything else keeps failing closed. Runs
 		// asynchronously so a long event replay never blocks startup.
 		_ = m.enqueueRuntimeOperation(rt, func() {

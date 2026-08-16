@@ -1,10 +1,10 @@
-package forge
+package pua
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 // The CLI remains responsible for parsing flags and selecting the enclosing
@@ -232,13 +232,18 @@ func applicationInit(language string) error {
 	return nil
 }
 
-func applicationMigrate(language string) error {
+func applicationMigrate(language string, renameStorage bool) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
 	if err := workspace.Migrate(language); err != nil {
 		return err
+	}
+	if renameStorage {
+		if err := workspace.RenameControlDir(); err != nil {
+			return err
+		}
 	}
 	fmt.Printf("migrated AgentWorkspace at %s\n", workspace.Root())
 	return nil

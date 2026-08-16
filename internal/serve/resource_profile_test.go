@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func TestResolveResourceAgentPreservesMissingBindingAndUsesTypedFallback(t *testing.T) {

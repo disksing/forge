@@ -1,4 +1,3 @@
-// Command forge is the compatibility entry point for the renamed pua CLI.
 package main
 
 import (
@@ -10,7 +9,7 @@ import (
 
 func main() {
 	if err := pua.Run(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "forge: %v\n", err)
+		fmt.Fprintf(os.Stderr, "pua: %v\n", err)
 		if exitErr, ok := err.(interface{ ExitCode() int }); ok {
 			os.Exit(exitErr.ExitCode())
 		}

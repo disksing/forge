@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"encoding/json"
@@ -10,17 +10,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	templateListUsage     = "usage: forge template list [--project=<project>] [--json]"
-	templateShowUsage     = "usage: forge template show [--project=<project>] [--json|--raw|--schema] <name>"
-	templateValidateUsage = "usage: forge template validate [--project=<project>] [<name>|--all] [--json]"
-	templateRenderUsage   = "usage: forge template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>"
-	templateCreateUsage   = "usage: forge template create [--project=<project>] [--title=<title>] <name>"
-	templateMigrateUsage  = "usage: forge template migrate [--project=<project>] [<name>|--all] [--write] [--json]"
+	templateListUsage     = "usage: pua template list [--project=<project>] [--json]"
+	templateShowUsage     = "usage: pua template show [--project=<project>] [--json|--raw|--schema] <name>"
+	templateValidateUsage = "usage: pua template validate [--project=<project>] [<name>|--all] [--json]"
+	templateRenderUsage   = "usage: pua template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>"
+	templateCreateUsage   = "usage: pua template create [--project=<project>] [--title=<title>] <name>"
+	templateMigrateUsage  = "usage: pua template migrate [--project=<project>] [<name>|--all] [--write] [--json]"
 )
 
 type templateCLIOptions struct {

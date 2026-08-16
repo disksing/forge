@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func doctorAgentHub(t *testing.T) *httptest.Server {

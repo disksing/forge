@@ -1,21 +1,21 @@
-package forge
+package pua
 
 import (
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/disksing/forge/internal/app"
-	"github.com/disksing/forge/internal/buildinfo"
-	"github.com/disksing/forge/internal/serve"
+	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/buildinfo"
+	"github.com/disksing/pua/internal/serve"
 )
 
 const (
-	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]"
-	taskListUsage      = "usage: forge task list [--project=<project>] [--all]"
-	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
-	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
+	projectCreateUsage = "usage: pua project create [--slug <slug>] <description>"
+	taskCreateUsage    = "usage: pua task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]"
+	taskListUsage      = "usage: pua task list [--project=<project>] [--all]"
+	taskShowUsage      = "usage: pua task show [--project=<project>] [--task=<task>]"
+	taskArchiveUsage   = "usage: pua task archive [--project=<project>] [--task=<task>]"
 )
 
 type createResourceOptions struct {
@@ -37,9 +37,9 @@ func Run(args []string) error {
 	switch args[0] {
 	case "--version":
 		if len(args) != 1 {
-			return errors.New("usage: forge --version")
+			return errors.New("usage: pua --version")
 		}
-		fmt.Print(buildinfo.Text("forge"))
+		fmt.Print(buildinfo.Text("pua"))
 		return nil
 	case "init":
 		return runInit(args[1:])
@@ -87,7 +87,7 @@ func runResource(args []string) error {
 	switch args[0] {
 	case "archive":
 		if len(args) != 2 || !strings.HasPrefix(args[1], "--id=") {
-			return errors.New("usage: forge resource archive --id=<resource>")
+			return errors.New("usage: pua resource archive --id=<resource>")
 		}
 		id := strings.TrimSpace(strings.TrimPrefix(args[1], "--id="))
 		if id == "" {
@@ -114,7 +114,7 @@ func runWorkspace(args []string) error {
 		return runWorkspaceHistory(args[1:])
 	case "tree":
 		if len(args) != 2 || args[1] != "--json" {
-			return errors.New("usage: forge workspace tree --json")
+			return errors.New("usage: pua workspace tree --json")
 		}
 		return workspaceTreeJSON()
 	case "resource":
@@ -141,7 +141,7 @@ func runRepo(args []string) error {
 		return repoAdd(args[1:])
 	case "list":
 		if len(args) != 1 {
-			return errors.New("usage: forge repo list")
+			return errors.New("usage: pua repo list")
 		}
 		return repoList()
 	default:
@@ -190,7 +190,7 @@ func runProject(args []string) error {
 		}
 		return applicationArchiveResource(projectID)
 	case "repo":
-		return errors.New("projects do not manage repositories or worktrees; use forge task repo <subcommand> [--project=<project>] [--task=<task>] ...")
+		return errors.New("projects do not manage repositories or worktrees; use pua task repo <subcommand> [--project=<project>] [--task=<task>] ...")
 	default:
 		return fmt.Errorf("unknown project subcommand %q", args[0])
 	}
@@ -221,7 +221,7 @@ func runTask(args []string) error {
 				return err
 			}
 			if !ok {
-				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
+				return errors.New("could not infer current project; use pua task create --project=<project> <title>")
 			}
 		}
 		workspace, err := openApplicationWorkspace()
@@ -299,90 +299,91 @@ func runMigrate(args []string) error {
 }
 
 func printUsage() {
-	fmt.Print(`forge manages a local AgentWorkspace.
+	fmt.Print(`pua manages a local AgentWorkspace.
 
-How Forge works:
+How PUA works:
   All workspace data lives on the filesystem as project/task directories,
   JSON/Markdown files, resource History, artifacts, and task worktrees. Agents may inspect
   other resources, but write only the Workspace files owned by their starting
-  resource and its task worktrees. The web service is provided by forge serve.
+  resource and its task worktrees. The web service is provided by pua serve.
 
 Usage:
-  forge --version
-  forge init [--language=<language>]
-  forge migrate [--language=<language>]
-  forge doctor [--json] [--server=<url>]
-  forge repo <command>
-  forge project <command>
-  forge task <command>
-  forge scheduler <command>
-  forge template <command>
-  forge agent <command>
-  forge workspace <command>
-  forge resource <command>
-  forge message <command>
-  forge history <command>
-  forge serve [--addr=<address>] [--workspace=<path>] [--version]
-  forge help [<command>]
+  pua --version
+  pua init [--language=<language>]
+  pua migrate [--language=<language>] [--rename-storage]
+  pua doctor [--json] [--server=<url>]
+  pua repo <command>
+  pua project <command>
+  pua task <command>
+  pua scheduler <command>
+  pua template <command>
+  pua agent <command>
+  pua workspace <command>
+  pua resource <command>
+  pua message <command>
+  pua history <command>
+  pua serve [--addr=<address>] [--workspace=<path>] [--version]
+  pua help [<command>]
 
 Commands:
-  forge --version
+  pua --version
     Print the build-time branch and sha.
 
-  forge init [--language=<language>]
+  pua init [--language=<language>]
     Initialize the current directory as a new AgentWorkspace. Fails when run
     from inside an existing workspace. Supported languages: en, zh-CN.
 
-  forge migrate [--language=<language>]
-    Refresh forge-managed AGENTS.md blocks and migrate legacy task/resource
+  pua migrate [--language=<language>] [--rename-storage]
+    Refresh pua-managed AGENTS.md blocks and migrate legacy task/resource
     history before removing obsolete files. Pass --language to switch between
-    en and zh-CN.
+    en and zh-CN. Pass --rename-storage to atomically rename an existing
+    .forge control directory to .pua while the Workspace service is stopped.
 
-  forge doctor [--json] [--server=<url>]
+  pua doctor [--json] [--server=<url>]
     Inspect open Workspace data and Agent bindings without changing them.
 
-  forge repo <command>
+  pua repo <command>
     Manage repositories known to the workspace. Subcommands: add, list.
 
-  forge project <command>
+  pua project <command>
     Manage projects. Subcommands: create, list, show, archive, status, history.
 
-  forge task <command>
+  pua task <command>
     Manage tasks. Subcommands: create, list, show, archive, status, history,
     repo.
 
-  forge scheduler <command>
+  pua scheduler <command>
     Manage natural-language schedules. Subcommands: list, show, add, update,
     remove.
 
-  forge template <command>
+  pua template <command>
     Manage project-local content templates. Subcommands: list, show, validate,
     render, create, migrate.
 
-  forge agent <command>
-    Query the AgentHub agent catalog through the owning forge serve process.
+  pua agent <command>
+    Query the AgentHub agent catalog through the owning pua serve process.
     Subcommands: list.
 
-  forge workspace <command>
+  pua workspace <command>
     Query workspace state. Subcommands: status, history, tree, resource.
 
-  forge resource <command>
+  pua resource <command>
     Manage resources. Subcommands: archive.
 
-  forge message <command>
+  pua message <command>
     Send and inspect mailbox messages. Subcommands: send, show.
 
-  forge history <command>
+  pua history <command>
     Read resource conversation history. Subcommands: turn show, event show.
 
-  forge serve [--addr=<address>] [--workspace=<path>] [--version]
-    Start the Forge web service: Workspace API, AgentHub session orchestration
+  pua serve [--addr=<address>] [--workspace=<path>] [--version]
+    Start the PUA web service: Workspace API, AgentHub session orchestration
     and recovery, and the static web UI.
 
-  forge help [<command>]
-    Show help for forge or one of its subcommands.
+  pua help [<command>]
+    Show help for pua or one of its subcommands.
 
-Use "forge help <command>" to see the subcommands of <command>.
+Use "pua help <command>" to see the subcommands of <command>.
 `)
 }
 
@@ -392,7 +393,7 @@ func runHelp(args []string) error {
 		return nil
 	}
 	if len(args) != 1 {
-		return errors.New("usage: forge help [<command>]")
+		return errors.New("usage: pua help [<command>]")
 	}
 	switch args[0] {
 	case "init":
@@ -433,10 +434,10 @@ func isHelpCommand(arg string) bool {
 
 func printInitHelp() {
 	fmt.Print(`Usage:
-  forge init [--language=<language>]
+  pua init [--language=<language>]
 
 Commands:
-  forge init [--language=<language>]
+  pua init [--language=<language>]
     Initialize the current directory as a new AgentWorkspace. Fails when run
     from inside an existing workspace. Supported languages: en, zh-CN.
 `)
@@ -444,71 +445,72 @@ Commands:
 
 func printMigrateHelp() {
 	fmt.Print(`Usage:
-  forge migrate [--language=<language>]
+  pua migrate [--language=<language>] [--rename-storage]
 
 Commands:
-  forge migrate [--language=<language>]
-    Refresh forge-managed AGENTS.md blocks and migrate legacy task/resource
+  pua migrate [--language=<language>] [--rename-storage]
+    Refresh pua-managed AGENTS.md blocks and migrate legacy task/resource
     history before removing obsolete files. Pass --language to switch between
-    en and zh-CN.
+    en and zh-CN. Pass --rename-storage to atomically rename an existing
+    .forge control directory to .pua while the Workspace service is stopped.
 `)
 }
 
 func printRepoHelp() {
 	fmt.Print(`Usage:
-  forge repo add [--bare] <name> <url>
-  forge repo list
+  pua repo add [--bare] <name> <url>
+  pua repo list
 
 Commands:
-  forge repo add [--bare] <name> <url>
+  pua repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
-    include path segments, for example disksing/forge. Use --bare to clone into
+    include path segments, for example disksing/pua. Use --bare to clone into
     repos/<name>.git as a bare repository.
 
-  forge repo list
+  pua repo list
     List repositories known to the workspace.
 `)
 }
 
 func printProjectHelp() {
 	fmt.Print(`Usage:
-  forge project create [--slug <slug>] <description>
-  forge project list [--all]
-  forge project show [--project=<project>]
-  forge project archive [--project=<project>]
-  forge project status [--project=<project>] [--server=<url>]
-  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  pua project create [--slug <slug>] <description>
+  pua project list [--all]
+  pua project show [--project=<project>]
+  pua project archive [--project=<project>]
+  pua project status [--project=<project>] [--server=<url>]
+  pua project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
 
 Commands:
-  forge project create [--slug <slug>] <description>
+  pua project create [--slug <slug>] <description>
     Create the next top-level project directory, including project.json,
     project.md, artifacts/, templates/, and project-local AGENTS.md. Conversation
     history is created lazily through resource History.
     Use --slug <slug> to append a human-readable suffix to the directory name.
     Creation is local and does not create a generation or send a message.
 
-  forge project list [--all]
+  pua project list [--all]
     List open projects. Use --all to include archived projects.
 
-  forge project show [--project=<project>]
+  pua project show [--project=<project>]
     Print a project's project.json as formatted JSON. <project> may be a full
-    id such as project22 or just a number such as 22. When omitted, Forge uses
+    id such as project22 or just a number such as 22. When omitted, PUA uses
     the project containing the current working directory.
 
-  forge project archive [--project=<project>]
+  pua project archive [--project=<project>]
     Move a project into workspace archive/. <project> may be a full id such as
-    project22 or just a number such as 22. When omitted, Forge uses the project
+    project22 or just a number such as 22. When omitted, PUA uses the project
     containing the current working directory.
 
-  forge project status [--project=<project>] [--server=<url>]
-    Query the owning forge serve process for the project's public resource
+  pua project status [--project=<project>] [--server=<url>]
+    Query the owning pua serve process for the project's public resource
     state and generation status, message counts, waiting messages, steer
     capability, and recent delivery error. <project> follows the same rules as
-    forge project show.
+    pua project show.
 
-  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  pua project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
     Read one bounded newest-first page of the project's long-lived conversation
-    through the owning forge serve process. Results are grouped into ordered
+    through the owning pua serve process. Results are grouped into ordered
     generation segments. Explicit gap segments identify missing, unavailable, or
     damaged AgentHub history without hiding older generations. The default
     output is formatted text; use --json for the complete structured response.
@@ -517,16 +519,16 @@ Commands:
 
 func printTaskHelp() {
 	fmt.Print(`Usage:
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]
-  forge task list [--project=<project>] [--all]
-  forge task show [--project=<project>] [--task=<task>]
-  forge task archive [--project=<project>] [--task=<task>]
-  forge task status [--project=<project>] [--task=<task>] [--server=<url>]
-  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-  forge task repo <command>
+  pua task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]
+  pua task list [--project=<project>] [--all]
+  pua task show [--project=<project>] [--task=<task>]
+  pua task archive [--project=<project>] [--task=<task>]
+  pua task status [--project=<project>] [--task=<task>] [--server=<url>]
+  pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  pua task repo <command>
 
 Commands:
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
+  pua task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, artifacts/, worktree/,
     and task-local AGENTS.md. Conversation history is created lazily through
@@ -534,40 +536,40 @@ Commands:
     --detail initializes the Background section in the default task.md scaffold.
     --task-markdown writes the complete task.md file and is mutually exclusive
     with --detail. <project> may be a full id such as project22 or just a number
-    such as 22. When omitted, Forge uses the project containing the current
-    working directory. Send the first message separately with forge message
+    such as 22. When omitted, PUA uses the project containing the current
+    working directory. Send the first message separately with pua message
     send; that delivery creates a generation lazily. If CLI output is ambiguous,
     query before attempting another create.
 
-  forge task list [--project=<project>] [--all]
+  pua task list [--project=<project>] [--all]
     List open tasks in a project. Use --all to include archived tasks.
     <project> may be a full id such as project22 or just a number such as 22.
-    When omitted, Forge uses the project containing the current working
+    When omitted, PUA uses the project containing the current working
     directory.
 
-  forge task show [--project=<project>] [--task=<task>]
+  pua task show [--project=<project>] [--task=<task>]
     Print a task's task.json as formatted JSON. <task> may be a short id such
-    as task4, or just a number such as 4. Forge combines it with --project when
+    as task4, or just a number such as 4. PUA combines it with --project when
     provided, otherwise the current directory's project. When <task> is omitted,
-    Forge uses the task containing the current working directory.
+    PUA uses the task containing the current working directory.
 
-  forge task archive [--project=<project>] [--task=<task>]
+  pua task archive [--project=<project>] [--task=<task>]
     Move an open task into its project archive. <task> follows the same rules
-    as forge task show.
+    as pua task show.
 
-  forge task status [--project=<project>] [--task=<task>] [--server=<url>]
-    Query the owning forge serve process for the task's public resource state
+  pua task status [--project=<project>] [--task=<task>] [--server=<url>]
+    Query the owning pua serve process for the task's public resource state
     and generation status, message counts, waiting messages, steer capability,
-    and recent delivery error. Task selection follows forge task show.
+    and recent delivery error. Task selection follows pua task show.
 
-  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
     Read one bounded newest-first page of the task's long-lived conversation
-    through the owning forge serve process. Results are grouped into ordered
+    through the owning pua serve process. Results are grouped into ordered
     generation segments. Explicit gap segments identify missing, unavailable, or
     damaged AgentHub history without hiding older generations. The default
     output is formatted text; use --json for the complete structured response.
 
-  forge task repo <command>
+  pua task repo <command>
     Manage repositories recorded in a task's task.json. Subcommands: add, list,
     remove.
 `)
@@ -575,65 +577,65 @@ Commands:
 
 func printTaskRepoHelp() {
 	fmt.Print(`Usage:
-  forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-  forge task repo list [--project=<project>] [--task=<task>]
-  forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+  pua task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
+  pua task repo list [--project=<project>] [--task=<task>]
+  pua task repo remove [--project=<project>] [--task=<task>] <repo-name>
 
 Commands:
-  forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-    Add or update a repository entry in a task's task.json. By default, forge
+  pua task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
+    Add or update a repository entry in a task's task.json. By default, pua
     records repos/<repo-name> and <task>/worktree/<repo-leaf>. Optional flags
     let agents record the actual worktree path and branch metadata. Task
-    selection follows forge task show.
+    selection follows pua task show.
 
-  forge task repo list [--project=<project>] [--task=<task>]
+  pua task repo list [--project=<project>] [--task=<task>]
     List repositories recorded in a task's task.json. Task selection follows
-    forge task show.
+    pua task show.
 
-  forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+  pua task repo remove [--project=<project>] [--task=<task>] <repo-name>
     Remove a repository entry from a task's task.json. Task selection follows
-    forge task show.
+    pua task show.
 `)
 }
 
 func printSchedulerHelp() {
 	fmt.Print(`Usage:
-  forge scheduler list [--json]
-  forge scheduler show --id=<schedule>
-  forge scheduler add --description=<text> --condition=<text> --target=<resource>
-  forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
-  forge scheduler remove --id=<schedule>
+  pua scheduler list [--json]
+  pua scheduler show --id=<schedule>
+  pua scheduler add --description=<text> --condition=<text> --target=<resource>
+  pua scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+  pua scheduler remove --id=<schedule>
 
 Commands:
-  forge scheduler list [--json]
+  pua scheduler list [--json]
     List schedules. Use --json for structured output.
 
-  forge scheduler show --id=<schedule>
+  pua scheduler show --id=<schedule>
     Print one schedule as JSON.
 
-  forge scheduler add --description=<text> --condition=<text> --target=<resource>
+  pua scheduler add --description=<text> --condition=<text> --target=<resource>
     Create a natural-language schedule. <resource> is a stable resource id such
     as workspace or project1.task1.
 
-  forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+  pua scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
     Update one or more fields of an existing schedule.
 
-  forge scheduler remove --id=<schedule>
+  pua scheduler remove --id=<schedule>
     Remove a schedule.
 `)
 }
 
 func printTemplateHelp() {
 	fmt.Print(`Usage:
-  forge template list [--project=<project>] [--json]
-  forge template show [--project=<project>] [--json|--raw|--schema] <name>
-  forge template validate [--project=<project>] [<name>|--all] [--json]
-  forge template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>
-  forge template create [--project=<project>] [--title=<title>] <name>
-  forge template migrate [--project=<project>] [<name>|--all] [--write] [--json]
+  pua template list [--project=<project>] [--json]
+  pua template show [--project=<project>] [--json|--raw|--schema] <name>
+  pua template validate [--project=<project>] [<name>|--all] [--json]
+  pua template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>
+  pua template create [--project=<project>] [--title=<title>] <name>
+  pua template migrate [--project=<project>] [<name>|--all] [--write] [--json]
 
 Commands:
-  forge template list|show|validate|render|create|migrate ...
+  pua template list|show|validate|render|create|migrate ...
     Manage project-local schema V2 content templates. Templates declare typed
     fields and deterministic title/Markdown rendering. list and validate
     include invalid templates. show defaults to metadata, field requirements,
@@ -646,30 +648,30 @@ Commands:
 
 func printWorkspaceHelp() {
 	fmt.Print(`Usage:
-  forge workspace status [--server=<url>]
-  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-  forge workspace tree --json
-  forge workspace resource --id=<resource> --json
+  pua workspace status [--server=<url>]
+  pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  pua workspace tree --json
+  pua workspace resource --id=<resource> --json
 
 Commands:
-  forge workspace status [--server=<url>]
-    Query the owning forge serve process for the Workspace's public resource
+  pua workspace status [--server=<url>]
+    Query the owning pua serve process for the Workspace's public resource
     state and generation status, message counts, waiting messages, steer
     capability, and recent delivery error.
 
-  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
     Read one bounded newest-first page of the Workspace's long-lived
-    conversation through the owning forge serve process. Results are grouped
+    conversation through the owning pua serve process. Results are grouped
     into ordered generation segments. Explicit gap segments identify missing,
     unavailable, or damaged AgentHub history without hiding older generations.
     The default output is formatted text; use --json for the complete structured
     response.
 
-  forge workspace tree --json
+  pua workspace tree --json
     Print a lightweight JSON tree of open projects, open tasks, and resource
     runtime state for web and tool integrations.
 
-  forge workspace resource --id=<resource> --json
+  pua workspace resource --id=<resource> --json
     Print detail JSON for one project or task, including common Markdown files,
     artifacts, worktrees, and task repository metadata.
 `)
@@ -677,44 +679,45 @@ Commands:
 
 func printResourceHelp() {
 	fmt.Print(`Usage:
-  forge resource archive --id=<resource>
+  pua resource archive --id=<resource>
 
 Commands:
-  forge resource archive --id=<resource>
+  pua resource archive --id=<resource>
     Archive the resource identified by <resource>, for example project1.task1.
 `)
 }
 
 func printMessageHelp() {
 	fmt.Print(`Usage:
-  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
-  forge message show --id=<message-id> [--server=<url>]
+  pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
+  pua message show --id=<message-id> [--server=<url>]
 
 Commands:
-  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
-    Persist a message in the target resource mailbox through the owning forge
+  pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
+    Persist a message in the target resource mailbox through the owning pua
     serve process. steer is the default. A message that actually opens a Turn
     subscribes to its result by default; a message delivered as steer into an
     existing Turn does not. Pass --subscribe-result=false to disable the opener
     result. The current directory's stable work-subject id and Workspace
-    instance id are sent as role=agent provenance. A valid injected Forge
+    instance id are sent as role=agent provenance. A valid injected PUA
     resource environment takes precedence over cwd; provenance is not
     authentication or instruction priority.
 
-  forge message show --id=<message-id> [--server=<url>]
+  pua message show --id=<message-id> [--server=<url>]
     Query the current delivery record for a stable mailbox message id. Status
-    and message commands discover the owner from <workspace>/.forge/serve.lock;
+    and message commands discover the owner from the Workspace control
+    directory (.pua/serve.lock, or legacy .forge/serve.lock);
     --server explicitly overrides its diagnostic address.
 `)
 }
 
 func printHistoryHelp() {
 	fmt.Print(`Usage:
-  forge history turn show --ref=<reference> [--server=<url>] [--json]
-  forge history event show --ref=<reference> [--server=<url>] [--json]
+  pua history turn show --ref=<reference> [--server=<url>] [--json]
+  pua history event show --ref=<reference> [--server=<url>] [--json]
 
 Commands:
-  forge history turn|event show --ref=<reference> [--server=<url>] [--json]
+  pua history turn|event show --ref=<reference> [--server=<url>] [--json]
     Expand a stable opaque reference returned by a resource history page or Turn
     detail. Turn details contain complete compact messages and Event ranges;
     Event details read one canonical AgentHub Event on demand. Neither command
@@ -967,11 +970,11 @@ func parseProjectListArgs(args []string) (taskListOptions, error) {
 		switch arg {
 		case "--all":
 			if options.IncludeArchived {
-				return taskListOptions{}, errors.New("usage: forge project list [--all]")
+				return taskListOptions{}, errors.New("usage: pua project list [--all]")
 			}
 			options.IncludeArchived = true
 		default:
-			return taskListOptions{}, errors.New("usage: forge project list [--all]")
+			return taskListOptions{}, errors.New("usage: pua project list [--all]")
 		}
 	}
 	return options, nil
@@ -990,13 +993,13 @@ func resolveProjectArg(args []string, command string) (string, error) {
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("could not infer current project; use forge project %s --project=<project>", command)
+		return "", fmt.Errorf("could not infer current project; use pua project %s --project=<project>", command)
 	}
 	return inferred, nil
 }
 
 func parseProjectArg(args []string, command string) (string, error) {
-	usage := fmt.Sprintf("usage: forge project %s [--project=<project>]", command)
+	usage := fmt.Sprintf("usage: pua project %s [--project=<project>]", command)
 	var project string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -1044,7 +1047,7 @@ func resolveTaskListArgs(args []string) (taskListOptions, error) {
 		return taskListOptions{}, err
 	}
 	if !ok {
-		return taskListOptions{}, errors.New("could not infer current project; use forge task list --project=<project>")
+		return taskListOptions{}, errors.New("could not infer current project; use pua task list --project=<project>")
 	}
 	return taskListOptions{ProjectID: inferred, IncludeArchived: includeArchived}, nil
 }
@@ -1060,7 +1063,7 @@ func resolveTaskArg(args []string, command string) (string, error) {
 			return "", err
 		}
 		if !ok {
-			return "", fmt.Errorf("could not infer current task; use forge task %s --task=<task>", command)
+			return "", fmt.Errorf("could not infer current task; use pua task %s --task=<task>", command)
 		}
 		return inferred, nil
 	}

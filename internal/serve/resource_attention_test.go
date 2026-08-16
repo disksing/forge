@@ -10,7 +10,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func attentionTestServer(t *testing.T) (*server, string) {

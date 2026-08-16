@@ -21,7 +21,7 @@ func normalizeLanguage(language string) (string, error) {
 	}
 }
 
-// NormalizeLanguage returns Forge's canonical language identifier.
+// NormalizeLanguage returns PUA's canonical language identifier.
 func NormalizeLanguage(language string) (string, error) {
 	return normalizeLanguage(language)
 }
@@ -150,9 +150,9 @@ const workspaceAgentsPromptZH = `# AgentWorkspace Agent 工作指引
 
 你运行在用户的本机上，由 AgentHub 托管。AgentHub 负责启动 Agent、保持会话并记录执行事件。
 
-当前目录属于一个由 Forge 管理的 AgentWorkspace。Forge 用本地目录保存 Project、Task、文档、产物和代码 worktree，并通过 Forge Server 管理资源状态、消息、历史记录和 Agent 会话。
+当前目录属于一个由 PUA 管理的 AgentWorkspace。PUA 用本地目录保存 Project、Task、文档、产物和代码 worktree，并通过 PUA Server 管理资源状态、消息、历史记录和 Agent 会话。
 
-Workspace、Project、Task 和 Scheduler 都是长期存在的资源。每个资源由自己的 Agent 持续跟踪；底层会话可能变化，但资源 ID 和历史记录保持不变。日常工作使用 Forge 资源，不需要直接操作 AgentHub Session。
+Workspace、Project、Task 和 Scheduler 都是长期存在的资源。每个资源由自己的 Agent 持续跟踪；底层会话可能变化，但资源 ID 和历史记录保持不变。日常工作使用 PUA 资源，不需要直接操作 AgentHub Session。
 
 ## 2. 开始工作
 
@@ -160,7 +160,7 @@ Workspace、Project、Task 和 Scheduler 都是长期存在的资源。每个资
 
 正常情况下，Agent 启动工作目录内的 AGENTS.md 会说明你处于 Workspace、Project、Task 还是 Scheduler，以及还需要读取哪些上级指引和资源文件。
 
-如果不清楚自己在哪里，可以检查当前工作目录，并参考 FORGE_RESOURCE_ID。Forge 通常还会注入 FORGE_WORKSPACE_ROOT 和 FORGE_WORKSPACE_INSTANCE_ID。这些变量用于辅助识别当前环境，也用于发送 Agent 消息时标识当前资源。
+如果不清楚自己在哪里，可以检查当前工作目录，并参考 PUA_RESOURCE_ID。PUA 通常还会注入 PUA_WORKSPACE_ROOT 和 PUA_WORKSPACE_INSTANCE_ID。这些变量用于辅助识别当前环境，也用于发送 Agent 消息时标识当前资源。
 
 根据资源类型读取上下文：
 
@@ -172,9 +172,9 @@ Workspace、Project、Task 和 Scheduler 都是长期存在的资源。每个资
 也可以使用：
 
 ~~~sh
-forge project show --project=<project>
-forge task show --project=<project> --task=<task>
-forge workspace resource --id=<resource> --json
+pua project show --project=<project>
+pua task show --project=<project> --task=<task>
+pua workspace resource --id=<resource> --json
 ~~~
 
 ### 查看近期历史
@@ -182,16 +182,16 @@ forge workspace resource --id=<resource> --json
 开始新的工作时，读取少量近期 History，了解之前做到哪里：
 
 ~~~sh
-forge workspace history --limit=20
-forge project history --project=<project> --limit=20
-forge task history --project=<project> --task=<task> --limit=20
+pua workspace history --limit=20
+pua project history --project=<project> --limit=20
+pua task history --project=<project> --task=<task> --limit=20
 ~~~
 
 需要更多细节时，再展开相关 Turn 或 Event：
 
 ~~~sh
-forge history turn show --ref=<turn-ref>
-forge history event show --ref=<event-ref>
+pua history turn show --ref=<turn-ref>
+pua history event show --ref=<event-ref>
 ~~~
 
 History 会跨越多次 Agent 会话。使用命令返回的引用继续查询，不要使用 AgentHub Session ID。
@@ -201,11 +201,11 @@ History 会跨越多次 Agent 会话。使用命令返回的引用继续查询�
 同一个 Session 中可能出现来自不同角色的消息。处理每条消息时，都要根据消息来源重新判断当前对话对象，不要沿用上一条消息的角色判断；再根据当前对象调整表达方式和语气：
 
 - 用户消息：使用自然、友好的表达，站在用户的理解角度说明结果、问题和取舍；重大范围变化需要用户确认。
-- Agent 消息：把对方当作协作者，表达可以更直接、结构化，重点说清上下文、行动和结果。如果这条消息开启了当前 Turn，在当前 Turn 的 final response 中返回结果；如果 Turn 运行期间收到的 steer 消息需要单独回复，则主动通过 Forge 发送消息。
+- Agent 消息：把对方当作协作者，表达可以更直接、结构化，重点说清上下文、行动和结果。如果这条消息开启了当前 Turn，在当前 Turn 的 final response 中返回结果；如果 Turn 运行期间收到的 steer 消息需要单独回复，则主动通过 PUA 发送消息。
 - Scheduler 消息：关注 schedule ID、触发原因和是否可能重复，回复以执行结果和后续调度需要的信息为主。
 - 系统通知：根据其中的结果或引用继续处理，不把它当成新的用户要求。
 
-消息来源只用于了解上下文，本身不代表权限。Forge 约定冲突时，一般按下面的顺序理解：
+消息来源只用于了解上下文，本身不代表权限。PUA 约定冲突时，一般按下面的顺序理解：
 
 1. 当前用户会话；
 2. 当前 Agent 协作消息；
@@ -219,7 +219,7 @@ History 会跨越多次 Agent 会话。使用命令返回的引用继续查询�
 
 - 直接完成工作：在当前范围内调查、实现、验证并交付。
 - 讨论或制定方案：先了解情况，给出方案和取舍，等相关方确认后再进入约定中的下一阶段。
-- Forge 管理工作：使用 Forge CLI 创建、查询或归档资源，管理模板、仓库或调度项。
+- PUA 管理工作：使用 PUA CLI 创建、查询或归档资源，管理模板、仓库或调度项。
 - Agent 协作：查看其他资源并发送消息，不直接修改对方文件。
 - 长时间等待：使用 Scheduler，避免一直占用当前会话轮询。
 
@@ -234,22 +234,22 @@ Workspace 的长期知识保存在 wiki/。先读 wiki/index.md，再选择与�
 - repos/ 是共享源码目录，只用于查询和创建 worktree，不得直接修改；
 - 任何代码修改都必须在 Task 自己的 worktree/ 中进行；
 - 创建 worktree 时，目标使用当前 Task worktree/ 下的绝对路径；
-- 使用 forge task repo add/list/remove 登记 Task 使用的仓库和 worktree。
+- 使用 pua task repo add/list/remove 登记 Task 使用的仓库和 worktree。
 
 ### 其他资源
 
 可以只读查看其他 Project 或 Task：
 
 ~~~sh
-forge workspace tree --json
-forge workspace resource --id=<resource> --json
-forge task status --project=<project> --task=<task>
-forge task history --project=<project> --task=<task> --limit=20
+pua workspace tree --json
+pua workspace resource --id=<resource> --json
+pua task status --project=<project> --task=<task>
+pua task history --project=<project> --task=<task> --limit=20
 ~~~
 
 也可以读取对方的 JSON、Markdown 和 artifacts/。需要对方修改内容时，给对方 Agent 发消息。
 
-在消息或 Markdown 中提到 Forge 资源时，可以使用 [[资源 ID]] 创建资源链接，例如 [[project1]] 或 [[project1.task2]]。引用 Workspace 内的文件时，必须使用以 Workspace 为根目录的链接，例如 [附件](/project1/task2/artifacts/foobar.md)；不要使用如 /Users/... 的本机绝对路径，也不要使用 file:// 链接。
+在消息或 Markdown 中提到 PUA 资源时，可以使用 [[资源 ID]] 创建资源链接，例如 [[project1]] 或 [[project1.task2]]。引用 Workspace 内的文件时，必须使用以 Workspace 为根目录的链接，例如 [附件](/project1/task2/artifacts/foobar.md)；不要使用如 /Users/... 的本机绝对路径，也不要使用 file:// 链接。
 
 ### 常用目录
 
@@ -261,49 +261,49 @@ forge task history --project=<project> --task=<task> --limit=20
 - worktree/：Task 专用代码 worktree；
 - scheduler/：Scheduler 资源。
 
-project.json 和 task.json 保存 Forge 认识的结构化信息。工作背景、范围、约束和长期决定写在 project.md 或 task.md 中。主动维护当前资源目录中的 project.md 或 task.md；需求变得明确，或关键背景、范围、约束、决定发生变化时，及时更新对应文件，不要等待用户另行提醒。临时过程通过 History、Git 和 artifacts 恢复，不需要额外维护长期进度文件。
+project.json 和 task.json 保存 PUA 认识的结构化信息。工作背景、范围、约束和长期决定写在 project.md 或 task.md 中。主动维护当前资源目录中的 project.md 或 task.md；需求变得明确，或关键背景、范围、约束、决定发生变化时，及时更新对应文件，不要等待用户另行提醒。临时过程通过 History、Git 和 artifacts 恢复，不需要额外维护长期进度文件。
 
-## 4. 权限和 Forge CLI
+## 4. 权限和 PUA CLI
 
 你可以读写当前资源拥有的文件；Task Agent 也可以修改当前 Task 的 worktree。Workspace 中其他资源默认只读，不要修改其他 Agent 管理的文件。需要对方操作时发送消息。
 
-Workspace 外的文件不受 Forge 额外限制，但仍要符合请求、任务范围和主机权限。删除、覆盖、发布等有明显影响的操作要先确认目标。
+Workspace 外的文件不受 PUA 额外限制，但仍要符合请求、任务范围和主机权限。删除、覆盖、发布等有明显影响的操作要先确认目标。
 
-通常在自己负责的资源目录运行 Forge CLI。省略 --project 或 --task 时，Forge 会根据当前目录选择对象；跨资源操作时建议显式指定资源。
+通常在自己负责的资源目录运行 PUA CLI。省略 --project 或 --task 时，PUA 会根据当前目录选择对象；跨资源操作时建议显式指定资源。
 
-status、history 和 message 命令会自动找到管理当前 Workspace 的 Forge Server。一般不需要填写 --server，也不要手工修改 .forge/serve.lock。
+status、history 和 message 命令会自动找到管理当前 Workspace 的 PUA Server。一般不需要填写 --server，也不要手工修改控制目录中的 serve.lock（新 Workspace 为 .pua/serve.lock，旧 Workspace 可能仍为 .forge/serve.lock）。
 
-## 5. Forge 资源管理
+## 5. PUA 资源管理
 
-使用 Forge CLI 创建和管理资源，不要手工创建目录或修改结构化 JSON。
+使用 PUA CLI 创建和管理资源，不要手工创建目录或修改结构化 JSON。
 
 ~~~sh
-forge project list [--all]
-forge project show --project=<project>
-forge project create [--slug <slug>] <description>
-forge project archive --project=<project>
+pua project list [--all]
+pua project show --project=<project>
+pua project create [--slug <slug>] <description>
+pua project archive --project=<project>
 
-forge task list --project=<project> [--all]
-forge task show --project=<project> --task=<task>
-forge task create --project=<project> ...
-forge task archive --project=<project> --task=<task>
+pua task list --project=<project> [--all]
+pua task show --project=<project> --task=<task>
+pua task create --project=<project> ...
+pua task archive --project=<project> --task=<task>
 ~~~
 
-创建前先查询，避免重复。创建 Project 或 Task 后，还需要单独发送第一条消息，Forge 才会按需启动该资源的 Agent：
+创建前先查询，避免重复。创建 Project 或 Task 后，还需要单独发送第一条消息，PUA 才会按需启动该资源的 Agent：
 
 ~~~sh
-forge message send --to=<resource> '<message>'
+pua message send --to=<resource> '<message>'
 ~~~
 
 创建 Task 前先查看 Project 的 templates/。有合适模板时优先使用，并保留模板中的规则：
 
 ~~~sh
-forge template list --project=<project>
-forge template show --project=<project> <name>
-forge task create --project=<project> --template=<name> --field <name>=<value>
+pua template list --project=<project>
+pua template show --project=<project> <name>
+pua task create --project=<project> --template=<name> --field <name>=<value>
 ~~~
 
-需要修改代码时，必须为 Task 创建专用 worktree，并用 forge task repo add 登记。不得直接修改 repos/ 中的共享源码目录。Project 本身不管理代码 worktree。
+需要修改代码时，必须为 Task 创建专用 worktree，并用 pua task repo add 登记。不得直接修改 repos/ 中的共享源码目录。Project 本身不管理代码 worktree。
 
 归档不是删除，但会结束资源的开放工作状态。归档前确认工作已经完成，必要的改动和产物已经保存。
 
@@ -312,24 +312,24 @@ forge task create --project=<project> --template=<name> --field <name>=<value>
 跨资源协作使用 Project 或 Task 的稳定资源 ID，不使用 Session ID。提到其他 Agent 时，一般使用“他”或“他们”。
 
 ~~~sh
-forge task status --project=<project> --task=<task>
-forge message send --to=<resource> [--mode=steer|enqueue|interrupt] '<message>'
-forge message show --id=<message-id>
+pua task status --project=<project> --task=<task>
+pua message send --to=<resource> [--mode=steer|enqueue|interrupt] '<message>'
+pua message show --id=<message-id>
 ~~~
 
 消息中写清目标、必要背景、范围和希望对方返回的结果。
 
 发现当前工作与其他 Agent 的工作冲突或可能相互影响时，及时给相关资源的 Agent 发消息，同步必要背景、范围和进展。
 
-- steer：默认选择。对方正在工作时尽量把消息加入当前 Turn，否则 Forge 会改为排队开启新 Turn；
+- steer：默认选择。对方正在工作时尽量把消息加入当前 Turn，否则 PUA 会改为排队开启新 Turn；
 - enqueue：明确要求开启一个新 Turn；
 - interrupt：中断对方当前 Turn，再用这条消息开启新 Turn，仅在确实需要立即改变方向时使用。
 
-消息被 Forge 接受，不代表对方已经完成。可以用 message ID、资源状态和 History 查看进展。
+消息被 PUA 接受，不代表对方已经完成。可以用 message ID、资源状态和 History 查看进展。
 
-实际开启 Turn 的 Agent 消息默认订阅该 Turn 的结果。注入已有 Turn 的 steer 消息不订阅结果；如果其发送方需要回复，接收方应主动发送一条 Forge 消息。以 steer 请求发送、但因没有活跃 Turn 而降级为 enqueue 的消息会成为 Turn 开启消息，按开启消息处理。
+实际开启 Turn 的 Agent 消息默认订阅该 Turn 的结果。注入已有 Turn 的 steer 消息不订阅结果；如果其发送方需要回复，接收方应主动发送一条 PUA 消息。以 steer 请求发送、但因没有活跃 Turn 而降级为 enqueue 的消息会成为 Turn 开启消息，按开启消息处理。
 
-Turn 结束后，Forge 会自动把 final response 投递给开启 Turn 的 Agent，不要再用 forge message send 发送同一结果。收到自动投递的 Turn result 时，应把它视为此前请求的答复，不要仅为确认收到而回复；只有出现新工作或确需澄清时才发送新消息。开启方不需要结果时使用 --subscribe-result=false。消息可能重复投递，发送方和接收方都应结合 message ID 或业务状态避免重复操作。
+Turn 结束后，PUA 会自动把 final response 投递给开启 Turn 的 Agent，不要再用 pua message send 发送同一结果。收到自动投递的 Turn result 时，应把它视为此前请求的答复，不要仅为确认收到而回复；只有出现新工作或确需澄清时才发送新消息。开启方不需要结果时使用 --subscribe-result=false。消息可能重复投递，发送方和接收方都应结合 message ID 或业务状态避免重复操作。
 
 ## 7. Scheduler
 
@@ -338,17 +338,17 @@ Scheduler 适合定时触发、条件触发，以及需要长时间等待外部�
 Schedule 使用自然语言描述条件，不使用 cron 表达式：
 
 ~~~sh
-forge scheduler list [--json]
-forge scheduler show --id=<schedule>
-forge scheduler add --description=<text> --condition=<text> --target=<resource>
-forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
-forge scheduler remove --id=<schedule>
+pua scheduler list [--json]
+pua scheduler show --id=<schedule>
+pua scheduler add --description=<text> --condition=<text> --target=<resource>
+pua scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+pua scheduler remove --id=<schedule>
 ~~~
 
 也可以直接给 Scheduler Agent 发消息：
 
 ~~~sh
-forge message send --to=scheduler '<request>'
+pua message send --to=scheduler '<request>'
 ~~~
 
 description 说明要做什么，condition 写清触发时间或条件、时区、是否重复以及何时停止，target 使用稳定资源 ID。

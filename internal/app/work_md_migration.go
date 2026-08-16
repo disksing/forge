@@ -20,7 +20,7 @@ const (
 
 var workMigrationMarkerRE = regexp.MustCompile(workMigrationMarkerPattern)
 
-// These are the exact explanatory blocks emitted by Forge before work.md was
+// These are the exact explanatory blocks emitted by PUA before work.md was
 // retired. Only exact known blocks are removed. Anything that differs is
 // retained so a user edit cannot be mistaken for a template.
 var legacyWorkTemplateComments = []string{

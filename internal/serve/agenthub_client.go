@@ -288,7 +288,7 @@ func (c *agentHubClient) Status(ctx context.Context) (agentHubStatus, error) {
 
 func validateAgentHubStatus(status agentHubStatus) error {
 	if status.APIVersion != agentHubAPIVersion {
-		return fmt.Errorf("incompatible AgentHub apiVersion %q; Forge requires %q", status.APIVersion, agentHubAPIVersion)
+		return fmt.Errorf("incompatible AgentHub apiVersion %q; PUA requires %q", status.APIVersion, agentHubAPIVersion)
 	}
 	available := make(map[string]bool, len(status.Capabilities))
 	for _, capability := range status.Capabilities {
@@ -449,7 +449,7 @@ type agentHubResumeRequest struct {
 }
 
 // Resume reactivates the exact stopped AgentHub Session. The persisted
-// providerSessionId and history remain owned by AgentHub; Forge supplies no
+// providerSessionId and history remain owned by AgentHub; PUA supplies no
 // new source tuple and therefore never creates a replacement here.
 func (c *agentHubClient) Resume(ctx context.Context, sessionID string, launchEnvironment map[string]string) (agentHubSession, error) {
 	var response struct {

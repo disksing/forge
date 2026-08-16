@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 type resourceEndGenerationResponse struct {
@@ -71,7 +71,7 @@ func (m *agentManager) handleResourceEvents(w http.ResponseWriter, r *http.Reque
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	w.Header().Set("X-Forge-Generation-ID", run.GenerationID)
+	setGenerationIDHeaders(w, run.GenerationID)
 	m.proxyAgentHubEvents(w, r, workspaceID, run.ID)
 }
 
@@ -90,8 +90,15 @@ func (m *agentManager) handleResourceStream(w http.ResponseWriter, r *http.Reque
 		writeError(w, err, http.StatusConflict)
 		return
 	}
-	w.Header().Set("X-Forge-Generation-ID", run.GenerationID)
+	setGenerationIDHeaders(w, run.GenerationID)
 	m.proxyAgentHubStream(w, r, workspaceID, run.ID)
+}
+
+func setGenerationIDHeaders(w http.ResponseWriter, generationID string) {
+	w.Header().Set("X-PUA-Generation-ID", generationID)
+	// Retain the old header for external clients during the Forge-to-PUA
+	// compatibility window. New clients should use X-PUA-Generation-ID.
+	w.Header().Set("X-Forge-Generation-ID", generationID)
 }
 
 func isResourceEventStreamable(run agentRun) bool {

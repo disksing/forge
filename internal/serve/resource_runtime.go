@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 type resolvedResourceAgent struct {
@@ -209,7 +209,7 @@ func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool
 }
 
 // deliverPendingResourceMessages retries only messages carrying stable IDs.
-// AgentHub's at-least-once capability makes an unknown response safe: Forge
+// AgentHub's at-least-once capability makes an unknown response safe: PUA
 // retains the same stable ID until AgentHub durably accepts retry ownership.
 func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *agentManager) error {
 	run := rt.snapshotRun()
@@ -288,6 +288,9 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace s
 		},
 	}
 	launchEnvironment := map[string]string{
+		"PUA_WORKSPACE_ROOT":          workspace.Path,
+		"PUA_WORKSPACE_INSTANCE_ID":   run.SourceInstanceID,
+		"PUA_RESOURCE_ID":             resourceKey,
 		"FORGE_WORKSPACE_ROOT":        workspace.Path,
 		"FORGE_WORKSPACE_INSTANCE_ID": run.SourceInstanceID,
 		"FORGE_RESOURCE_ID":           resourceKey,

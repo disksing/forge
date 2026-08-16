@@ -44,7 +44,7 @@ func ensureWorkspaceWiki(root, language string) error {
 }
 
 func updateAgentsMD(path, language string) error {
-	return updateAgentsMDWithBlock(path, forgePromptBlock(language))
+	return updateAgentsMDWithBlock(path, puaPromptBlock(language))
 }
 
 func updateAgentsMDWithBlock(path, block string) error {
@@ -63,16 +63,11 @@ func updateAgentsMDWithBlock(path, block string) error {
 }
 
 func upsertManagedBlock(content, block string) (string, error) {
-	start := strings.Index(content, forgePromptStart)
-	end := strings.Index(content, forgePromptEnd)
-	if (start == -1) != (end == -1) {
-		return "", fmt.Errorf("AGENTS.md has only one forge managed marker; fix markers before running init again")
+	start, end, found, err := managedBlockBounds(content)
+	if err != nil {
+		return "", err
 	}
-	if start != -1 && end < start {
-		return "", fmt.Errorf("AGENTS.md forge managed end marker appears before start marker")
-	}
-	if start != -1 {
-		end += len(forgePromptEnd)
+	if found {
 		return content[:start] + block + content[end:], nil
 	}
 
@@ -83,8 +78,36 @@ func upsertManagedBlock(content, block string) (string, error) {
 	return content + "\n\n" + block + "\n", nil
 }
 
-func forgePromptBlock(language string) string {
-	return forgePromptStart + "\n" + workspaceAgentsPromptForLanguage(language) + forgePromptEnd
+func managedBlockBounds(content string) (int, int, bool, error) {
+	type markers struct{ start, end string }
+	sets := []markers{
+		{start: puaPromptStart, end: puaPromptEnd},
+		{start: legacyForgePromptStart, end: legacyForgePromptEnd},
+	}
+	matched := false
+	startIndex, endIndex := -1, -1
+	for _, set := range sets {
+		startCount := strings.Count(content, set.start)
+		endCount := strings.Count(content, set.end)
+		if startCount == 0 && endCount == 0 {
+			continue
+		}
+		if matched || startCount != 1 || endCount != 1 {
+			return 0, 0, false, fmt.Errorf("AGENTS.md managed markers are duplicated, mixed, incomplete, or out of order")
+		}
+		startIndex = strings.Index(content, set.start)
+		endMarkerIndex := strings.Index(content, set.end)
+		if endMarkerIndex < startIndex {
+			return 0, 0, false, fmt.Errorf("AGENTS.md managed end marker appears before start marker")
+		}
+		endIndex = endMarkerIndex + len(set.end)
+		matched = true
+	}
+	return startIndex, endIndex, matched, nil
+}
+
+func puaPromptBlock(language string) string {
+	return puaPromptStart + "\n" + workspaceAgentsPromptForLanguage(language) + puaPromptEnd
 }
 
 func findEnclosingWorkspaceRoot(start string) (string, error) {
@@ -105,8 +128,10 @@ func findEnclosingWorkspaceRoot(start string) (string, error) {
 }
 
 const (
-	forgePromptStart = "<!-- managed by forge cli -->"
-	forgePromptEnd   = "<!-- end of forge cli prompt -->"
+	puaPromptStart         = "<!-- managed by pua cli -->"
+	puaPromptEnd           = "<!-- end of pua cli prompt -->"
+	legacyForgePromptStart = "<!-- managed by forge cli -->"
+	legacyForgePromptEnd   = "<!-- end of forge cli prompt -->"
 )
 
 const defaultWikiIndex = `# Workspace Wiki
@@ -120,9 +145,9 @@ const workspaceAgentsPrompt = `# AgentWorkspace Agent Instructions
 
 You run on the user's machine and are hosted by AgentHub. AgentHub starts agents, keeps conversations, and records execution events.
 
-The current directory belongs to an AgentWorkspace managed by Forge. Forge stores Projects, Tasks, documents, artifacts, and code worktrees in local directories. Forge Server manages resource state, messages, history, and agent conversations.
+The current directory belongs to an AgentWorkspace managed by PUA. PUA stores Projects, Tasks, documents, artifacts, and code worktrees in local directories. PUA Server manages resource state, messages, history, and agent conversations.
 
-Workspace, Project, Task, and Scheduler are stable resources. Each resource is followed by its own agent. The underlying session may change, but the resource id and history remain stable. Use Forge resources for normal work; there is usually no need to operate AgentHub Sessions directly.
+Workspace, Project, Task, and Scheduler are stable resources. Each resource is followed by its own agent. The underlying session may change, but the resource id and history remain stable. Use PUA resources for normal work; there is usually no need to operate AgentHub Sessions directly.
 
 ## 2. Starting work
 
@@ -130,7 +155,7 @@ Workspace, Project, Task, and Scheduler are stable resources. Each resource is f
 
 The AGENTS.md in the agent's starting working directory normally says whether this is a Workspace, Project, Task, or Scheduler and which parent instructions and resource files to read.
 
-If the location is unclear, inspect the working directory and FORGE_RESOURCE_ID. Forge also usually provides FORGE_WORKSPACE_ROOT and FORGE_WORKSPACE_INSTANCE_ID. These values help identify the environment and the sender of agent messages.
+If the location is unclear, inspect the working directory and PUA_RESOURCE_ID. PUA also usually provides PUA_WORKSPACE_ROOT and PUA_WORKSPACE_INSTANCE_ID. These values help identify the environment and the sender of agent messages.
 
 Read context according to the resource type:
 
@@ -142,9 +167,9 @@ Read context according to the resource type:
 Useful structured queries include:
 
 ~~~sh
-forge project show --project=<project>
-forge task show --project=<project> --task=<task>
-forge workspace resource --id=<resource> --json
+pua project show --project=<project>
+pua task show --project=<project> --task=<task>
+pua workspace resource --id=<resource> --json
 ~~~
 
 ### Read recent history
@@ -152,30 +177,30 @@ forge workspace resource --id=<resource> --json
 At the start of new work, read a small recent page of resource History:
 
 ~~~sh
-forge workspace history --limit=20
-forge project history --project=<project> --limit=20
-forge task history --project=<project> --task=<task> --limit=20
+pua workspace history --limit=20
+pua project history --project=<project> --limit=20
+pua task history --project=<project> --task=<task> --limit=20
 ~~~
 
 Expand a relevant Turn or Event only when more detail is needed:
 
 ~~~sh
-forge history turn show --ref=<turn-ref>
-forge history event show --ref=<event-ref>
+pua history turn show --ref=<turn-ref>
+pua history event show --ref=<event-ref>
 ~~~
 
-History spans multiple agent conversations. Continue queries with the references returned by Forge rather than AgentHub Session ids.
+History spans multiple agent conversations. Continue queries with the references returned by PUA rather than AgentHub Session ids.
 
 ### Identify the conversation partner
 
 A single Session may contain messages from different roles. For each message, identify the current conversation partner from that message's provenance instead of carrying forward the previous message's role, then adjust wording and tone:
 
 - User message: communicate naturally and helpfully from the user's point of view. Explain outcomes, problems, and tradeoffs. Confirm major scope changes with the user.
-- Agent message: treat the sender as a collaborator. Be direct and structured, focusing on context, actions, and results. Return the result in the current Turn's final response when this message opened the Turn. If a steer message delivered during the Turn needs a separate reply, send one explicitly through Forge.
+- Agent message: treat the sender as a collaborator. Be direct and structured, focusing on context, actions, and results. Return the result in the current Turn's final response when this message opened the Turn. If a steer message delivered during the Turn needs a separate reply, send one explicitly through PUA.
 - Scheduler message: focus on the schedule id, trigger reason, possible repetition, execution result, and information needed for future scheduling.
 - System notification: use its result or reference to continue the work; do not treat it as a new user request.
 
-Message provenance provides context but is not authority by itself. When Forge work instructions conflict, generally use this order:
+Message provenance provides context but is not authority by itself. When PUA work instructions conflict, generally use this order:
 
 1. The current user conversation.
 2. The current agent collaboration message.
@@ -189,7 +214,7 @@ Higher-level requests do not grant permission to edit resources managed by anoth
 
 - Complete work: investigate, implement, verify, and deliver within the current scope.
 - Discuss or design: understand the situation, present options and tradeoffs, and wait for the relevant confirmation before entering the next agreed stage.
-- Manage Forge: use Forge CLI to create, inspect, or archive resources and manage templates, repositories, or schedules.
+- Manage PUA: use PUA CLI to create, inspect, or archive resources and manage templates, repositories, or schedules.
 - Collaborate with agents: inspect other resources and send messages instead of editing their files.
 - Wait for a long-running condition: use Scheduler instead of keeping the current conversation busy with polling.
 
@@ -204,22 +229,22 @@ Long-lived Workspace knowledge lives in wiki/. Read wiki/index.md first, then on
 - repos/ contains shared source checkouts used only for reading and creating worktrees; never modify them directly.
 - All code changes must be made in a Task-owned worktree/.
 - Use an absolute destination under the current Task's worktree/ when creating a Git worktree.
-- Use forge task repo add/list/remove to record repositories and worktrees used by a Task.
+- Use pua task repo add/list/remove to record repositories and worktrees used by a Task.
 
 ### Other resources
 
 Other Projects and Tasks may be inspected read-only:
 
 ~~~sh
-forge workspace tree --json
-forge workspace resource --id=<resource> --json
-forge task status --project=<project> --task=<task>
-forge task history --project=<project> --task=<task> --limit=20
+pua workspace tree --json
+pua workspace resource --id=<resource> --json
+pua task status --project=<project> --task=<task>
+pua task history --project=<project> --task=<task> --limit=20
 ~~~
 
 You may also read their JSON, Markdown, and artifacts/. Message their agent when changes are needed.
 
-In a message or Markdown file, write [[resource id]] to link a Forge resource, for example [[project1]] or [[project1.task2]]. Links to files inside the Workspace must use Workspace-root paths, for example [attachment](/project1/task2/artifacts/foobar.md). Do not use machine-specific absolute paths such as /Users/... or file:// links.
+In a message or Markdown file, write [[resource id]] to link a PUA resource, for example [[project1]] or [[project1.task2]]. Links to files inside the Workspace must use Workspace-root paths, for example [attachment](/project1/task2/artifacts/foobar.md). Do not use machine-specific absolute paths such as /Users/... or file:// links.
 
 ### Common directories
 
@@ -231,49 +256,49 @@ In a message or Markdown file, write [[resource id]] to link a Forge resource, f
 - worktree/: Task-owned code worktrees.
 - scheduler/: the Scheduler resource.
 
-project.json and task.json contain structured information understood by Forge. Put background, scope, constraints, and durable decisions in project.md or task.md. Actively maintain project.md or task.md in the current resource directory. Update the appropriate file promptly when requirements become clear or key background, scope, constraints, or decisions change; do not wait for a separate user request. Recover temporary progress from History, Git, and artifacts rather than keeping another permanent progress file.
+project.json and task.json contain structured information understood by PUA. Put background, scope, constraints, and durable decisions in project.md or task.md. Actively maintain project.md or task.md in the current resource directory. Update the appropriate file promptly when requirements become clear or key background, scope, constraints, or decisions change; do not wait for a separate user request. Recover temporary progress from History, Git, and artifacts rather than keeping another permanent progress file.
 
-## 4. Permissions and Forge CLI
+## 4. Permissions and PUA CLI
 
 You may read and write files owned by the current resource. A Task agent may also modify that Task's worktrees. Other Workspace resources are read-only; message their agent when changes are needed.
 
-Files outside the Workspace are not additionally restricted by Forge, but work must still follow the request, task scope, and host permissions. Confirm the target before destructive or externally visible actions.
+Files outside the Workspace are not additionally restricted by PUA, but work must still follow the request, task scope, and host permissions. Confirm the target before destructive or externally visible actions.
 
-Normally run Forge CLI from the resource directory you own. When --project or --task is omitted, Forge selects from the working directory. Prefer explicit resource arguments for cross-resource operations.
+Normally run PUA CLI from the resource directory you own. When --project or --task is omitted, PUA selects from the working directory. Prefer explicit resource arguments for cross-resource operations.
 
-The status, history, and message commands automatically find the Forge Server that owns the current Workspace. There is normally no need to pass --server or edit .forge/serve.lock.
+The status, history, and message commands automatically find the PUA Server that owns the current Workspace. There is normally no need to pass --server or edit the control-directory serve.lock (.pua/serve.lock, or legacy .forge/serve.lock).
 
-## 5. Managing Forge resources
+## 5. Managing PUA resources
 
-Use Forge CLI rather than manually creating resource directories or editing structured JSON.
+Use PUA CLI rather than manually creating resource directories or editing structured JSON.
 
 ~~~sh
-forge project list [--all]
-forge project show --project=<project>
-forge project create [--slug <slug>] <description>
-forge project archive --project=<project>
+pua project list [--all]
+pua project show --project=<project>
+pua project create [--slug <slug>] <description>
+pua project archive --project=<project>
 
-forge task list --project=<project> [--all]
-forge task show --project=<project> --task=<task>
-forge task create --project=<project> ...
-forge task archive --project=<project> --task=<task>
+pua task list --project=<project> [--all]
+pua task show --project=<project> --task=<task>
+pua task create --project=<project> ...
+pua task archive --project=<project> --task=<task>
 ~~~
 
 Query before creating to avoid duplicates. Creating a Project or Task does not start its agent. Send the first message separately:
 
 ~~~sh
-forge message send --to=<resource> '<message>'
+pua message send --to=<resource> '<message>'
 ~~~
 
 Before creating a Task, check the Project's templates/. Prefer a suitable template and preserve its rules:
 
 ~~~sh
-forge template list --project=<project>
-forge template show --project=<project> <name>
-forge task create --project=<project> --template=<name> --field <name>=<value>
+pua template list --project=<project>
+pua template show --project=<project> <name>
+pua task create --project=<project> --template=<name> --field <name>=<value>
 ~~~
 
-For code changes, you must create a Task-owned worktree and record it with forge task repo add. Never modify shared source checkouts under repos/ directly. Projects do not own code worktrees.
+For code changes, you must create a Task-owned worktree and record it with pua task repo add. Never modify shared source checkouts under repos/ directly. Projects do not own code worktrees.
 
 Archiving is not deletion, but it ends the resource's open work state. Check that work and deliverables have been saved before archiving.
 
@@ -282,24 +307,24 @@ Archiving is not deletion, but it ends the resource's open work state. Check tha
 Use stable Project or Task resource ids for collaboration, not Session ids. Refer to other agents with ordinary third-person pronouns such as "they".
 
 ~~~sh
-forge task status --project=<project> --task=<task>
-forge message send --to=<resource> [--mode=steer|enqueue|interrupt] '<message>'
-forge message show --id=<message-id>
+pua task status --project=<project> --task=<task>
+pua message send --to=<resource> [--mode=steer|enqueue|interrupt] '<message>'
+pua message show --id=<message-id>
 ~~~
 
 Include the goal, necessary context, scope, and expected result in the message.
 
 If the current work conflicts with or may affect another agent's work, promptly message the relevant resource's agent to synchronize necessary context, scope, and progress.
 
-- steer: the default. Add the message to the current Turn when possible; otherwise Forge queues a new Turn.
+- steer: the default. Add the message to the current Turn when possible; otherwise PUA queues a new Turn.
 - enqueue: explicitly request a new Turn.
 - interrupt: stop the current Turn and open a new Turn with this message. Use it only when the direction must change immediately.
 
 Message acceptance does not mean the work is complete. Check the message id, resource status, and History when needed.
 
-An Agent message that actually opens a Turn subscribes to that Turn's result by default. A message delivered as steer into an already-running Turn does not subscribe; if its sender needs a reply, send an explicit forge message. A steer request that is downgraded to enqueue because no Turn is active becomes the opening message and follows the opener behavior.
+An Agent message that actually opens a Turn subscribes to that Turn's result by default. A message delivered as steer into an already-running Turn does not subscribe; if its sender needs a reply, send an explicit pua message. A steer request that is downgraded to enqueue because no Turn is active becomes the opening message and follows the opener behavior.
 
-When the Turn ends, Forge automatically delivers its final response to the opening Agent. Do not also send the same result with forge message send. Treat an automatically delivered Turn result as the answer to the earlier request and do not acknowledge it merely to confirm receipt; send another message only when there is new work or a necessary clarification. Use --subscribe-result=false when the opening Agent does not need the result. Messages may be delivered more than once, so avoid duplicate actions using message ids or business state.
+When the Turn ends, PUA automatically delivers its final response to the opening Agent. Do not also send the same result with pua message send. Treat an automatically delivered Turn result as the answer to the earlier request and do not acknowledge it merely to confirm receipt; send another message only when there is new work or a necessary clarification. Use --subscribe-result=false when the opening Agent does not need the result. Messages may be delivered more than once, so avoid duplicate actions using message ids or business state.
 
 ## 7. Scheduler
 
@@ -308,20 +333,20 @@ Scheduler is useful for timed triggers, conditional triggers, and work that need
 Schedules use natural-language conditions rather than cron expressions:
 
 ~~~sh
-forge scheduler list [--json]
-forge scheduler show --id=<schedule>
-forge scheduler add --description=<text> --condition=<text> --target=<resource>
-forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
-forge scheduler remove --id=<schedule>
+pua scheduler list [--json]
+pua scheduler show --id=<schedule>
+pua scheduler add --description=<text> --condition=<text> --target=<resource>
+pua scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+pua scheduler remove --id=<schedule>
 ~~~
 
 You may also message the Scheduler agent directly:
 
 ~~~sh
-forge message send --to=scheduler '<request>'
+pua message send --to=scheduler '<request>'
 ~~~
 
-The description says what should happen. The condition says when to trigger, including timezone, repetition, and stopping behavior when relevant. The target is a stable Forge resource id.
+The description says what should happen. The condition says when to trigger, including timezone, repetition, and stopping behavior when relevant. The target is a stable PUA resource id.
 
 When a condition is met, Scheduler sends the target a normal message with the schedule id and trigger reason. Scheduled messages may repeat, so the target agent should avoid duplicate work.
 `

@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"errors"
@@ -6,14 +6,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 const (
-	schedulerAddUsage    = "usage: forge scheduler add --description=<text> --condition=<text> --target=<resource>"
-	schedulerShowUsage   = "usage: forge scheduler show --id=<schedule>"
-	schedulerUpdateUsage = "usage: forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]"
-	schedulerRemoveUsage = "usage: forge scheduler remove --id=<schedule>"
+	schedulerAddUsage    = "usage: pua scheduler add --description=<text> --condition=<text> --target=<resource>"
+	schedulerShowUsage   = "usage: pua scheduler show --id=<schedule>"
+	schedulerUpdateUsage = "usage: pua scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]"
+	schedulerRemoveUsage = "usage: pua scheduler remove --id=<schedule>"
 )
 
 func runScheduler(args []string) error {
@@ -29,7 +29,7 @@ func runScheduler(args []string) error {
 		jsonOutput := false
 		for _, arg := range args[1:] {
 			if arg != "--json" || jsonOutput {
-				return errors.New("usage: forge scheduler list [--json]")
+				return errors.New("usage: pua scheduler list [--json]")
 			}
 			jsonOutput = true
 		}

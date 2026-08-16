@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"context"
@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
-const agentListUsage = "usage: forge agent list [--server=<url>] [--json]"
+const agentListUsage = "usage: pua agent list [--server=<url>] [--json]"
 
-// agentHubSettingsResponse mirrors the subset of the Forge Server
+// agentHubSettingsResponse mirrors the subset of the PUA Server
 // /api/settings/agenthub response the agent list command needs. The catalog is
-// read-only and owned by AgentHub; Agent Profiles are Forge Server
+// read-only and owned by AgentHub; Agent Profiles are PUA Server
 // configuration that maps a profile key to a catalog agent.
 type agentHubSettingsResponse struct {
 	Connected  bool                `json:"connected"`
@@ -61,8 +61,8 @@ type agentProbeJSON struct {
 	Available  bool   `json:"available"`
 }
 
-// agentListResult is the complete agent surface exposed by forge agent list:
-// Forge Agent Profiles plus the read-only AgentHub catalog.
+// agentListResult is the complete agent surface exposed by pua agent list:
+// PUA Agent Profiles plus the read-only AgentHub catalog.
 type agentListResult struct {
 	Profiles []agentProfileJSON  `json:"profiles"`
 	Catalog  agentHubCatalogJSON `json:"catalog"`
@@ -151,15 +151,16 @@ func printAgentList(result agentListResult) {
 
 func printAgentHelp() {
 	fmt.Print(`Usage:
-  forge agent list [--server=<url>] [--json]
+  pua agent list [--server=<url>] [--json]
 
 Commands:
-  forge agent list [--server=<url>] [--json]
-    Query the owning forge serve process for the AgentHub agent catalog and the
-    configured Forge Agent Profiles. The default output lists profiles (key,
+  pua agent list [--server=<url>] [--json]
+    Query the owning pua serve process for the AgentHub agent catalog and the
+    configured PUA Agent Profiles. The default output lists profiles (key,
     agent, description) followed by agents (name, provider, availability). Use
     --json for the complete structured result including profiles, providers,
     and probes. --server overrides the owner address discovered from
-    .forge/serve.lock.
+    the Workspace control directory (.pua/serve.lock, or legacy
+    .forge/serve.lock).
 `)
 }

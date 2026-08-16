@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func notificationMessageID(parts ...string) string {
@@ -255,10 +255,10 @@ func (m *agentManager) routeNotification(ctx context.Context, source serveWorksp
 		if operation.Status == resourceNotificationAccepted {
 			return updateOperationNotificationReceipts(source.Path, operation, func(current *resourceNotificationReceipt) {
 				current.LastErrorCode = "target_workspace_unavailable"
-				current.LastError = "the target Workspace is no longer registered with and owned by this Forge Server; prior mailbox acceptance is retained"
+				current.LastError = "the target Workspace is no longer registered with and owned by this PUA Server; prior mailbox acceptance is retained"
 			})
 		}
-		return terminalNotificationOperation(source.Path, operation, "target_workspace_unavailable", "the target Workspace is not registered with and owned by this Forge Server")
+		return terminalNotificationOperation(source.Path, operation, "target_workspace_unavailable", "the target Workspace is not registered with and owned by this PUA Server")
 	}
 	targetResourceID := normalizedResourceID(operation.TargetResourceID)
 	if operation.Status == resourceNotificationAccepted {

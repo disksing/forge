@@ -1,4 +1,4 @@
-// Package app contains the in-process Forge application API.
+// Package app contains the in-process PUA application API.
 //
 // The API is deliberately rooted in a Workspace handle. Callers must open a
 // Workspace explicitly and may then reuse the handle from concurrent
@@ -12,7 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 // APIError describes a failed application operation without requiring callers
@@ -32,7 +35,7 @@ func (e *APIError) Error() string {
 	}
 	message := e.Operation
 	if message == "" {
-		message = "Forge application operation"
+		message = "PUA application operation"
 	}
 	if e.Err != nil {
 		message += ": " + e.Err.Error()
@@ -54,7 +57,7 @@ func IsKind(err error, kind string) bool {
 	return errors.As(err, &apiErr) && apiErr.Kind == kind
 }
 
-// Workspace is a reusable, explicitly rooted Forge application handle.
+// Workspace is a reusable, explicitly rooted PUA application handle.
 // Workspace values are immutable and safe to share between goroutines. The
 // underlying persistent locks are acquired for each operation, so a handle
 // does not keep a process-global mutable store open.
@@ -79,8 +82,11 @@ func OpenWorkspace(root string) (*Workspace, error) {
 		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Path: root, Err: err}
 	}
 	abs = filepath.Clean(abs)
+	if _, err := workspacepath.ResolveControlDir(abs); err != nil {
+		return nil, &APIError{Operation: "open Workspace", Kind: "workspace_control", Workspace: abs, Path: abs, Err: err}
+	}
 	if pathExists(workspaceInitializationMarker(abs)) {
-		return nil, &APIError{Operation: "open Workspace", Kind: "workspace_initializing", Workspace: abs, Path: abs, Err: errors.New("Workspace initialization is incomplete; rerun forge init to recover it")}
+		return nil, &APIError{Operation: "open Workspace", Kind: "workspace_initializing", Workspace: abs, Path: abs, Err: errors.New("Workspace initialization is incomplete; rerun pua init to recover it")}
 	}
 	canonical, err := canonicalWorkspaceRoot(abs)
 	if err != nil {
@@ -90,7 +96,7 @@ func OpenWorkspace(root string) (*Workspace, error) {
 		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Workspace: canonical, Path: canonical, Err: errors.New("workspace root is not a directory")}
 	}
 	if !hasWorkspaceConfig(canonical) && !isDir(filepath.Join(canonical, reposDir)) {
-		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Workspace: canonical, Path: canonical, Err: errors.New("could not find AgentWorkspace root; run forge init first")}
+		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Workspace: canonical, Path: canonical, Err: errors.New("could not find AgentWorkspace root; run pua init first")}
 	}
 	return &Workspace{root: canonical}, nil
 }
@@ -150,7 +156,7 @@ func InitializeWithOptions(root string, options InitializeOptions) (*Workspace, 
 		if err := os.Remove(workspaceInitializationMarker(abs)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		return syncDirectory(filepath.Join(abs, ".forge"))
+		return syncDirectory(workspacepath.ControlDir(abs))
 	}); err != nil {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
 	}
@@ -215,6 +221,44 @@ func (w *Workspace) Migrate(language string) error {
 			return err
 		}
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
+	}
+	return nil
+}
+
+// RenameControlDir atomically moves an existing .forge control directory to
+// .pua. The owning serve process must be stopped; old binaries must not write
+// the Workspace after this migration.
+func (w *Workspace) RenameControlDir() error {
+	if err := w.require(); err != nil {
+		return err
+	}
+	controlRoot, err := workspacepath.ResolveControlDir(w.root)
+	if err != nil {
+		return &APIError{Operation: "rename Workspace control directory", Kind: "workspace_control", Workspace: w.root, Err: err}
+	}
+	if filepath.Base(controlRoot) == workspacepath.CurrentControlDirName {
+		return nil
+	}
+	err = withWorkspaceMutationLock(w.root, func() error {
+		serveLockPath := filepath.Join(controlRoot, "serve.lock")
+		serveLock, openErr := os.OpenFile(serveLockPath, os.O_CREATE|os.O_RDWR, 0o600)
+		if openErr != nil {
+			return openErr
+		}
+		defer serveLock.Close()
+		if lockErr := syscall.Flock(int(serveLock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); lockErr != nil {
+			return fmt.Errorf("Workspace is owned by a running pua serve process; stop it before renaming %s", workspacepath.LegacyControlDirName)
+		}
+		defer syscall.Flock(int(serveLock.Fd()), syscall.LOCK_UN)
+
+		destination := filepath.Join(w.root, workspacepath.CurrentControlDirName)
+		if renameErr := os.Rename(controlRoot, destination); renameErr != nil {
+			return renameErr
+		}
+		return syncDirectory(w.root)
+	})
+	if err != nil {
+		return &APIError{Operation: "rename Workspace control directory", Kind: "workspace_control", Workspace: w.root, Err: err}
 	}
 	return nil
 }

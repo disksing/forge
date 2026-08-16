@@ -1,9 +1,9 @@
-package forge
+package pua
 
 import (
 	"os"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func inferCurrentProjectID() (string, bool, error) {

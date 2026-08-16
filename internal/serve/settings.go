@@ -7,7 +7,7 @@ import (
 
 type settingsResponse struct {
 	Workspaces []serveWorkspace `json:"workspaces"`
-	ActiveID   string         `json:"activeId,omitempty"`
+	ActiveID   string           `json:"activeId,omitempty"`
 }
 
 const agentOptionModel = "model"

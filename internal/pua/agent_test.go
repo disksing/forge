@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"encoding/json"
@@ -46,7 +46,7 @@ func TestAgentListQueriesOwningServer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, ".forge", "serve.lock"), data, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".pua", "serve.lock"), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 
@@ -94,7 +94,7 @@ func TestAgentListReportsServerError(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, ".forge", "serve.lock"), data, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".pua", "serve.lock"), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 		_, err = runErr(t, "agent", "list")
@@ -107,7 +107,7 @@ func TestAgentListReportsServerError(t *testing.T) {
 func TestAgentHelp(t *testing.T) {
 	out := run(t, "help", "agent")
 	for _, marker := range []string{
-		"forge agent list [--server=<url>] [--json]",
+		"pua agent list [--server=<url>] [--json]",
 		"Agent Profiles",
 	} {
 		if !strings.Contains(out, marker) {

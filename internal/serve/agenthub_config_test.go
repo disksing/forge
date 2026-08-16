@@ -18,7 +18,7 @@ func TestReadAgentHubConfigRejectsRemovedVersion(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"version":2,"workspaces":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readAgentHubConfigFile(path); err == nil || !strings.Contains(err.Error(), "unsupported Forge serve configuration version") {
+	if _, err := readAgentHubConfigFile(path); err == nil || !strings.Contains(err.Error(), "unsupported PUA serve configuration version") {
 		t.Fatalf("expected removed config version to be rejected, got %v", err)
 	}
 }

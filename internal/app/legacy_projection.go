@@ -4,19 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 const (
 	legacySessionProjectionPath = "forge-sessions.json"
 	legacySessionLockPath       = ".forge-sessions.lock"
-	legacyProjectionBackupPath  = ".forge/legacy/forge-sessions.json"
-	legacyLockBackupPath        = ".forge/legacy/.forge-sessions.lock"
+	legacyProjectionBackupName  = "forge-sessions.json"
+	legacyLockBackupName        = ".forge-sessions.lock"
 )
 
 // isolateLegacySessionProjection moves the pre-resource Session projection and
 // its obsolete lock out of the Workspace root during migrate. Each rename is
 // atomic, old bytes remain recoverable, and repeated migrate calls are
-// idempotent. Forge serve no longer reads or writes either file.
+// idempotent. PUA serve no longer reads or writes either file.
 func isolateLegacySessionProjection(root string) error {
 	type legacyFile struct {
 		source      string
@@ -24,8 +26,8 @@ func isolateLegacySessionProjection(root string) error {
 		display     string
 	}
 	files := []legacyFile{
-		{source: filepath.Join(root, legacySessionProjectionPath), destination: filepath.Join(root, legacyProjectionBackupPath), display: legacyProjectionBackupPath},
-		{source: filepath.Join(root, legacySessionLockPath), destination: filepath.Join(root, legacyLockBackupPath), display: legacyLockBackupPath},
+		{source: filepath.Join(root, legacySessionProjectionPath), destination: filepath.Join(workspacepath.ControlDir(root), "legacy", legacyProjectionBackupName), display: filepath.Join("legacy", legacyProjectionBackupName)},
+		{source: filepath.Join(root, legacySessionLockPath), destination: filepath.Join(workspacepath.ControlDir(root), "legacy", legacyLockBackupName), display: filepath.Join("legacy", legacyLockBackupName)},
 	}
 	present := make([]legacyFile, 0, len(files))
 	for _, file := range files {

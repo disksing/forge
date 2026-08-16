@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 type artifactDeleteTestFixture struct {

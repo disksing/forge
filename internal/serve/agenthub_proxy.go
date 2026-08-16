@@ -11,9 +11,9 @@ import (
 )
 
 // This file implements the same-origin, cache-free, on-demand AgentHub events
-// proxy. The Forge serve server never parses, stores, or replays event content
+// proxy. The PUA serve server never parses, stores, or replays event content
 // here: JSON pages are forwarded byte-for-byte and SSE frames are forwarded as
-// a raw stream. The only Forge addition is the forge.notice frames interleaved
+// a raw stream. The only PUA addition is the forge.notice frames interleaved
 // into the proxy stream so existing browser notifications keep working.
 
 // errAgentHubProxyUnbound marks an internal generation record that has no
@@ -157,7 +157,7 @@ func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	// Subscribe to Forge notices for this run so they interleave into the
+	// Subscribe to PUA notices for this run so they interleave into the
 	// proxied stream; canonical event history always flows from AgentHub.
 	messages := make(chan agentStreamMessage, agentHubEventMaxCount)
 	m.subscribe(run.ID, messages)
@@ -205,7 +205,7 @@ func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// writeAgentHubProxyError maps an upstream failure to a Forge error response.
+// writeAgentHubProxyError maps an upstream failure to a PUA error response.
 // Client-visible statuses (4xx) pass through unchanged so the browser can
 // react to e.g. an invalid cursor; 5xx and unexpected statuses become 502.
 func writeAgentHubProxyError(w http.ResponseWriter, response *http.Response) {

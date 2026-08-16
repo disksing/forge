@@ -37,7 +37,7 @@ func TestServeConfigLockPreventsSecondInstance(t *testing.T) {
 		_ = second.Close()
 		t.Fatal("expected the second config lock to fail")
 	}
-	for _, want := range []string{absConfigPath, "PID " + strconv.Itoa(os.Getpid()), "127.0.0.1:4936", "FORGE_SERVE_CONFIG"} {
+	for _, want := range []string{absConfigPath, "PID " + strconv.Itoa(os.Getpid()), "127.0.0.1:4936", "PUA_SERVE_CONFIG"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("config lock conflict is missing %q: %v", want, err)
 		}

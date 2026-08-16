@@ -7,18 +7,17 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"strings"
 )
 
 type agentHubSettingsResponse struct {
 	Config             agentHubServeConfig `json:"config"`
-	ConfiguredEndpoint string            `json:"configuredEndpoint"`
-	EffectiveEndpoint  string            `json:"effectiveEndpoint"`
-	Connected          bool              `json:"connected"`
-	Compatible         bool              `json:"compatible"`
-	Status             *agentHubStatus   `json:"status,omitempty"`
-	Catalog            agentHubCatalog   `json:"catalog"`
-	Error              string            `json:"error,omitempty"`
+	ConfiguredEndpoint string              `json:"configuredEndpoint"`
+	EffectiveEndpoint  string              `json:"effectiveEndpoint"`
+	Connected          bool                `json:"connected"`
+	Compatible         bool                `json:"compatible"`
+	Status             *agentHubStatus     `json:"status,omitempty"`
+	Catalog            agentHubCatalog     `json:"catalog"`
+	Error              string              `json:"error,omitempty"`
 }
 
 type updateAgentHubSettingsRequest struct {
@@ -133,7 +132,9 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		return agentHubSettingsResponse{}, err
 	}
 	effective := configured
-	if override := strings.TrimSpace(os.Getenv("FORGE_AGENTHUB_URL")); override != "" {
+	if override, overrideErr := environmentOverride("PUA_AGENTHUB_URL", "FORGE_AGENTHUB_URL"); overrideErr != nil {
+		return agentHubSettingsResponse{}, overrideErr
+	} else if override != "" {
 		effective, err = normalizeAgentHubEndpoint(override)
 		if err != nil {
 			return agentHubSettingsResponse{}, err
@@ -209,7 +210,7 @@ func readAgentHubConfigFile(path string) (agentHubServeConfig, error) {
 		return agentHubServeConfig{}, err
 	}
 	if version.Version < 3 {
-		return agentHubServeConfig{}, fmt.Errorf("unsupported Forge serve configuration version %d; migrate the configuration before starting forge serve", version.Version)
+		return agentHubServeConfig{}, fmt.Errorf("unsupported PUA serve configuration version %d; migrate the configuration before starting pua serve", version.Version)
 	}
 	needsUpgrade := version.Version != agentHubConfigVersion
 	var cfg agentHubServeConfig

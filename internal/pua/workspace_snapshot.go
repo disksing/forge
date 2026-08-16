@@ -1,4 +1,4 @@
-package forge
+package pua
 
 import (
 	"errors"
@@ -22,7 +22,7 @@ func workspaceResourceJSON(id string) error {
 }
 
 func parseWorkspaceResourceArgs(args []string) (string, error) {
-	const usage = "usage: forge workspace resource --id=<resource> --json"
+	const usage = "usage: pua workspace resource --id=<resource> --json"
 	if len(args) < 2 || len(args) > 3 {
 		return "", errors.New(usage)
 	}

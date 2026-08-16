@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func TestResourceAgentBindingsAreExplicitAndStable(t *testing.T) {
@@ -72,7 +72,7 @@ func TestResourceAgentBindingsAreExplicitAndStable(t *testing.T) {
 	if newTask.AgentBinding != (app.AgentBinding{Kind: "profile", Name: "reasoning"}) {
 		t.Fatalf("new Task did not use persisted Task default: %#v", newTask.AgentBinding)
 	}
-	info, err := os.Stat(filepath.Join(workspace.Root(), ".forge", "runtime"))
+	info, err := os.Stat(filepath.Join(workspace.Root(), ".pua", "runtime"))
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("runtime directory permissions mismatch: info=%v err=%v", info, err)
 	}

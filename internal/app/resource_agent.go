@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 func defaultAgentBinding() AgentBinding {
@@ -118,7 +120,7 @@ func (w *Workspace) EnsureResourceRuntime() (WorkspaceRuntimeConfig, error) {
 		if err := ensureOpenResourceBindings(w.root, cfg.ResourceDefaults); err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Join(w.root, ".forge", "runtime"), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Join(workspacepath.ControlDir(w.root), "runtime"), 0o700); err != nil {
 			return err
 		}
 		result = WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: cfg.AgentBinding, ResourceDefaults: cfg.ResourceDefaults}

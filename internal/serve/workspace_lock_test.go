@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/pua/internal/app"
 )
 
 func TestWorkspaceLockConflictAcrossInstances(t *testing.T) {
@@ -24,7 +24,7 @@ func TestWorkspaceLockConflictAcrossInstances(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(canonical, ".forge", workspaceServeLockName)); err != nil {
+	if _, err := os.Stat(filepath.Join(canonical, ".pua", workspaceServeLockName)); err != nil {
 		t.Fatalf("expected serve lock file: %v", err)
 	}
 

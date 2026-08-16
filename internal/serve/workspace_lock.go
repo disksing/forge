@@ -11,10 +11,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/disksing/pua/internal/workspacepath"
 )
 
 // workspaceServeLockName is the canonical Workspace-scoped lock path. Only
-// the OS advisory lock on this file decides which forge serve process owns
+// the OS advisory lock on this file decides which pua serve process owns
 // the Workspace; the JSON metadata is diagnostic only.
 const workspaceServeLockName = "serve.lock"
 
@@ -31,7 +33,7 @@ type workspaceLock struct {
 	file      *os.File
 }
 
-// workspaceLockConflictError reports that another forge serve instance owns
+// workspaceLockConflictError reports that another pua serve instance owns
 // the Workspace. It carries only non-sensitive owner diagnostics.
 type workspaceLockConflictError struct {
 	workspace string
@@ -50,11 +52,11 @@ func (e *workspaceLockConflictError) Error() string {
 		}
 		owner += ")"
 	}
-	return fmt.Sprintf("workspace %s is already managed by another forge serve instance%s; stop that instance or remove the workspace from this configuration", e.workspace, owner)
+	return fmt.Sprintf("workspace %s is already managed by another pua serve instance%s; stop that instance or remove the workspace from this configuration", e.workspace, owner)
 }
 
 // workspaceLockManager tracks the Workspace ownership locks held by one
-// forge serve process. Locks are keyed by canonical workspace path so
+// pua serve process. Locks are keyed by canonical workspace path so
 // relative paths, ".." segments, and symlinks cannot bypass ownership.
 type workspaceLockManager struct {
 	mu         sync.Mutex
@@ -98,7 +100,10 @@ func (m *workspaceLockManager) acquire(workspacePath string) (string, error) {
 	if _, ok := m.locks[canonical]; ok {
 		return canonical, nil
 	}
-	lockDir := filepath.Join(canonical, ".forge")
+	lockDir, err := workspacepath.ResolveControlDir(canonical)
+	if err != nil {
+		return "", fmt.Errorf("resolve Workspace control directory: %w", err)
+	}
 	if err := os.MkdirAll(lockDir, 0o755); err != nil {
 		return "", fmt.Errorf("create workspace lock directory %s: %w", lockDir, err)
 	}
@@ -216,7 +221,7 @@ func writeWorkspaceLockMetadata(file *os.File, metadata workspaceLockMetadata) e
 
 // ownsWorkspace reports whether this server may manage or write the given
 // Workspace. A nil lock manager only occurs in isolated unit tests that
-// never start forge serve; production servers always own their workspaces.
+// never start pua serve; production servers always own their workspaces.
 func (s *server) ownsWorkspace(workspacePath string) bool {
 	if s.locks == nil {
 		return true
@@ -235,7 +240,7 @@ func (s *server) requireWorkspaceOwnership(workspacePath string) error {
 	if err != nil {
 		canonical = workspacePath
 	}
-	return fmt.Errorf("workspace %s is not owned by this forge serve instance; management and write operations are disabled", canonical)
+	return fmt.Errorf("workspace %s is not owned by this pua serve instance; management and write operations are disabled", canonical)
 }
 
 // acquireConfiguredWorkspaceLocks takes ownership of every configured
