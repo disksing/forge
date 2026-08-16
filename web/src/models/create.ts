@@ -19,7 +19,6 @@ export interface TaskTemplate {
   taskTitle?: string;
   schemaVersion?: number;
   digest?: string;
-  legacy?: boolean;
   errors?: Array<{ message?: string }>;
   fields?: TemplateField[];
 }

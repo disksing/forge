@@ -5453,7 +5453,7 @@ function fo(t, r) {
 						q(u), q(o);
 						var p = d(o);
 						O(p, { name: "chevron-right" }), q(r), c(() => {
-							i = k(r, 1, "template-row", null, i, { invalid: !n(t).valid }), L(l, n(t).title || n(t).name), L(f, `${n(t).name ?? ""} · v${(n(t).schemaVersion || "?") ?? ""} · ${n(t).valid ? `${(n(t).fields || []).length} fields` : `invalid${n(t).errors?.[0]?.message ? `: ${n(t).errors[0].message}` : ""}`}${n(t).legacy ? " · legacy" : ""}`);
+							i = k(r, 1, "template-row", null, i, { invalid: !n(t).valid }), L(l, n(t).title || n(t).name), L(f, `${n(t).name ?? ""} · v${(n(t).schemaVersion || "?") ?? ""} · ${n(t).valid ? `${(n(t).fields || []).length} fields` : `invalid${n(t).errors?.[0]?.message ? `: ${n(t).errors[0].message}` : ""}`}`);
 						}), v("click", r, () => n(t).path && ne("Templates", n(t).path)), m(e, r);
 					}), m(e, t);
 				}, l = (e) => {
@@ -8377,8 +8377,7 @@ function Lc(e, t = 0) {
 		let e = Ec(n.detailsWidth, xc, t - yc - Sc);
 		r.chatWidth = Ec(t - yc - e, Sc, Cc);
 	}
-	let i = Dc(n.sidebarAttentionHeight) ? n.sidebarAttentionHeight : n.sidebarSessionHeight;
-	return Dc(i) && (r.sidebarAttentionHeight = Ec(i, 84, Cc)), r;
+	return Dc(n.sidebarAttentionHeight) && (r.sidebarAttentionHeight = Ec(n.sidebarAttentionHeight, 84, Cc)), r;
 }
 function Rc(e, t = window.localStorage) {
 	let n = { ...wc }, r = {
@@ -8430,7 +8429,7 @@ function Rc(e, t = window.localStorage) {
 	function _() {
 		let u = c();
 		n = Lc(u, 0), h();
-		let p = Dc(u.sidebarSessionHeight) && !Dc(u.sidebarAttentionHeight);
+		let p = !1;
 		Dc(u.detailsWidth) && !Dc(u.chatWidth) && !o.matches && (n = Lc(u, f()), h(), p = !0), p && g();
 		try {
 			r.immersive = t?.getItem(gc) === "1";
@@ -8452,7 +8451,7 @@ function Rc(e, t = window.localStorage) {
 	function v(e) {
 		if (!Object.hasOwn(Tc, e) || !t) return;
 		let r = e, i = c();
-		delete i.detailsWidth, delete i.sidebarSessionHeight;
+		delete i.detailsWidth;
 		for (let e of Object.keys(Tc)) Dc(i[e]) || (i[e] = n[e]);
 		i[r] = n[r], t.setItem(hc, JSON.stringify(i));
 	}

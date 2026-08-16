@@ -2,33 +2,11 @@ package serve
 
 import (
 	"context"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/disksing/pua/internal/app"
 )
-
-func TestLoadGenerationRecordsRejectsTrailingGarbage(t *testing.T) {
-	workspace := t.TempDir()
-	indexPath := agentIndexPath(workspace)
-	if err := os.MkdirAll(filepath.Dir(indexPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	corrupt := `[{"id":"gen-one","workspaceId":"workspace-one","provider":"codex","title":"Old","cwd":"` +
-		filepath.ToSlash(workspace) + `","status":"stopped","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}] trailing`
-	if err := os.WriteFile(indexPath, []byte(corrupt), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadGenerationRecords(workspace); err == nil {
-		t.Fatal("expected malformed run index to be rejected")
-	}
-	unchanged := mustReadFile(t, indexPath)
-	if !strings.Contains(string(unchanged), "trailing") {
-		t.Fatalf("malformed run index was rewritten: %s", unchanged)
-	}
-}
 
 func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 	workspace := t.TempDir()

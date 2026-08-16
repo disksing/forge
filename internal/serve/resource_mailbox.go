@@ -126,7 +126,6 @@ func (message *resourceMailboxMessage) UnmarshalJSON(data []byte) error {
 		decoded.SubscribeResult = false
 		decoded.ResultSubscriptionStatus = resourceResultSubscriptionDisabled
 	}
-	normalizeLegacyMailboxMessage((*resourceMailboxMessage)(&decoded))
 	*message = resourceMailboxMessage(decoded)
 	return nil
 }

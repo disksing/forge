@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -20,7 +19,6 @@ const (
 	templateValidateUsage = "usage: pua template validate [--project=<project>] [<name>|--all] [--json]"
 	templateRenderUsage   = "usage: pua template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>"
 	templateCreateUsage   = "usage: pua template create [--project=<project>] [--title=<title>] <name>"
-	templateMigrateUsage  = "usage: pua template migrate [--project=<project>] [<name>|--all] [--write] [--json]"
 )
 
 type templateCLIOptions struct {
@@ -30,7 +28,6 @@ type templateCLIOptions struct {
 	Raw       bool
 	Schema    bool
 	All       bool
-	Write     bool
 	Title     string
 	Fields    string
 	Field     []string
@@ -75,12 +72,6 @@ func runTemplate(args []string) error {
 			return err
 		}
 		return templateCreate(options)
-	case "migrate":
-		options, err := parseTemplateArgs(args[1:], "migrate")
-		if err != nil {
-			return err
-		}
-		return templateMigrate(options)
 	default:
 		return fmt.Errorf("unknown template subcommand %q", args[0])
 	}
@@ -99,7 +90,7 @@ func templateUsage(command string) string {
 	case "create":
 		return templateCreateUsage
 	default:
-		return templateMigrateUsage
+		return "usage: pua template <list|show|validate|render|create>"
 	}
 }
 
@@ -145,8 +136,6 @@ func parseTemplateArgs(args []string, command string) (templateCLIOptions, error
 			options.Schema = true
 		case arg == "--all":
 			options.All = true
-		case arg == "--write":
-			options.Write = true
 		case strings.HasPrefix(arg, "--title="):
 			options.Title = strings.TrimPrefix(arg, "--title=")
 		case arg == "--title":
@@ -188,14 +177,14 @@ func parseTemplateArgs(args []string, command string) (templateCLIOptions, error
 		}
 		return false
 	}
-	if options.JSON && !allowed("list", "show", "validate", "render", "migrate") || options.Raw && command != "show" || options.Schema && command != "show" || options.All && !allowed("validate", "migrate") || options.Write && command != "migrate" || options.Title != "" && !allowed("render", "create") || options.Fields != "" && command != "render" || len(options.Field) > 0 && command != "render" {
+	if options.JSON && !allowed("list", "show", "validate", "render") || options.Raw && command != "show" || options.Schema && command != "show" || options.All && command != "validate" || options.Title != "" && !allowed("render", "create") || options.Fields != "" && command != "render" || len(options.Field) > 0 && command != "render" {
 		return options, errors.New(usage)
 	}
 	if command == "list" {
 		if len(positional) != 0 {
 			return options, errors.New(usage)
 		}
-	} else if command == "validate" || command == "migrate" {
+	} else if command == "validate" {
 		if len(positional) > 1 || options.All && len(positional) > 0 {
 			return options, errors.New(usage)
 		}
@@ -484,34 +473,3 @@ func templateCreate(options templateCLIOptions) error {
 	return printJSON(template)
 }
 
-func templateMigrate(options templateCLIOptions) error {
-	workspace, err := templateWorkspace(&options)
-	if err != nil {
-		return err
-	}
-	var names []string
-	if options.Name != "" {
-		names = []string{options.Name}
-	}
-	results, err := workspace.MigrateTemplates(options.ProjectID, names, options.Write)
-	if err != nil {
-		return err
-	}
-	if options.JSON {
-		return printJSON(map[string]any{"migrations": results})
-	}
-	sort.SliceStable(results, func(i, j int) bool { return results[i].Name < results[j].Name })
-	for _, result := range results {
-		status := "unchanged"
-		if result.Written {
-			status = "written"
-		} else if result.Changed {
-			status = "preview"
-		}
-		fmt.Printf("%s\t%s\t%s\n", result.Name, status, result.Path)
-		if result.Changed && !result.Written {
-			fmt.Print(result.Content)
-		}
-	}
-	return nil
-}

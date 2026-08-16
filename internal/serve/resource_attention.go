@@ -111,7 +111,7 @@ func saveUIStateFile(path string, state uiState) error {
 func (s *server) loadAttentionAtPath(path string) (map[string]resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(readUIStatePath(path))
+	state, err := loadUIStateFile(uiStatePath(path))
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (s *server) loadAttentionAtPath(path string) (map[string]resourceAttentionS
 func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate func(*resourceAttentionState)) (resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(readUIStatePath(path))
+	state, err := loadUIStateFile(uiStatePath(path))
 	if err != nil {
 		return resourceAttentionState{}, err
 	}
@@ -144,7 +144,7 @@ func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate f
 func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(readUIStatePath(path))
+	state, err := loadUIStateFile(uiStatePath(path))
 	if err != nil {
 		return 0, err
 	}

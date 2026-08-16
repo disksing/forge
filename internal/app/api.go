@@ -239,15 +239,6 @@ func (w *Workspace) migrate(language string) error {
 	if err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
-	if err := migrateLegacyMetadata(w.root); err != nil {
-		return &APIError{Operation: "migrate Workspace", Kind: "legacy_metadata", Workspace: w.root, Err: err}
-	}
-	if err := w.migrateLegacyTaskWorkFiles(language); err != nil {
-		return err
-	}
-	if err := migrateLegacyLogs(w.root); err != nil {
-		return &APIError{Operation: "migrate legacy resource logs", Kind: "legacy_log", Workspace: w.root, Err: err}
-	}
 	if err := ensureWorkspaceWiki(w.root, language); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
