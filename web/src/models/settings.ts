@@ -60,6 +60,7 @@ export interface SettingsModel {
   onAddWorkspace: (draft: SettingsDraft) => Promise<void>;
   onRemoveWorkspace: (id: string, draft: SettingsDraft) => Promise<void>;
   onWorkspaceIcon: (id: string, icon: string, draft: SettingsDraft) => Promise<void>;
+  onSaveWorkspaceName: (id: string, name: string, draft: SettingsDraft) => Promise<void>;
   onSaveUser: (name: string) => Promise<string>;
   onLayoutPreference: (preference: AppearanceSettings["layout"]) => void;
   onFontScale: (column: keyof AppearanceSettings["fontScales"], value: number) => void;

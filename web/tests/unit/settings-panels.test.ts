@@ -48,6 +48,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onAddWorkspace: vi.fn(async () => undefined),
     onRemoveWorkspace: vi.fn(async () => undefined),
     onWorkspaceIcon: vi.fn(async () => undefined),
+    onSaveWorkspaceName: vi.fn(async () => undefined),
     onSaveUser: vi.fn(async (name) => name.trim() || "User"),
     onLayoutPreference: vi.fn(),
     onFontScale: vi.fn(),
@@ -110,6 +111,59 @@ describe("settings domain panels", () => {
     target.querySelector<HTMLButtonElement>('[title="Remove workspace"]')!.click();
     await vi.waitFor(() => expect(current.onToast).toHaveBeenCalledWith("remove failed"));
     expect(target.textContent).toContain("Active");
+  });
+
+  it("renames a workspace inline, deduplicates pending saves, and keeps the editor open on failure", async () => {
+    const save = deferred<void>();
+    const current = model({
+      onSaveWorkspaceName: vi.fn(() => save.promise),
+    });
+    const draft = createSettingsDraft(current);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "workspace", model: current, initialDraft: draft } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelector<HTMLButtonElement>('[title="Rename workspace"]')!.click();
+    await tick();
+    await tick();
+    const nameInput = target.querySelector<HTMLInputElement>(".settings-workspace-name-form input")!;
+    expect(nameInput).toBeTruthy();
+    expect(nameInput.value).toBe("Workspace A");
+
+    input(nameInput, "  My Workspace  ");
+    nameInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await tick();
+    expect(current.onSaveWorkspaceName).toHaveBeenCalledTimes(1);
+    expect(current.onSaveWorkspaceName).toHaveBeenCalledWith("workspace-a", "My Workspace", expect.any(Object));
+    expect(target.querySelector<HTMLButtonElement>(".settings-workspace-name-form [type=\"submit\"]")?.disabled).toBe(true);
+
+    save.resolve();
+    await vi.waitFor(() => expect(target.querySelector(".settings-workspace-name-form")).toBeNull());
+
+    const failing = model({
+      onSaveWorkspaceName: vi.fn(async () => { throw new Error("rename failed"); }),
+    });
+    const failingDraft = createSettingsDraft(failing);
+    const failingTarget = document.body.appendChild(document.createElement("div"));
+    const failingComponent = mount(SettingsPanelHarness, { target: failingTarget, props: { panel: "workspace", model: failing, initialDraft: failingDraft } });
+    cleanups.push(() => unmount(failingComponent));
+    await tick();
+
+    failingTarget.querySelector<HTMLButtonElement>('[title="Rename workspace"]')!.click();
+    await tick();
+    const failingInput = failingTarget.querySelector<HTMLInputElement>(".settings-workspace-name-form input")!;
+    input(failingInput, "Broken");
+    failingTarget.querySelector<HTMLButtonElement>(".settings-workspace-name-form [type=\"submit\"]")!.click();
+    await vi.waitFor(() => expect(failing.onToast).toHaveBeenCalledWith("rename failed"));
+    expect(failingTarget.querySelector(".settings-workspace-name-form")).not.toBeNull();
+
+    // Submitting an unchanged or whitespace-only name closes without saving.
+    input(failingInput, "Workspace A");
+    failingInput.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await tick();
+    expect(failing.onSaveWorkspaceName).toHaveBeenCalledTimes(1);
+    expect(failingTarget.querySelector(".settings-workspace-name-form")).toBeNull();
   });
 
   it("normalizes and persists browser-local user names while containing save failures", async () => {

@@ -145,6 +145,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			onAddWorkspace: async (draft) => { syncDraft(draft); await addWorkspace(); },
 			onRemoveWorkspace: async (id, draft) => { syncDraft(draft); await removeWorkspace(id); },
 			onWorkspaceIcon: async (id, icon, draft) => { syncDraft(draft); await updateWorkspaceIcon(id, icon); },
+			onSaveWorkspaceName: async (id, name, draft) => { syncDraft(draft); await updateWorkspaceName(id, name); },
 			onSaveUser: async (name) => {
 				const normalized = dependencies.saveUser(name);
 				dependencies.toast(normalized === "User" ? "User name reset to User." : `User name saved as ${normalized}.`);
@@ -280,6 +281,19 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			state.workspaceIconSavingId = "";
 			render();
 		}
+	}
+
+	async function updateWorkspaceName(id: string, name: string): Promise<void> {
+		if (!id) return;
+		const workspace = await dependencies.request<SettingsWorkspace>(`/api/workspaces/${encodeURIComponent(id)}`, {
+			method: "PUT", body: JSON.stringify({ name })
+		});
+		const replace = (items: SettingsWorkspace[] = []) => items.map((item) => item.id === workspace.id ? workspace : item);
+		dependencies.setConfig({ ...dependencies.config(), workspaces: replace(dependencies.config().workspaces) });
+		state.data = { ...state.data, workspaces: replace(state.data?.workspaces) };
+		dependencies.renderWorkspace();
+		render();
+		dependencies.toast("Workspace name saved.");
 	}
 
 	async function saveAgentSettings(): Promise<void> {

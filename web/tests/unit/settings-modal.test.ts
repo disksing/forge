@@ -42,6 +42,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onAddWorkspace: vi.fn(async () => undefined),
     onRemoveWorkspace: vi.fn(async () => undefined),
     onWorkspaceIcon: vi.fn(async () => undefined),
+    onSaveWorkspaceName: vi.fn(async () => undefined),
     onSaveUser: vi.fn(async (name) => name.trim() || "User"),
     onLayoutPreference: vi.fn(),
     onFontScale: vi.fn(),

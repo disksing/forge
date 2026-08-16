@@ -70,7 +70,7 @@
     <div class="settings-content">
       <button type="button" class="settings-close" title="Close" aria-label="Close" onclick={() => model.onClose(draft.dirty)}><Icon name="x" /></button>
       {#if draft.tab === "workspace"}
-        <WorkspaceSettingsPanel workspaces={model.workspaces} activeWorkspaceId={model.activeWorkspaceId} workspaceIcons={model.workspaceIcons} bind:draft bind:pending onAddWorkspace={model.onAddWorkspace} onRemoveWorkspace={model.onRemoveWorkspace} onWorkspaceIcon={model.onWorkspaceIcon} onToast={model.onToast} />
+        <WorkspaceSettingsPanel workspaces={model.workspaces} activeWorkspaceId={model.activeWorkspaceId} workspaceIcons={model.workspaceIcons} bind:draft bind:pending onAddWorkspace={model.onAddWorkspace} onRemoveWorkspace={model.onRemoveWorkspace} onWorkspaceIcon={model.onWorkspaceIcon} onSaveWorkspaceName={model.onSaveWorkspaceName} onToast={model.onToast} />
       {:else if draft.tab === "user"}
         <UserSettingsPanel userName={userNameDraft} onUserNameInput={(value) => { userNameDraft = value; draft.userName = value; }} bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
       {:else if draft.tab === "appearance"}

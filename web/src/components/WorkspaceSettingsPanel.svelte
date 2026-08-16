@@ -14,6 +14,7 @@
     onAddWorkspace,
     onRemoveWorkspace,
     onWorkspaceIcon,
+    onSaveWorkspaceName,
     onToast,
   }: {
     workspaces: SettingsModel["workspaces"];
@@ -24,10 +25,18 @@
     onAddWorkspace: SettingsModel["onAddWorkspace"];
     onRemoveWorkspace: SettingsModel["onRemoveWorkspace"];
     onWorkspaceIcon: SettingsModel["onWorkspaceIcon"];
+    onSaveWorkspaceName: SettingsModel["onSaveWorkspaceName"];
     onToast: SettingsModel["onToast"];
   } = $props();
 
   let iconPicker = $state("");
+  let nameEditing = $state("");
+  let nameDraft = $state("");
+  let nameInput = $state<HTMLInputElement | null>(null);
+
+  $effect(() => {
+    if (nameEditing && nameInput) nameInput.focus();
+  });
 
   async function addWorkspace(event: SubmitEvent): Promise<void> {
     event.preventDefault();
@@ -69,6 +78,45 @@
     }
   }
 
+  function startNameEdit(workspace: SettingsModel["workspaces"][number]): void {
+    if (pending) return;
+    iconPicker = "";
+    nameDraft = workspace.name;
+    nameEditing = workspace.id;
+  }
+
+  function cancelNameEdit(): void {
+    nameEditing = "";
+    nameDraft = "";
+  }
+
+  async function saveName(workspace: SettingsModel["workspaces"][number]): Promise<void> {
+    const name = nameDraft.trim();
+    if (name === workspace.name) {
+      cancelNameEdit();
+      return;
+    }
+    pending = `name:${workspace.id}`;
+    try {
+      await onSaveWorkspaceName(workspace.id, name, cloneSettingsDraft(draft));
+      cancelNameEdit();
+    } catch (error) {
+      onToast(settingsErrorMessage(error));
+    } finally {
+      pending = "";
+    }
+  }
+
+  function nameKeydown(event: KeyboardEvent, workspace: SettingsModel["workspaces"][number]): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveName(workspace);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancelNameEdit();
+    }
+  }
+
   function workspaceIcon(id: string): { id: string; label: string; src: string } {
     const workspace = workspaces.find((item) => item.id === id);
     return workspaceIcons.find((item) => item.id === (workspace?.icon || "")) || workspaceIcons[0];
@@ -105,15 +153,24 @@
               aria-expanded={iconPicker === workspace.id}
               title="Change workspace icon"
               disabled={Boolean(pending)}
-              onclick={() => iconPicker = iconPicker === workspace.id ? "" : workspace.id}
+              onclick={() => { nameEditing = ""; iconPicker = iconPicker === workspace.id ? "" : workspace.id; }}
             >
               <img src={shownIcon.src} alt="" />
               <span>{pending === `icon:${workspace.id}` ? "Saving..." : shownIcon.label}</span>
               <Icon name="chevron-down" />
             </button>
+            <button type="button" class="settings-workspace-rename-button" title="Rename workspace" aria-label={`Rename ${workspace.name}`} disabled={Boolean(pending)} onclick={() => startNameEdit(workspace)}><Icon name="pencil" /></button>
             <button type="button" class="settings-danger-button" title="Remove workspace" disabled={Boolean(pending)} onclick={() => removeWorkspace(workspace.id)}><Icon name="trash-2" /></button>
           </div>
         </div>
+        {#if nameEditing === workspace.id}
+          <form class="settings-workspace-name-form" onsubmit={(event) => { event.preventDefault(); void saveName(workspace); }}>
+            <input bind:this={nameInput} bind:value={nameDraft} placeholder={workspace.path} aria-label={`Name for ${workspace.name}`} disabled={pending === `name:${workspace.id}`} onkeydown={(event) => nameKeydown(event, workspace)} />
+            <button type="submit" disabled={Boolean(pending)}><Icon name="check" /><span>{pending === `name:${workspace.id}` ? "Saving..." : "Save"}</span></button>
+            <button type="button" disabled={Boolean(pending)} onclick={cancelNameEdit}><Icon name="x" /><span>Cancel</span></button>
+            <small class="settings-workspace-name-hint">Leave empty to use the directory name.</small>
+          </form>
+        {/if}
         {#if iconPicker === workspace.id}
           <div class="settings-workspace-icon-picker" role="radiogroup" aria-label={`Icon for ${workspace.name}`}>
             {#each workspaceIcons as option (option.id)}

@@ -35,7 +35,7 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, settingsResponse{Workspaces: cfg.Workspaces, ActiveID: cfg.ActiveID})
+	writeJSON(w, settingsResponse{Workspaces: resolvedWorkspaceSummaries(cfg.Workspaces), ActiveID: cfg.ActiveID})
 }
 
 func findAgentProfileRoute(routes []agentProfileRoute, key string) (agentProfileRoute, bool) {

@@ -340,6 +340,11 @@ templates and PUA-managed `AGENTS.md` prompts. Existing workspaces without a
 language setting default to English. Use `pua migrate --language=zh-CN` (or
 `--language=en`) to switch languages.
 
+`workspace.json` also carries an optional `name`: a display name editable from
+the web Settings workspace tab (mirroring the Project and Task titles kept in
+their resource metadata). Workspaces without a name fall back to the directory
+base name.
+
 Workspace, Project, and Task creation is local and uses the shared `internal/app` application boundary. Creation no longer persists resource creator metadata; Agent sender provenance remains on messages and is validated from the injected generation environment. Creation sends no initial message and creates no generation; call `pua message send` separately, which lazily creates the first generation. A message that actually opens a Turn subscribes to that Turn's result by default; a message delivered as steer into an existing Turn does not. A steer request downgraded to enqueue becomes an opener and does subscribe. Pass `--subscribe-result=false` to disable the result for an opening message. If a create command commits but its output is lost, query the resource before deciding whether to issue a new create operation.
 
 Subscribed terminal Turn results and terminal cross-resource delivery failures return through the source resource's recoverable outbox as structured system messages with stable `type`, `causation`, and receipt metadata. Only the Agent message that opened a Turn receives its final result; steer inputs delivered into that Turn require an explicit PUA reply when needed. The generated body is retained only until the target mailbox accepts it; after that, source and target retain bounded summaries while AgentHub canonical history remains the content source. Generated messages force `subscribeResult=false` and never recursively generate another notification. Use `pua message show` for delivery diagnostics and `pua history turn show` for Turn references.

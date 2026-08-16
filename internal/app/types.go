@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Version          int                   `json:"version"`
 	Language         string                `json:"language"`
+	Name             string                `json:"name,omitempty"`
 	InstanceID       string                `json:"instanceId,omitempty"`
 	AgentBinding     AgentBinding          `json:"agentBinding,omitempty"`
 	ResourceDefaults ResourceAgentDefaults `json:"resourceDefaults,omitempty"`

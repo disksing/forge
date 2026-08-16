@@ -161,6 +161,122 @@ func TestWorkspaceIconCanBeUpdatedAndReset(t *testing.T) {
 	}
 }
 
+func TestWorkspaceNameCanBeUpdatedAndCleared(t *testing.T) {
+	workspacePath := filepath.Join(t.TempDir(), "name-workspace")
+	if _, err := app.Initialize(workspacePath, "en"); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{
+		Version:    agentHubConfigVersion,
+		Workspaces: []serveWorkspace{{ID: "workspace-one", Name: "name-workspace", Path: workspacePath}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	update := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.handleWorkspace(rec, req)
+		return rec
+	}
+
+	rec := update(`{"name":"  Named Workspace  "}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace name update returned %d: %s", rec.Code, rec.Body.String())
+	}
+	var workspace serveWorkspace
+	if err := json.Unmarshal(rec.Body.Bytes(), &workspace); err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Name != "Named Workspace" {
+		t.Fatalf("updated workspace name is %q", workspace.Name)
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Workspaces[0].Name; got != "Named Workspace" {
+		t.Fatalf("persisted workspace name is %q", got)
+	}
+	if got := app.WorkspaceName(workspacePath); got != "Named Workspace" {
+		t.Fatalf("workspace.json name is %q", got)
+	}
+
+	// The name survives an icon-only update.
+	rec = update(`{"icon":"research-lab"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace icon update returned %d: %s", rec.Code, rec.Body.String())
+	}
+	cfg, err = s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Workspaces[0].Name; got != "Named Workspace" {
+		t.Fatalf("icon update changed workspace name to %q", got)
+	}
+
+	rec = update(`{}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty workspace update returned %d, want 400", rec.Code)
+	}
+
+	// Clearing the name falls back to the directory base name.
+	rec = update(`{"name":""}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace name reset returned %d: %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &workspace); err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Name != "name-workspace" {
+		t.Fatalf("reset workspace name is %q, want directory base name", workspace.Name)
+	}
+}
+
+func TestWorkspaceListResolvesConfiguredNames(t *testing.T) {
+	workspacePath := filepath.Join(t.TempDir(), "listed-workspace")
+	puaWorkspace, err := app.Initialize(workspacePath, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.SetName("Configured Name"); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	// Seed a stale cached name; reads must resolve the configured name live.
+	if err := s.saveConfig(config{
+		Version:    agentHubConfigVersion,
+		ActiveID:   "workspace-one",
+		Workspaces: []serveWorkspace{{ID: "workspace-one", Name: "Stale", Path: workspacePath}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleWorkspaces(rec, httptest.NewRequest(http.MethodGet, "/api/workspaces", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace list returned %d: %s", rec.Code, rec.Body.String())
+	}
+	var listed config
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Workspaces) != 1 || listed.Workspaces[0].Name != "Configured Name" {
+		t.Fatalf("workspace list name = %#v", listed.Workspaces)
+	}
+
+	rec = httptest.NewRecorder()
+	s.writeSettings(rec)
+	var settings settingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &settings); err != nil {
+		t.Fatal(err)
+	}
+	if len(settings.Workspaces) != 1 || settings.Workspaces[0].Name != "Configured Name" {
+		t.Fatalf("settings workspace name = %#v", settings.Workspaces)
+	}
+}
+
 func TestAddingExistingWorkspacePreservesIcon(t *testing.T) {
 	workspacePath := t.TempDir()
 	if _, err := app.Initialize(workspacePath, "en"); err != nil {

@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { createSettingsController, configWithAgentHubCatalog } from "../../src/controllers/settings-controller";
+import type { SettingsControllerDependencies } from "../../src/controllers/settings-controller";
 import type { SettingsModel } from "../../src/components/models";
+import { createSettingsDraft } from "../../src/components/settings-draft";
 import type { PUASettingsConfig } from "../../src/controllers/settings-controller";
 
 describe("SettingsController", () => {
-	function settingsDependencies(activeWorkspaceId: string, base: PUASettingsConfig, publish: (model: SettingsModel) => void) {
+	function settingsDependencies(activeWorkspaceId: string, base: PUASettingsConfig, publish: (model: SettingsModel) => void): SettingsControllerDependencies {
 		return {
 			config: () => base,
 			setConfig: () => undefined,
@@ -98,5 +100,43 @@ describe("SettingsController", () => {
 		expect(merged.agentHubProviders).toEqual([{ id: "openai", name: "OpenAI" }]);
 		expect(merged.agentProfiles).toEqual([{ key: "default", description: "", agentName: "Codex" }]);
 		expect(base.agents).toEqual([]);
+	});
+
+	it("saves workspace names through the workspace endpoint and refreshes the published model", async () => {
+		const published: SettingsModel[] = [];
+		const requests: Array<{ path: string; body: unknown }> = [];
+		const config: PUASettingsConfig = {
+			activeId: "workspace-a",
+			workspaces: [{ id: "workspace-a", name: "a", path: "/tmp/a" }],
+			agents: [],
+			agentProfiles: [],
+		};
+		let current = config;
+		const dependencies = settingsDependencies("workspace-a", config, (model) => published.push(model));
+		dependencies.config = () => current;
+		dependencies.setConfig = (next) => { current = next; };
+		const baseRequest = dependencies.request;
+		dependencies.request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+			if (init?.method === "PUT" && path === "/api/workspaces/workspace-a") {
+				requests.push({ path, body: JSON.parse(String(init.body)) });
+				return { ...current.workspaces[0], name: "Named Workspace" } as T;
+			}
+			return baseRequest<T>(path);
+		};
+		let workspaceRenders = 0;
+		dependencies.renderWorkspace = () => { workspaceRenders++; };
+		const toasts: string[] = [];
+		dependencies.toast = (message) => toasts.push(message);
+		const controller = createSettingsController(dependencies);
+
+		await controller.open();
+		const model = published.at(-1)!;
+		await model.onSaveWorkspaceName("workspace-a", "Named Workspace", createSettingsDraft(model));
+
+		expect(requests).toEqual([{ path: "/api/workspaces/workspace-a", body: { name: "Named Workspace" } }]);
+		expect(current.workspaces[0]?.name).toBe("Named Workspace");
+		expect(published.at(-1)?.workspaces[0]?.name).toBe("Named Workspace");
+		expect(workspaceRenders).toBeGreaterThan(0);
+		expect(toasts).toContain("Workspace name saved.");
 	});
 });

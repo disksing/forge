@@ -278,6 +278,7 @@ func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err, http.StatusInternalServerError)
 			return
 		}
+		cfg.Workspaces = resolvedWorkspaceSummaries(cfg.Workspaces)
 		writeJSON(w, cfg)
 	case http.MethodPost:
 		var body struct {
@@ -314,7 +315,8 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 1 {
 		if r.Method == http.MethodPut {
 			var body struct {
-				Icon string `json:"icon"`
+				Icon *string `json:"icon"`
+				Name *string `json:"name"`
 			}
 			decoder := json.NewDecoder(r.Body)
 			decoder.DisallowUnknownFields()
@@ -322,10 +324,25 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 				writeError(w, err, http.StatusBadRequest)
 				return
 			}
-			workspace, err := s.updateWorkspaceIcon(id, body.Icon)
-			if err != nil {
-				writeError(w, err, http.StatusBadRequest)
+			if body.Icon == nil && body.Name == nil {
+				writeError(w, errors.New("icon or name is required"), http.StatusBadRequest)
 				return
+			}
+			var workspace serveWorkspace
+			var err error
+			if body.Icon != nil {
+				workspace, err = s.updateWorkspaceIcon(id, *body.Icon)
+				if err != nil {
+					writeError(w, err, http.StatusBadRequest)
+					return
+				}
+			}
+			if body.Name != nil {
+				workspace, err = s.updateWorkspaceName(id, *body.Name)
+				if err != nil {
+					writeError(w, err, http.StatusBadRequest)
+					return
+				}
 			}
 			writeJSON(w, workspace)
 			return
@@ -1442,6 +1459,32 @@ func (s *server) updateWorkspaceIcon(id, icon string) (serveWorkspace, error) {
 	return serveWorkspace{}, fmt.Errorf("workspace not found: %s", id)
 }
 
+func (s *server) updateWorkspaceName(id, name string) (serveWorkspace, error) {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return serveWorkspace{}, err
+	}
+	for i := range cfg.Workspaces {
+		if cfg.Workspaces[i].ID != id {
+			continue
+		}
+		puaWorkspace, err := app.OpenWorkspace(cfg.Workspaces[i].Path)
+		if err != nil {
+			return serveWorkspace{}, err
+		}
+		resolved, err := puaWorkspace.SetName(name)
+		if err != nil {
+			return serveWorkspace{}, err
+		}
+		cfg.Workspaces[i].Name = resolved
+		if err := s.saveConfig(cfg); err != nil {
+			return serveWorkspace{}, err
+		}
+		return cfg.Workspaces[i], nil
+	}
+	return serveWorkspace{}, fmt.Errorf("workspace not found: %s", id)
+}
+
 func (s *server) removeWorkspace(id string) error {
 	cfg, err := s.loadConfig()
 	if err != nil {
@@ -1823,11 +1866,20 @@ func workspaceID(path string) string {
 }
 
 func workspaceName(path string) string {
-	name := filepath.Base(filepath.Clean(path))
-	if name == "." || name == string(filepath.Separator) || name == "" {
-		return "AgentWorkspace"
+	return app.WorkspaceName(path)
+}
+
+// resolvedWorkspaceSummaries refreshes the display names cached in the serve
+// config with the name configured in each workspace.json, falling back to the
+// directory base name. The persisted cache is only updated on writes; reads
+// resolve live so externally edited configs stay accurate.
+func resolvedWorkspaceSummaries(workspaces []serveWorkspace) []serveWorkspace {
+	result := make([]serveWorkspace, len(workspaces))
+	for i, workspace := range workspaces {
+		workspace.Name = workspaceName(workspace.Path)
+		result[i] = workspace
 	}
-	return name
+	return result
 }
 
 func uiStatePath(workspacePath string) string {
