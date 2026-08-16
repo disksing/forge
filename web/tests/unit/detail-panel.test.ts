@@ -1,10 +1,11 @@
 import { mount, tick, unmount } from "svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorView } from "@codemirror/view";
 
 import DetailPanel from "../../src/components/DetailPanel.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import type { DetailPanelModel } from "../../src/components/models";
+import { MemoryStorage } from "../fixtures/memory-storage";
 
 const { confirmDialogMock } = vi.hoisted(() => ({ confirmDialogMock: vi.fn() }));
 vi.mock("../../src/controllers/confirm-dialog-controller", () => ({ confirmDialog: confirmDialogMock }));
@@ -64,6 +65,8 @@ afterEach(async () => {
   delete window.Diff2Html;
 });
 
+beforeEach(() => vi.stubGlobal("localStorage", new MemoryStorage()));
+
 describe("DetailPanel", () => {
   it("opens the Markdown editor dialog and saves through the resource callback", async () => {
     const save = vi.fn(async (path: string, content: string) => ({ path, name: "task.md", content, contentHash: "saved-hash" }));
@@ -83,6 +86,38 @@ describe("DetailPanel", () => {
     saveButton.click();
     await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save).toHaveBeenCalledWith("project1/task1/task.md", "# Stable detail\n\nSelected text.\nAdded in browser.\n", "doc-a");
+  });
+
+  it("opens the file in a full-screen window without download controls", async () => {
+    localStorage.removeItem("forge:file-preview-handoff");
+    const open = vi.fn();
+    vi.stubGlobal("open", open);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      path: "project1/task1/task.md", name: "task.md", content: "# Stable detail\n\nSelected text.", contentHash: "doc-a",
+    }), { headers: { "content-type": "application/json" } })));
+    const { target } = mountModel(resourceModel());
+    await tick();
+    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!;
+    edit.click();
+    await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.querySelector('a[aria-label="Download file"], a[title="Download file"], a.file-modal-download')).toBeNull();
+    expect(dialog.textContent).not.toContain("Download");
+
+    const fullscreen = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Full screen")!;
+    fullscreen.click();
+    expect(open).toHaveBeenCalledOnce();
+    const url = new URL(String(open.mock.calls[0][0]), "http://localhost");
+    expect(url.pathname).toBe("/file");
+    expect(url.searchParams.get("workspaceId")).toBe("ws");
+    expect(url.searchParams.get("resourceId")).toBe("project1.task1");
+    expect(url.searchParams.get("section")).toBe("Files");
+    expect(url.searchParams.get("path")).toBe("project1/task1/task.md");
+    expect(url.searchParams.get("mode")).toBe("edit");
+    expect(url.searchParams.get("editable")).toBe("1");
+    const handoff = JSON.parse(localStorage.getItem("forge:file-preview-handoff") || "{}");
+    expect(handoff.mode).toBe("edit");
+    expect(handoff.path).toBe("project1/task1/task.md");
   });
 
   it("renders the compact resource number inside an independently scrollable body", async () => {

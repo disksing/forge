@@ -1,0 +1,9 @@
+/* FilePreviewFullscreen styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="file-preview-fullscreen"]) .file-fullscreen-state {
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+}

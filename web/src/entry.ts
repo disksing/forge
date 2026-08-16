@@ -3,6 +3,7 @@ import { mount, unmount } from "svelte";
 import "./app.css";
 
 import ForgeApp from "./ForgeApp.svelte";
+import FilePreviewFullscreen from "./components/FilePreviewFullscreen.svelte";
 import { createForgeAppChannels } from "./app-channels";
 import { startForgeApp, stopForgeApp, type ForgeViewPublisher } from "./app-controller";
 
@@ -25,6 +26,11 @@ async function mountApplication(): Promise<void> {
   if (application) return;
   const target = document.getElementById("app");
   if (!target) throw new Error("Forge application root is unavailable.");
+  if (window.location.pathname === "/file") {
+    target.dataset.componentOwner = "file-preview-fullscreen";
+    application = mount(FilePreviewFullscreen, { target });
+    return;
+  }
   target.dataset.componentOwner = "app-shell";
   application = mount(ForgeApp, { target, props: { channels } });
   startForgeApp(publisher);
