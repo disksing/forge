@@ -2,6 +2,7 @@
   import "./TimelineMessage.css";
 
   import type { TimelineItem } from "./models";
+  import { formatClock } from "./timeline-events";
   import { markdownHTML, markdownResourceNavigation, type ResourceTitleResolver } from "./markdown";
 
   let { item, agentName, workspaceId = "", resolveResourceTitle = () => null, onNavigate = () => {}, onOpenFile }: { item: TimelineItem; agentName: string; workspaceId?: string; resolveResourceTitle?: ResourceTitleResolver; onNavigate?: (resourceId: string) => void; onOpenFile?: (path: string) => void } = $props();
@@ -19,8 +20,7 @@
   }
 
   function clock(): string {
-    const date = new Date(item.time || "");
-    return Number.isNaN(date.valueOf()) ? "" : date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    return formatClock(item.time);
   }
 
   function markdown(): string {
@@ -36,13 +36,18 @@
 
 <div data-component-owner="event-timeline" class={`agent-message-row ${rowClass}`}>
   <div class="agent-message-main">
-    <div class="agent-message-meta">
-      {#if role !== "assistant" || !item.agentContinuation}<strong>{senderName()}</strong>{/if}
-      {#if role !== "assistant"}<span class="agent-message-tag agent-message-role-tag">{role}</span>{/if}
-      {#if item.steer}<span class="agent-message-tag">steer</span>{/if}
-      {#if role === "agent" && item.sender?.sessionId}<span class="agent-message-source" title={item.sender.sessionId}>from session {item.sender.sessionId}</span>{/if}
-      <span>{clock()}</span>
-    </div>
+    {#if role !== "assistant" || !item.agentContinuation}
+      <!-- Assistant messages continuing a run drop the whole meta row: the
+           run header above the run's first event already carries the name
+           and the run's start time. -->
+      <div class="agent-message-meta">
+        <strong>{senderName()}</strong>
+        {#if role !== "assistant"}<span class="agent-message-tag agent-message-role-tag">{role}</span>{/if}
+        {#if item.steer}<span class="agent-message-tag">steer</span>{/if}
+        {#if role === "agent" && item.sender?.sessionId}<span class="agent-message-source" title={item.sender.sessionId}>from session {item.sender.sessionId}</span>{/if}
+        <span>{clock()}</span>
+      </div>
+    {/if}
     <div class="agent-message-bubble">
       {#if role === "assistant" || role === "agent"}<div class="agent-message-content markdown-rendered" use:markdownResourceNavigation={{ resolveResourceTitle, onNavigate, onOpenFile }}>{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
     </div>

@@ -7,7 +7,7 @@ import EventTimeline from "../../src/components/EventTimeline.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import HistoryTimeline from "../../src/components/HistoryTimeline.svelte";
 import type { AgentEvent, AgentTurnItem, EventTimelineModel, ResourceMessageStatus, TimelineItem } from "../../src/components/models";
-import { projectConversationEvents } from "../../src/components/timeline-events";
+import { formatClock, projectConversationEvents } from "../../src/components/timeline-events";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -263,16 +263,19 @@ describe("EventTimeline", () => {
     expect(rows).toHaveLength(4);
 
     // Reasoning and tool calls precede the reply: the run header introduces
-    // the thinking block so the agent's name attaches to the first event.
+    // the thinking block, carrying both the agent's name and the run's
+    // start time.
     const header = rows[1].querySelector<HTMLElement>(".agent-run-header");
-    expect(header?.textContent).toBe("Test Agent");
+    expect(header?.querySelector("strong")?.textContent).toBe("Test Agent");
+    expect(header?.querySelector("span")?.textContent).toBe(formatClock(startedAt));
     expect(rows[1].querySelector(".agent-reasoning-note")).not.toBeNull();
     expect(rows[2].querySelector(".agent-run-header")).toBeNull();
     expect(rows[2].querySelector(".agent-tool-group")).not.toBeNull();
 
-    // The reply continues the same run: no repeated name on its meta row.
+    // The reply continues the same run: its whole meta row moves up to the
+    // run header, so no name or timestamp repeats on the message.
     const reply = rows[3].querySelector<HTMLElement>(".agent-message-row.assistant");
-    expect(reply?.querySelector(".agent-message-meta strong")).toBeNull();
+    expect(reply?.querySelector(".agent-message-meta")).toBeNull();
     expect(reply?.classList.contains("final")).toBe(true);
 
     // Exactly one agent label renders for the whole run; message meta rows

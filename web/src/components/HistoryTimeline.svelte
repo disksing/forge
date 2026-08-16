@@ -11,7 +11,7 @@
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
   import { toolGroupKey } from "./tool-group";
-  import { markTurnAgentRuns, markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
+  import { formatClock, markTurnAgentRuns, markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
@@ -253,7 +253,7 @@
                   {#each blockItems(block) as item (timelineKey(item))}
                     <div class="history-item" data-history-kind={item.kind}>
                       {#if item.agentStart && item.kind !== "message"}
-                        <div data-component-owner="event-timeline" class="agent-run-header"><strong>{blockAgentName(block)}</strong></div>
+                        <div data-component-owner="event-timeline" class="agent-run-header"><strong>{blockAgentName(block)}</strong>{#if formatClock(item.time)}<span>{formatClock(item.time)}</span>{/if}</div>
                       {/if}
                       {#if item.kind === "message"}
                         <TimelineMessage {item} agentName={blockAgentName(block)} {workspaceId} {resolveResourceTitle} {onNavigate} {onOpenFile} />
