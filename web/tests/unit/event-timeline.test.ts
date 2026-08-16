@@ -180,6 +180,85 @@ describe("EventTimeline", () => {
     expect(target.querySelector("[role='dialog'] .markdown-editor-shell")).toBeNull();
   });
 
+  it("expands Turns bottom-up and stops once the conversation overflows the viewport", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const generation = { generation: 1, generationId: "gen-task-a", title: "task-a", status: "idle", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
+    const turns = [1, 2, 3].map((n) => ({
+      reference: `ref-${n}`, turnId: `turn-${n}`, status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10,
+      triggerPreview: `summary ${n}`, eventCount: 2, toolEventCount: 0, startEventId: n * 2 - 1, lastEventId: n * 2, endEventId: n * 2, generation,
+    }));
+    const details = turns.map((turn) => ({
+      turn, latestEventId: turn.lastEventId,
+      items: [{ type: "message", role: "user", text: `detail ${turn.turnId}`, startEventId: turn.startEventId, endEventId: turn.lastEventId, startedAt: turn.startedAt, endedAt: turn.startedAt }],
+    }));
+    const page = { resourceId: "task-a", segments: [{ generation, turns }], page: { limit: 5, hasMore: false } };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const detailMatch = String(input).match(/\/history\/turns\/ref-(\d)/);
+      const body = detailMatch ? details[Number(detailMatch[1]) - 1] : page;
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "chat-timeline";
+    // The viewport counts as filled the moment one expanded Turn renders.
+    Object.defineProperty(target, "scrollHeight", { configurable: true, get: () => target.querySelector(".agent-message-row") ? 2000 : 0 });
+    Object.defineProperty(target, "clientHeight", { configurable: true, get: () => 600 });
+    Object.defineProperty(target, "scrollTop", { configurable: true, get: () => 0, set: () => {} });
+    // Deferred visibility triggers land far outside this viewport, so only the
+    // bottom-up fill may expand Turns in this test.
+    target.getBoundingClientRect = () => ({ top: 5000, bottom: 5600, left: 0, right: 800, width: 800, height: 600, x: 0, y: 5000, toJSON: () => ({}) }) as DOMRect;
+    const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.textContent).toContain("detail turn-3"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const detailRequests = fetchMock.mock.calls.map(([input]) => String(input)).filter((path) => path.includes("/history/turns/ref-"));
+    expect(detailRequests.every((path) => path.includes("/history/turns/ref-3"))).toBe(true);
+    expect(detailRequests.length).toBeGreaterThan(0);
+    expect(target.textContent).toContain("summary 1");
+    expect(target.textContent).toContain("summary 2");
+    expect(target.textContent).not.toContain("detail turn-1");
+    expect(target.textContent).not.toContain("detail turn-2");
+  });
+
+  it("pulls older summary pages while expanded Turns leave the viewport underfilled", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const generation = { generation: 1, generationId: "gen-task-a", title: "task-a", status: "idle", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
+    const makeTurn = (id: string, first: number) => ({
+      reference: `ref-${id}`, turnId: id, status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10,
+      triggerPreview: `summary ${id}`, eventCount: 2, toolEventCount: 0, startEventId: first, lastEventId: first + 1, endEventId: first + 1, generation,
+    });
+    const newest = makeTurn("new", 3);
+    const oldest = makeTurn("old", 1);
+    const detailOf = (turn: ReturnType<typeof makeTurn>) => ({
+      turn, latestEventId: turn.lastEventId,
+      items: [{ type: "message", role: "user", text: `detail ${turn.turnId}`, startEventId: turn.startEventId, endEventId: turn.lastEventId, startedAt: turn.startedAt, endedAt: turn.startedAt }],
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      let body: unknown;
+      if (path.includes("/history/turns/ref-new")) body = detailOf(newest);
+      else if (path.includes("/history/turns/ref-old")) body = detailOf(oldest);
+      else if (path.includes("cursor=older")) body = { resourceId: "task-a", segments: [{ generation, turns: [oldest] }], page: { limit: 5, hasMore: false } };
+      else body = { resourceId: "task-a", segments: [{ generation, turns: [newest] }], page: { limit: 5, nextCursor: "older", hasMore: true } };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "chat-timeline";
+    mockScrollMetrics(target, { scrollHeight: 0, clientHeight: 600 });
+    const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => {
+      expect(target.textContent).toContain("detail new");
+      expect(target.textContent).toContain("detail old");
+    });
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).some((path) => path.includes("cursor=older"))).toBe(true);
+  });
+
   it("shows working only while a Turn is actively running", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -272,16 +351,17 @@ describe("EventTimeline", () => {
     expect(rows[2].querySelector(".agent-run-header")).toBeNull();
     expect(rows[2].querySelector(".agent-tool-group")).not.toBeNull();
 
-    // The reply continues the same run: its whole meta row moves up to the
-    // run header, so no name or timestamp repeats on the message.
+    // The reply belongs to the same run but still renders its own meta row
+    // with the agent's name and the message's timestamp.
     const reply = rows[3].querySelector<HTMLElement>(".agent-message-row.assistant");
-    expect(reply?.querySelector(".agent-message-meta")).toBeNull();
+    expect(reply?.querySelector(".agent-message-meta strong")?.textContent).toBe("Test Agent");
+    expect(reply?.querySelector(".agent-message-meta span")?.textContent).toBe(formatClock(startedAt));
     expect(reply?.classList.contains("final")).toBe(true);
 
-    // Exactly one agent label renders for the whole run; message meta rows
-    // only keep the user's name.
+    // Exactly one run header renders for the opening activity; every
+    // message meta row keeps its sender's name.
     expect(section.querySelectorAll(".agent-run-header")).toHaveLength(1);
-    expect(conversationAuthors(target)).toEqual(["User"]);
+    expect(conversationAuthors(target)).toEqual(["User", "Test Agent"]);
   });
 
   it("keeps the generation boundary while hiding routine lifecycle detail", async () => {

@@ -141,10 +141,13 @@ describe("timeline event algorithms", () => {
     const marked = markTurnAgentRuns(items);
 
     expect(marked[0]).toBe(items[0]);
-    expect(marked[1]).toMatchObject({ agentStart: true, agentContinuation: false });
-    expect(marked[2]).toMatchObject({ agentStart: false, agentContinuation: true });
-    expect(marked[3]).toMatchObject({ agentStart: false, agentContinuation: true });
-    expect(marked[4]).toMatchObject({ agentStart: false, agentContinuation: true });
+    expect(marked[1]).toMatchObject({ agentStart: true });
+    // Continuation items and assistant messages need no annotation, so
+    // they pass through untouched: messages always render their own meta
+    // row with the name and timestamp.
+    expect(marked[2]).toBe(items[2]);
+    expect(marked[3]).toBe(items[3]);
+    expect(marked[4]).toBe(items[4]);
     expect(items[1].agentStart).toBeUndefined();
   });
 
@@ -160,18 +163,21 @@ describe("timeline event algorithms", () => {
 
     const marked = markTurnAgentRuns(items);
 
-    expect(marked[0]).toMatchObject({ agentStart: true, agentContinuation: false });
-    expect(marked[1]).toMatchObject({ agentStart: false, agentContinuation: true });
+    // A run that opens with an assistant message needs no header: the
+    // message's own meta row already labels the agent, so unannotated
+    // items pass through untouched.
+    expect(marked[0]).toBe(items[0]);
+    expect(marked[1]).toBe(items[1]);
     expect(marked[2]).toBe(items[2]);
-    expect(marked[3]).toMatchObject({ agentStart: true, agentContinuation: false });
+    expect(marked[3]).toMatchObject({ agentStart: true });
     expect(marked[4]).toBe(items[4]);
-    expect(marked[5]).toMatchObject({ agentStart: true, agentContinuation: false });
+    expect(marked[5]).toBe(items[5]);
   });
 
   it("keeps item identity when agent run annotations are already correct", () => {
     const items: TimelineItem[] = [
-      { kind: "thinking", text: "reasoning", agentStart: true, agentContinuation: false },
-      { kind: "message", role: "assistant", text: "final reply", agentStart: false, agentContinuation: true },
+      { kind: "thinking", text: "reasoning", agentStart: true },
+      { kind: "message", role: "assistant", text: "final reply", agentStart: false },
     ];
 
     const marked = markTurnAgentRuns(items);

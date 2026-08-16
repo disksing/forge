@@ -108,6 +108,9 @@ func printDoctorReport(report app.DoctorReport) {
 		if location == "" {
 			location = "Workspace"
 		}
+		if issue.ResourceID != "" {
+			location = issue.ResourceID + " " + location
+		}
 		fmt.Printf("%s [%s] %s: %s\n", strings.ToUpper(issue.Severity), issue.Code, location, issue.Message)
 		if issue.Suggestion != "" {
 			fmt.Printf("  Suggestion: %s\n", issue.Suggestion)

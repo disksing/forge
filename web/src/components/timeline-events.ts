@@ -76,19 +76,13 @@ export function markTurnFinalAssistant(items: TimelineItem[]): TimelineItem[] {
 // update; without this annotation the agent's name only rendered on the
 // first message, visually attaching it to the progress update instead of
 // the first event of the turn. The head of each uninterrupted run of
-// agent-attributed items (thinking, tools, approvals, assistant messages)
-// gets agentStart and carries the name and the run's start time; later
-// items of the same run get agentContinuation so neither repeats between
-// activity rows.
-// Runs break on user, system, and other-agent messages and on non-agent
-// notices. Blocks are already turn-scoped, so runs never cross blocks.
-// formatClock renders the short wall-clock label shared by message meta
-// rows and agent run headers.
-export function formatClock(value?: string): string {
-  const date = new Date(value || "");
-  return Number.isNaN(date.valueOf()) ? "" : date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-}
-
+// agent-attributed activity (thinking, tools, approvals) gets agentStart
+// and renders a header carrying the agent's name and the run's start time.
+// Assistant messages belong to the run but always render their own meta
+// row with the name and timestamp, so only non-message run heads carry the
+// annotation. Runs break on user, system, and other-agent messages and on
+// non-agent notices. Blocks are already turn-scoped, so runs never cross
+// blocks.
 export function markTurnAgentRuns(items: TimelineItem[]): TimelineItem[] {
   let inRun = false;
   return items.map((item) => {
@@ -96,14 +90,19 @@ export function markTurnAgentRuns(items: TimelineItem[]): TimelineItem[] {
       (item.kind === "message" && item.role === "assistant");
     if (!attributed) {
       inRun = false;
-      return item.agentStart || item.agentContinuation ? { ...item, agentStart: false, agentContinuation: false } : item;
+      return item.agentStart ? { ...item, agentStart: false } : item;
     }
-    if (!inRun) {
-      inRun = true;
-      return item.agentStart && !item.agentContinuation ? item : { ...item, agentStart: true, agentContinuation: false };
-    }
-    return !item.agentStart && item.agentContinuation ? item : { ...item, agentStart: false, agentContinuation: true };
+    const agentStart = !inRun && item.kind !== "message";
+    inRun = true;
+    return (item.agentStart ?? false) === agentStart ? item : { ...item, agentStart };
   });
+}
+
+// formatClock renders the short wall-clock label shared by message meta
+// rows and agent run headers.
+export function formatClock(value?: string): string {
+  const date = new Date(value || "");
+  return Number.isNaN(date.valueOf()) ? "" : date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {
