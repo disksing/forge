@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppShellModel } from "../../src/components/models";
 import type { DetailPanelModel } from "../../src/models/detail";
+import { confirmDialogChannel } from "../../src/controllers/confirm-dialog-controller";
 
 function json(value: unknown, status = 200): Response {
   return {
@@ -35,8 +36,13 @@ function resourceDetail(id: string, title: string) {
 
 describe("Archive resource flow", () => {
   let stopPUAApp: (() => void) | null = null;
+  let unsubscribeConfirm: (() => void) | null = null;
+  let autoConfirmArchive = true;
+  const confirmRequests: Array<{ title: string; message: string; confirmLabel: string; danger: boolean }> = [];
 
   afterEach(async () => {
+    unsubscribeConfirm?.();
+    unsubscribeConfirm = null;
     stopPUAApp?.();
     stopPUAApp = null;
     document.body.replaceChildren();
@@ -44,7 +50,17 @@ describe("Archive resource flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("updates only the affected tree nodes without reloading the whole tree", async () => {
+  function stubConfirmDialog(): void {
+    autoConfirmArchive = true;
+    confirmRequests.length = 0;
+    unsubscribeConfirm = confirmDialogChannel.subscribe((model) => {
+      if (!model.open) return;
+      confirmRequests.push({ title: model.title, message: model.message, confirmLabel: model.confirmLabel, danger: model.danger });
+      model.onResult(autoConfirmArchive);
+    });
+  }
+
+  async function startApp() {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: false,
       media: query,
@@ -81,9 +97,11 @@ describe("Archive resource flow", () => {
       attentionList: [],
       wiki: { exists: false },
     };
-    let treeFetchCount = 0;
-    let archivedResourceId = "";
-    const uiStateBodies: Array<{ expandedProjects?: string[] }> = [];
+    const state = {
+      treeFetchCount: 0,
+      archivedResourceIds: [] as string[],
+      uiStateBodies: [] as Array<{ expandedProjects?: string[] }>,
+    };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), window.location.origin);
       const method = init?.method || "GET";
@@ -95,15 +113,15 @@ describe("Archive resource flow", () => {
       }
       if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "GET") return json({ expandedProjects: ["project1", "project2"] });
       if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "PUT") {
-        uiStateBodies.push(JSON.parse(String(init?.body || "{}")) as { expandedProjects?: string[] });
+        state.uiStateBodies.push(JSON.parse(String(init?.body || "{}")) as { expandedProjects?: string[] });
         return json({});
       }
       if (url.pathname === "/api/workspaces/ws-test/tree" && method === "GET") {
-        treeFetchCount++;
+        state.treeFetchCount++;
         return json(tree);
       }
       if (url.pathname === "/api/workspaces/ws-test/archive" && method === "POST") {
-        archivedResourceId = String((JSON.parse(String(init?.body || "{}")) as { resourceId?: string }).resourceId || "");
+        state.archivedResourceIds.push(String((JSON.parse(String(init?.body || "{}")) as { resourceId?: string }).resourceId || ""));
         return json({ path: "archive/project1/task1", warnings: [] });
       }
       const detailMatch = url.pathname.match(/^\/api\/workspaces\/ws-test\/resources\/([^/]+)$/);
@@ -135,19 +153,30 @@ describe("Archive resource flow", () => {
     stopPUAApp = controller.stopPUAApp;
     controller.startPUAApp(publisher);
 
-    // Wait for the initial tree load to finish and select the task to archive.
+    // Wait for the initial tree load to finish.
     await vi.waitFor(() => {
       const latest = appShellModels.at(-1);
       expect(latest?.loading).toBe(false);
       expect(latest?.projects.find((project) => project.id === "project1")?.children.map((task) => task.id)).toEqual(["project1.task1", "project1.task2"]);
     });
-    await appShellModels.at(-1)!.onSelectResource("project1.task1");
-    await vi.waitFor(() => {
-      expect(detailModels.at(-1)?.resourceId).toBe("project1.task1");
-      expect(detailModels.at(-1)?.detail?.id).toBe("project1.task1");
-    });
 
-    const treeFetchesBeforeArchive = treeFetchCount;
+    async function selectResource(resourceId: string): Promise<void> {
+      await appShellModels.at(-1)!.onSelectResource(resourceId);
+      await vi.waitFor(() => {
+        expect(detailModels.at(-1)?.resourceId).toBe(resourceId);
+        expect(detailModels.at(-1)?.detail?.id).toBe(resourceId);
+      });
+    }
+
+    return { state, appShellModels, detailModels, selectResource };
+  }
+
+  it("updates only the affected tree nodes without reloading the whole tree", async () => {
+    stubConfirmDialog();
+    const { state, appShellModels, detailModels, selectResource } = await startApp();
+    await selectResource("project1.task1");
+
+    const treeFetchesBeforeArchive = state.treeFetchCount;
     const loadingModelsBeforeArchive = appShellModels.filter((model) => model.loading).length;
 
     await detailModels.at(-1)!.onArchive("project1.task1");
@@ -162,9 +191,13 @@ describe("Archive resource flow", () => {
       expect(latest?.projects.map((project) => project.id)).toEqual(["project1", "project2"]);
     });
 
-    expect(archivedResourceId).toBe("project1.task1");
+    // Archiving requires confirmation via the shared confirm dialog.
+    expect(confirmRequests).toEqual([
+      { title: "Archive task", message: 'Archive task "Task One"? This ends its open working state and stops its agent.', confirmLabel: "Archive", danger: true },
+    ]);
+    expect(state.archivedResourceIds).toEqual(["project1.task1"]);
     // The tree endpoint is not re-fetched: the archived node is removed locally.
-    expect(treeFetchCount).toBe(treeFetchesBeforeArchive);
+    expect(state.treeFetchCount).toBe(treeFetchesBeforeArchive);
     // Archiving never puts the sidebar back into the whole-tree loading state.
     expect(appShellModels.filter((model) => model.loading).length).toBe(loadingModelsBeforeArchive);
     // The detail panel follows the redirect target.
@@ -172,23 +205,40 @@ describe("Archive resource flow", () => {
       expect(detailModels.at(-1)?.resourceId).toBe("project1.task2");
       expect(detailModels.at(-1)?.detail?.id).toBe("project1.task2");
     });
-    expect(treeFetchCount).toBe(treeFetchesBeforeArchive);
+    expect(state.treeFetchCount).toBe(treeFetchesBeforeArchive);
 
     // Archiving a whole project also removes it from the expanded set that is
     // persisted to ui-state, so the archived project cannot linger on disk.
-    await appShellModels.at(-1)!.onSelectResource("project2");
-    await vi.waitFor(() => {
-      expect(detailModels.at(-1)?.resourceId).toBe("project2");
-      expect(detailModels.at(-1)?.detail?.id).toBe("project2");
-    });
+    await selectResource("project2");
     await detailModels.at(-1)!.onArchive("project2");
     await vi.waitFor(() => {
       const latest = appShellModels.at(-1);
       expect(latest?.projects.map((project) => project.id)).toEqual(["project1"]);
       expect(latest?.projects[0]?.active).toBe(true);
     });
-    expect(treeFetchCount).toBe(treeFetchesBeforeArchive);
+    expect(confirmRequests.at(-1)).toEqual({ title: "Archive project", message: 'Archive project "Project Two"? This ends its open working state and stops its agent.', confirmLabel: "Archive", danger: true });
+    expect(state.archivedResourceIds).toEqual(["project1.task1", "project2"]);
+    expect(state.treeFetchCount).toBe(treeFetchesBeforeArchive);
     expect(appShellModels.filter((model) => model.loading).length).toBe(loadingModelsBeforeArchive);
-    expect(uiStateBodies.at(-1)?.expandedProjects).toEqual(["project1"]);
+    expect(state.uiStateBodies.at(-1)?.expandedProjects).toEqual(["project1"]);
+  });
+
+  it("does not archive when the confirmation is cancelled", async () => {
+    stubConfirmDialog();
+    const { state, appShellModels, detailModels, selectResource } = await startApp();
+    await selectResource("project1.task1");
+
+    autoConfirmArchive = false;
+    await detailModels.at(-1)!.onArchive("project1.task1");
+
+    // The confirmation dialog was shown, but the archive API was never called
+    // and the tree stays untouched.
+    expect(confirmRequests).toEqual([
+      { title: "Archive task", message: 'Archive task "Task One"? This ends its open working state and stops its agent.', confirmLabel: "Archive", danger: true },
+    ]);
+    expect(state.archivedResourceIds).toEqual([]);
+    const latest = appShellModels.at(-1);
+    expect(latest?.projects.find((project) => project.id === "project1")?.children.map((task) => task.id)).toEqual(["project1.task1", "project1.task2"]);
+    expect(detailModels.at(-1)?.resourceId).toBe("project1.task1");
   });
 });

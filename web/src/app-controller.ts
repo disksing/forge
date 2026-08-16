@@ -1502,6 +1502,15 @@ function renderCreateDialog(): void {
 	createDialogController.render();
 }
 async function archiveResource(resourceId: string): Promise<void> {
+	const kind = findResource(resourceId)?.type === "task" ? "task" : "project";
+	const title = resolveResourceTitle(resourceId) || resourceId;
+	const confirmed = await confirmDialog({
+		title: `Archive ${kind}`,
+		message: `Archive ${kind} "${title}"? This ends its open working state and stops its agent.`,
+		confirmLabel: "Archive",
+		danger: true
+	});
+	if (!confirmed) return;
 	const redirectTarget = archiveRedirectTarget(resourceId, controllerState.projectOrder, controllerState.taskOrder);
 	const result = await api<ArchiveResponse>(`/api/workspaces/${controllerState.activeWorkspaceId}/archive`, {
 		method: "POST",
