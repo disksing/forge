@@ -194,8 +194,10 @@ describe("CSS ownership", () => {
 
   it("keeps WorkspaceSwitcher controls below the component root boundary", () => {
     const css = read("src/components/WorkspaceSwitcher.css");
-    expect(css).toContain(':where([data-component-owner="workspace-switcher"]) .workspace-switcher-button');
-    expect(css).not.toContain(':where([data-component-owner="workspace-switcher"]).workspace-switcher-button');
+    expect(css).toContain(':where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button');
+    expect(css).not.toContain(':where([data-component-owner="workspace-switcher"]).workspace-switcher-menu-button');
+    expect(css).toContain(':where([data-component-owner="workspace-switcher"]) .workspace-open');
+    expect(css).not.toContain(':where([data-component-owner="workspace-switcher"]).workspace-open');
   });
 
   it("keeps the selected Activity row background while hovered", () => {

@@ -12,6 +12,7 @@
     activeWorkspaceId,
     workspaces,
     onSwitch,
+    onOpen,
     onAdd,
     onToast,
   }: {
@@ -20,6 +21,7 @@
     activeWorkspaceId: string;
     workspaces: ShellWorkspaceItem[];
     onSwitch: (id: string) => Promise<void>;
+    onOpen: () => Promise<void>;
     onAdd: () => void;
     onToast: (message: string) => void;
   } = $props();
@@ -53,6 +55,18 @@
     };
   });
 
+  async function openWorkspace(event: MouseEvent): Promise<void> {
+    // Pointer clicks focus the button; drop that focus so the head does
+    // not stay highlighted after the pointer leaves. Keyboard activation
+    // (detail === 0) keeps it.
+    if (event.detail > 0) (event.currentTarget as HTMLElement | null)?.blur();
+    try {
+      await onOpen();
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function switchWorkspace(id: string): Promise<void> {
     if (!id || switchingId) return;
     switchingId = id;
@@ -69,11 +83,16 @@
 
 <section class="workspace-switcher" data-component-owner="workspace-switcher">
   <div class="workspace-select-row">
-    <button id="workspaceSwitcher" class="workspace-switcher-button" class:busy={Boolean(switchingId)} type="button" aria-haspopup="listbox" aria-expanded={menuOpen} onclick={(event) => { event.stopPropagation(); menuOpen = !menuOpen; }}>
-      <span class="workspace-avatar" id="workspaceAvatar"><img src={activeWorkspace?.iconSrc || "/favicon.svg"} alt="" aria-hidden="true" /></span>
-      <span class="workspace-switcher-name" id="workspaceSwitcherName">{activeWorkspace?.name || "Workspace"}</span>
-      <span class="workspace-switcher-icon workspace-switcher-icon-idle"><Icon name="chevrons-up-down" className="select-icon" /></span><span class="workspace-switcher-icon workspace-switcher-icon-busy"><Icon name="loader-circle" className="select-icon" /></span>
-    </button>
+    <div class="workspace-switcher-head">
+      <button id="workspaceOpen" class="workspace-open" type="button" title="Open workspace" onclick={openWorkspace}>
+        <span class="workspace-avatar" id="workspaceAvatar"><img src={activeWorkspace?.iconSrc || "/favicon.svg"} alt="" aria-hidden="true" /></span>
+        <span class="workspace-switcher-name" id="workspaceSwitcherName">{activeWorkspace?.name || "Workspace"}</span>
+        <Icon name="arrow-up-right" className="workspace-open-icon" />
+      </button>
+      <button id="workspaceSwitcher" class="workspace-switcher-menu-button" class:busy={Boolean(switchingId)} type="button" title="Switch workspace" aria-haspopup="listbox" aria-expanded={menuOpen} onclick={(event) => { event.stopPropagation(); menuOpen = !menuOpen; }}>
+        <span class="workspace-switcher-icon workspace-switcher-icon-idle"><Icon name="chevrons-up-down" className="select-icon" /></span><span class="workspace-switcher-icon workspace-switcher-icon-busy"><Icon name="loader-circle" className="select-icon" /></span>
+      </button>
+    </div>
     {#if menuOpen}
       <div id="workspaceMenu" class="workspace-menu" role="listbox">
         <div class="workspace-menu-title">Switch Workspace</div>

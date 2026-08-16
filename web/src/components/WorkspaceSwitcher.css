@@ -33,32 +33,66 @@
 
 :where([data-component-owner="workspace-switcher"]).workspace-switcher {
   position: relative;
-  padding: 10px 12px 12px;
-  background: var(--ink);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-select-row {
   position: relative;
 }
 
-:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button {
-  width: 100%;
-  height: 46px;
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-head {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-open {
+  min-width: 0;
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
-  background: var(--ink-deep);
+  padding: 5px 6px;
+  border-radius: 6px;
+  background: transparent;
   color: #ecf0f3;
   font-size: calc(14px * var(--sidebar-font-scale, 1));
   font-weight: 600;
   text-align: left;
 }
 
-:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button:hover {
+:where([data-component-owner="workspace-switcher"]) .workspace-open:hover {
   background: var(--ink-row);
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-open-icon {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: var(--faint-on-dark);
+  opacity: 0.5;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-open:hover .workspace-open-icon {
+  opacity: 1;
+  color: #fff;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button:hover {
+  background: var(--ink-row);
+  color: #fff;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-name {
@@ -69,9 +103,9 @@
   white-space: nowrap;
 }
 
-:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button .select-icon {
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button .select-icon {
   flex: 0 0 auto;
-  color: var(--faint-on-dark);
+  color: inherit;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-icon {
@@ -85,11 +119,11 @@
   display: none;
 }
 
-:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button.busy .workspace-switcher-icon-idle {
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button.busy .workspace-switcher-icon-idle {
   display: none;
 }
 
-:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button.busy .workspace-switcher-icon-busy {
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button.busy .workspace-switcher-icon-busy {
   display: inline-flex;
 }
 

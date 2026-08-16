@@ -153,19 +153,10 @@
   color: #fff;
 }
 
-:where([data-component-owner="project-tree"]) .section-title .workspace-title {
-  width: auto;
-  height: auto;
+:where([data-component-owner="project-tree"]) .section-title .section-label {
   min-width: 0;
-  padding: 2px 6px;
-  margin-left: -6px;
   overflow: hidden;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-align: left;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
