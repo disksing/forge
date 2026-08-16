@@ -1537,6 +1537,7 @@ function removeArchivedResourceFromTree(resourceId: string): void {
 		if (tree.attentionList) tree.attentionList = tree.attentionList.filter((item) => !removedIds.has(item.id));
 	}
 	controllerState.projectOrder = controllerState.projectOrder.filter((id) => !removedIds.has(id));
+	for (const id of removedIds) controllerState.expandedProjects.delete(id);
 	for (const [projectId, order] of Object.entries(controllerState.taskOrder || {})) {
 		if (removedIds.has(projectId)) delete controllerState.taskOrder[projectId];
 		else if (order.some((id) => removedIds.has(id))) controllerState.taskOrder[projectId] = order.filter((id) => !removedIds.has(id));

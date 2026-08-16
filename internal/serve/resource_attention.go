@@ -138,6 +138,75 @@ func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate f
 	return attention, nil
 }
 
+// pruneUIStateForArchivedResources removes persisted UI state entries that
+// reference resources removed by an archive, so follow stars, expansion state
+// and custom ordering cannot leak into a resource that later reuses the ID.
+func (s *server) pruneUIStateForArchivedResources(workspacePath string, resourceIDs []string) error {
+	if len(resourceIDs) == 0 {
+		return nil
+	}
+	archived := make(map[string]bool, len(resourceIDs))
+	for _, id := range resourceIDs {
+		archived[normalizedResourceID(id)] = true
+	}
+	s.uiStateMu.Lock()
+	defer s.uiStateMu.Unlock()
+	state, err := loadUIStateFile(uiStatePath(workspacePath))
+	if err != nil {
+		return err
+	}
+	changed := false
+	for id := range state.Attention {
+		if archived[id] {
+			delete(state.Attention, id)
+			changed = true
+		}
+	}
+	if kept, dropped := dropArchivedResourceIDs(state.ExpandedProjects, archived); dropped {
+		state.ExpandedProjects = kept
+		changed = true
+	}
+	if kept, dropped := dropArchivedResourceIDs(state.ProjectOrder, archived); dropped {
+		state.ProjectOrder = kept
+		changed = true
+	}
+	for projectID, order := range state.TaskOrder {
+		if archived[projectID] {
+			delete(state.TaskOrder, projectID)
+			changed = true
+			continue
+		}
+		if kept, dropped := dropArchivedResourceIDs(order, archived); dropped {
+			state.TaskOrder[projectID] = kept
+			changed = true
+		}
+	}
+	if archived[state.LastResourceID] {
+		state.LastResourceID = ""
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return saveUIStateFile(uiStatePath(workspacePath), state)
+}
+
+func dropArchivedResourceIDs(ids []string, archived map[string]bool) ([]string, bool) {
+	dropped := false
+	kept := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if archived[id] {
+			dropped = true
+			continue
+		}
+		kept = append(kept, id)
+	}
+	if !dropped {
+		return ids, false
+	}
+	return kept, true
+}
+
 // allocateResourceTurnNumber advances the resource-wide turn ordinal. It is
 // separate from the generation record because a replacement generation must
 // not reset the dismiss boundary of the resource.
