@@ -216,7 +216,7 @@ Long-lived Workspace knowledge lives in wiki/. Read wiki/index.md first, then on
 - repos/ contains shared source checkouts used only for reading and creating worktrees; never modify them directly.
 - All code changes must be made in a Task-owned worktree/.
 - Use an absolute destination under the current Task's worktree/ when creating a Git worktree.
-- Use pua task repo add/list/remove to record repositories and worktrees used by a Task.
+- PUA discovers a Task's repositories, branches, and diffs directly from the worktrees under its worktree/ directory; no registration is needed.
 
 ### Other resources
 
@@ -285,7 +285,7 @@ pua template show --project=<project> <name>
 pua task create --project=<project> --template=<name> --field <name>=<value>
 ~~~
 
-For code changes, you must create a Task-owned worktree and record it with pua task repo add. Never modify shared source checkouts under repos/ directly. Projects do not own code worktrees.
+For code changes, you must create a Task-owned worktree under the Task's worktree/ directory. Never modify shared source checkouts under repos/ directly. Projects do not own code worktrees.
 
 Archiving is not deletion, but it ends the resource's open work state. Check that work and deliverables have been saved before archiving.
 

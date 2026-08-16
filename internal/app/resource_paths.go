@@ -2,32 +2,14 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
-func migratePathReference(root, value, oldRel, newRel string) string {
-	if value == "" {
-		return value
-	}
-	oldRel = filepath.ToSlash(oldRel)
-	newRel = filepath.ToSlash(newRel)
-	valueSlash := filepath.ToSlash(value)
-	if strings.HasPrefix(valueSlash, oldRel+"/") || valueSlash == oldRel {
-		return newRel + strings.TrimPrefix(valueSlash, oldRel)
-	}
-	if filepath.IsAbs(value) {
-		oldAbs := filepath.ToSlash(filepath.Join(root, oldRel))
-		newAbs := filepath.ToSlash(filepath.Join(root, newRel))
-		if strings.HasPrefix(valueSlash, oldAbs+"/") || valueSlash == oldAbs {
-			return newAbs + strings.TrimPrefix(valueSlash, oldAbs)
-		}
-	}
-	return value
-}
-
+// repairRepoWorktree fixes the two-way path references between a moved
+// worktree and its source repository. The repository storage is derived from
+// the worktree's Git metadata, so no recorded path is required.
 func repairRepoWorktree(root string, repo TaskRepo) error {
 	if repo.WorktreePath == "" {
 		return nil
@@ -36,20 +18,21 @@ func repairRepoWorktree(root string, repo TaskRepo) error {
 	if !filepath.IsAbs(worktreePath) {
 		worktreePath = filepath.Join(root, worktreePath)
 	}
-	gitPath := filepath.Join(worktreePath, ".git")
-	info, err := os.Stat(gitPath)
-	if err != nil || info.IsDir() {
+	gitDir := worktreeGitDir(worktreePath)
+	if gitDir == "" || gitDir == filepath.Join(worktreePath, ".git") {
+		// Not a linked worktree; plain checkouts have nothing to repair.
 		return nil
 	}
 	storage := taskRepoStoragePath(repo)
-	if storage == "" {
-		return fmt.Errorf("repository storage path is not recorded")
+	if storage != "" {
+		if !filepath.IsAbs(storage) {
+			storage = filepath.Join(root, filepath.FromSlash(storage))
+		}
+	} else if derived, _ := worktreeRepoStorage(gitDir); derived != "" {
+		storage = derived
 	}
-	if !filepath.IsAbs(storage) {
-		storage = filepath.Join(root, storage)
-	}
-	if !isDir(storage) {
-		return fmt.Errorf("repository storage path does not exist: %s", relPath(root, storage))
+	if storage == "" || !isDir(storage) {
+		return fmt.Errorf("repository storage path could not be determined for worktree %s", relPath(root, worktreePath))
 	}
 	cmd := exec.Command("git", "-C", storage, "worktree", "repair", worktreePath)
 	if out, err := cmd.CombinedOutput(); err != nil {

@@ -89,7 +89,6 @@ type Task struct {
 	ResourceMeta
 	Parent      string              `json:"parent"`
 	Description string              `json:"description,omitempty"`
-	Repos       []TaskRepo          `json:"repos,omitempty"`
 	Template    *TaskTemplateSource `json:"template,omitempty"`
 	// Path is populated on create responses but is not persisted in task.json.
 	Path string `json:"path,omitempty"`
@@ -138,6 +137,9 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// TaskRepo describes one Git worktree discovered under a Task's worktree/
+// directory. It is derived from Git metadata on read and is never persisted
+// in task.json.
 type TaskRepo struct {
 	Name         string `json:"name"`
 	RepoPath     string `json:"repoPath,omitempty"`
@@ -145,5 +147,4 @@ type TaskRepo struct {
 	WorktreePath string `json:"worktreePath"`
 	Branch       string `json:"branch"`
 	TargetBranch string `json:"targetBranch"`
-	BaseBranch   string `json:"baseBranch,omitempty"`
 }

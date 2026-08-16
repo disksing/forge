@@ -104,12 +104,16 @@ func TestDoctorTextReportIncludesResourceID(t *testing.T) {
 		run(t, "task", "create", "--project=project1", "Code task")
 		repoPath := filepath.Join(root, testReposDir, "disksing", "pua")
 		writeGitRepo(t, repoPath, "master")
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
+		if err := os.RemoveAll(repoPath); err != nil {
+			t.Fatal(err)
+		}
 		server := doctorCatalogServer(t)
 		defer server.Close()
 
 		output := run(t, "doctor", "--server="+server.URL)
-		if !strings.Contains(output, "[task_worktree_not_found] project1.task1 project1/task1/worktree/pua:") {
+		if !strings.Contains(output, "[task_worktree_storage_external] project1.task1 project1/task1/worktree/pua:") {
 			t.Fatalf("doctor text output missing resource id, got:\n%s", output)
 		}
 	})

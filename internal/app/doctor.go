@@ -345,7 +345,7 @@ func (s *doctorScanner) scanTask(path, name string, project Project, templates m
 	s.checkResourceTimestamps(task.CreatedAt, task.UpdatedAt, filepath.Join(rel, taskJSONFile), resourceID)
 	s.checkOptionalMarkdown(filepath.Join(path, taskMDFile), filepath.Join(rel, taskMDFile), resourceID)
 	s.checkManagedFile(filepath.Join(path, "AGENTS.md"), filepath.Join(rel, "AGENTS.md"), resourceID, taskAgentsBlock(&task, s.language))
-	s.scanTaskRepos(task, rel)
+	s.scanTaskRepos(task, path, rel)
 	if task.Template != nil {
 		template, ok := templates[task.Template.Name]
 		switch {
@@ -411,37 +411,23 @@ func (s *doctorScanner) scanTemplates(projectPath string, project Project) map[s
 	return result
 }
 
-func (s *doctorScanner) scanTaskRepos(task Task, taskRel string) {
-	seen := make(map[string]bool)
-	for _, repo := range task.Repos {
-		name := strings.TrimSpace(repo.Name)
-		if name == "" || ensureInsideName(name) != nil {
-			s.issue(DoctorSeverityError, "task_repo_name_invalid", filepath.Join(taskRel, taskJSONFile), task.ID, "task repository name is invalid", "Remove or correct the repository entry.")
-			continue
-		}
-		if seen[name] {
-			s.issue(DoctorSeverityError, "task_repo_duplicate", filepath.Join(taskRel, taskJSONFile), task.ID, fmt.Sprintf("repository %q is recorded more than once", name), "Keep one canonical repository entry.")
-		}
-		seen[name] = true
+// scanTaskRepos checks the worktrees discovered under a Task's worktree/
+// directory. Worktree metadata is derived from Git, so the checks focus on
+// whether the source repository still exists inside the Workspace.
+func (s *doctorScanner) scanTaskRepos(task Task, taskPath, taskRel string) {
+	for _, repo := range discoverTaskRepos(s.root, taskPath) {
 		storage := strings.TrimSpace(taskRepoStoragePath(repo))
 		if storage == "" {
-			s.issue(DoctorSeverityError, "task_repo_storage_missing", filepath.Join(taskRel, taskJSONFile), task.ID, fmt.Sprintf("repository %q has no storage path", name), "Record repoPath or barePath.")
-		} else if abs, ok := s.safeReferencedPath(storage); !ok {
-			s.issue(DoctorSeverityError, "task_repo_storage_unsafe", filepath.Join(taskRel, taskJSONFile), task.ID, fmt.Sprintf("repository %q storage path is outside the Workspace", name), "Move the repository into repos/ and update the Task entry.")
-		} else if !isDir(abs) {
-			s.issue(DoctorSeverityWarning, "task_repo_storage_not_found", storage, task.ID, fmt.Sprintf("repository %q storage path does not exist", name), "Restore the repository or remove the stale Task entry.")
-		} else if (repo.BarePath != "" && !pathExists(filepath.Join(abs, "HEAD"))) || (repo.RepoPath != "" && !isGitCheckout(abs)) {
-			s.issue(DoctorSeverityWarning, "task_repo_storage_invalid", storage, task.ID, fmt.Sprintf("repository %q storage path does not look like a Git repository", name), "Repair or replace the repository checkout.")
+			s.issue(DoctorSeverityWarning, "task_worktree_storage_external", repo.WorktreePath, task.ID, fmt.Sprintf("worktree %q source repository is outside the Workspace or could not be determined", repo.Name), "Keep Task worktrees based on repositories under repos/.")
+			continue
 		}
-		worktree := strings.TrimSpace(repo.WorktreePath)
-		if worktree == "" {
-			s.issue(DoctorSeverityWarning, "task_worktree_path_missing", filepath.Join(taskRel, taskJSONFile), task.ID, fmt.Sprintf("repository %q has no worktree path", name), "Record the Task worktree path.")
-		} else if abs, ok := s.safeReferencedPath(worktree); !ok {
-			s.issue(DoctorSeverityError, "task_worktree_path_unsafe", filepath.Join(taskRel, taskJSONFile), task.ID, fmt.Sprintf("repository %q worktree path is outside the Workspace", name), "Move the worktree inside the Task or Workspace.")
+		abs, ok := s.safeReferencedPath(storage)
+		if !ok {
+			s.issue(DoctorSeverityError, "task_worktree_storage_unsafe", repo.WorktreePath, task.ID, fmt.Sprintf("worktree %q source repository path is outside the Workspace", repo.Name), "Keep Task worktrees based on repositories under repos/.")
 		} else if !isDir(abs) {
-			s.issue(DoctorSeverityWarning, "task_worktree_not_found", worktree, task.ID, fmt.Sprintf("repository %q worktree does not exist", name), "Restore the worktree or remove the stale Task entry.")
-		} else if !pathExists(filepath.Join(abs, ".git")) {
-			s.issue(DoctorSeverityWarning, "task_worktree_invalid", worktree, task.ID, fmt.Sprintf("repository %q worktree does not contain .git metadata", name), "Repair or recreate the Git worktree.")
+			s.issue(DoctorSeverityWarning, "task_worktree_storage_not_found", storage, task.ID, fmt.Sprintf("worktree %q source repository does not exist", repo.Name), "Restore the repository or recreate the worktree.")
+		} else if (repo.BarePath != "" && !pathExists(filepath.Join(abs, "HEAD"))) || (repo.RepoPath != "" && !isGitCheckout(abs)) {
+			s.issue(DoctorSeverityWarning, "task_worktree_storage_invalid", storage, task.ID, fmt.Sprintf("worktree %q source repository does not look like a Git repository", repo.Name), "Repair or replace the repository checkout.")
 		}
 	}
 }

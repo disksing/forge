@@ -34,7 +34,6 @@ export interface ResourceRepoModel {
   worktreePath?: string;
   branch?: string;
   targetBranch?: string;
-  baseBranch?: string;
 }
 
 export interface ResourceDetailModel {

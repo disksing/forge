@@ -739,7 +739,7 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 		children, warnings = collectProjectArchiveTasks(w.root, src, *resource.(*Project))
 	}
 	if task, ok := resource.(*Task); ok {
-		warnings = append(warnings, inspectTaskRepoWorktrees(w.root, *task)...)
+		warnings = append(warnings, inspectTaskRepoWorktrees(w.root, src, *task)...)
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
@@ -756,7 +756,7 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 		}
 	}
 	if task, ok := resource.(*Task); ok {
-		warnings = append(warnings, rewriteArchivedTaskReferences(w.root, dst, *task, relPath(w.root, src), relPath(w.root, dst))...)
+		warnings = append(warnings, repairArchivedTaskWorktrees(w.root, dst, *task)...)
 	} else {
 		warnings = append(warnings, archiveTaskReferencesAfterMove(w.root, src, dst, children)...)
 	}
