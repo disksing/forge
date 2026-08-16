@@ -66,8 +66,9 @@ describe("timeline rendering components", () => {
     const head = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "first", agentStart: true }, agentName: "Codex" });
     expect(head.querySelector(".agent-message-meta strong")?.textContent).toBe("Codex");
 
-    const continuation = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "next", agentStart: false, agentContinuation: true }, agentName: "Codex" });
-    expect(continuation.querySelector(".agent-message-meta strong")).toBeNull();
+    const continuation = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "next", time: "2026-08-12T00:00:05Z", agentStart: false, agentContinuation: true }, agentName: "Codex" });
+    // The whole meta row moves up to the run header: no name, no timestamp.
+    expect(continuation.querySelector(".agent-message-meta")).toBeNull();
     expect(continuation.textContent).toContain("next");
 
     // Other agents always keep their sender name.

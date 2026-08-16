@@ -77,10 +77,18 @@ export function markTurnFinalAssistant(items: TimelineItem[]): TimelineItem[] {
 // first message, visually attaching it to the progress update instead of
 // the first event of the turn. The head of each uninterrupted run of
 // agent-attributed items (thinking, tools, approvals, assistant messages)
-// gets agentStart and carries the name; later items of the same run get
-// agentContinuation so the name is not repeated between activity rows.
+// gets agentStart and carries the name and the run's start time; later
+// items of the same run get agentContinuation so neither repeats between
+// activity rows.
 // Runs break on user, system, and other-agent messages and on non-agent
 // notices. Blocks are already turn-scoped, so runs never cross blocks.
+// formatClock renders the short wall-clock label shared by message meta
+// rows and agent run headers.
+export function formatClock(value?: string): string {
+  const date = new Date(value || "");
+  return Number.isNaN(date.valueOf()) ? "" : date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+}
+
 export function markTurnAgentRuns(items: TimelineItem[]): TimelineItem[] {
   let inRun = false;
   return items.map((item) => {

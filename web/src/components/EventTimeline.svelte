@@ -15,7 +15,7 @@
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
-  import { markTurnAgentRuns, markTurnFinalAssistant } from "./timeline-events";
+  import { formatClock, markTurnAgentRuns, markTurnFinalAssistant } from "./timeline-events";
   import { toolGroupKey } from "./tool-group";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
@@ -260,10 +260,11 @@
             <div data-timeline-key={timelineKey(item)}>
               {#if item.agentStart && item.kind !== "message"}
                 <!-- Reasoning, tool calls, and approvals render without their own
-                     author label, so a run that starts with them gets a header;
-                     otherwise the agent's name would first appear on the initial
-                     progress update instead of the turn's first event. -->
-                <div data-component-owner="event-timeline" class="agent-run-header"><strong>{blockAgentName(block)}</strong></div>
+                     author label, so a run that starts with them gets a header
+                     carrying the agent's name and the run's start time;
+                     otherwise both would first appear on the initial progress
+                     update instead of the turn's first event. -->
+                <div data-component-owner="event-timeline" class="agent-run-header"><strong>{blockAgentName(block)}</strong>{#if formatClock(item.time)}<span>{formatClock(item.time)}</span>{/if}</div>
               {/if}
               {#if item.kind === "message"}
                 <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} />
