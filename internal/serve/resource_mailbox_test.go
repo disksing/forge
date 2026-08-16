@@ -60,8 +60,8 @@ func TestWorkspaceMailboxMigratesGenerationQueuesIdempotently(t *testing.T) {
 	defer hub.Close()
 	_, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	steer := false
-	legacy := agentRun{
-		ID: "run-legacy", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+	legacy := generationRecord{
+		ID: "gen-legacy", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		Generation: 3, GenerationID: "gen-legacy", AgentHubSessionID: "ses-legacy",
 		Title: "legacy", Cwd: workspace.Path, Status: "running",
 		CreatedAt: "2026-08-12T10:00:00Z", UpdatedAt: "2026-08-12T10:01:00Z",
@@ -71,7 +71,7 @@ func TestWorkspaceMailboxMigratesGenerationQueuesIdempotently(t *testing.T) {
 			Steer:  &steer, AcceptedAt: "2026-08-12T10:00:30Z",
 		}},
 	}
-	if err := saveAgentRun(workspace.Path, legacy); err != nil {
+	if err := saveGenerationRecord(workspace.Path, legacy); err != nil {
 		t.Fatal(err)
 	}
 	for attempt := 0; attempt < 2; attempt++ {
@@ -94,12 +94,12 @@ func TestWorkspaceMailboxMigratesGenerationQueuesIdempotently(t *testing.T) {
 		message.AcceptedAt != "2026-08-12T10:00:30Z" || message.Sender == nil || message.Sender.ID != "project1.task2" {
 		t.Fatalf("migrated message mismatch: %#v", message)
 	}
-	runs, err := loadAgentRuns(workspace.Path)
+	records, err := loadGenerationRecords(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runs) != 1 || len(runs[0].PendingMessages) != 0 {
-		t.Fatalf("legacy generation queue was not cleared: %#v", runs)
+	if len(records) != 1 || len(records[0].PendingMessages) != 0 {
+		t.Fatalf("legacy generation queue was not cleared: %#v", records)
 	}
 }
 
@@ -353,7 +353,7 @@ func TestResourceMailboxModesAndPriority(t *testing.T) {
 		first.ActualMode != resourceMessageModeEnqueue || first.DowngradeReason != resourceMessageReasonNoActiveTurn {
 		t.Fatalf("first message did not open a normal Turn: %#v", first)
 	}
-	run, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
+	record, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
 	if err != nil || !found {
 		t.Fatalf("current generation missing: found=%v err=%v", found, err)
 	}
@@ -366,7 +366,7 @@ func TestResourceMailboxModesAndPriority(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
-	session := fake.sessions[run.AgentHubSessionID]
+	session := fake.sessions[record.AgentHubSessionID]
 	if session.LaunchEnvironment["PUA_WORKSPACE_ROOT"] != workspace.Path ||
 		session.LaunchEnvironment["PUA_WORKSPACE_INSTANCE_ID"] != runtimeConfig.InstanceID ||
 		session.LaunchEnvironment["PUA_RESOURCE_ID"] != "project1.task1" {
@@ -413,12 +413,12 @@ func TestResourceMailboxSteerDowngradeAndInterrupt(t *testing.T) {
 	sender := &agentHubMessageSender{ID: "project1.task2"}
 
 	_ = acceptTestResourceMessage(t, manager, workspace, "project1.task1", "first", resourceMessageModeSteer, sender)
-	run, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
+	record, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
 	if err != nil || !found {
 		t.Fatal("generation missing")
 	}
 	fake.mu.Lock()
-	session := fake.sessions[run.AgentHubSessionID]
+	session := fake.sessions[record.AgentHubSessionID]
 	session.CurrentTurnID = "turn-current"
 	fake.sessions[session.ID] = session
 	fake.mu.Unlock()
@@ -440,7 +440,7 @@ func TestResourceMailboxSteerDowngradeAndInterrupt(t *testing.T) {
 	}
 	fake.mu.Unlock()
 	fake.mu.Lock()
-	session = fake.sessions[run.AgentHubSessionID]
+	session = fake.sessions[record.AgentHubSessionID]
 	session.State = "ready"
 	session.CurrentTurnID = ""
 	fake.sessions[session.ID] = session
@@ -464,19 +464,19 @@ func TestResourceMailboxInterruptRetiresReplacingGeneration(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	_ = acceptTestResourceMessage(t, manager, workspace, "project1.task1", "first", resourceMessageModeSteer, nil)
-	oldRun, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
+	oldGeneration, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
 	if err != nil || !found {
 		t.Fatal("generation missing")
 	}
-	runtime := manager.runtimeByID(oldRun.ID)
+	runtime := manager.runtimeByID(oldGeneration.ID)
 	if runtime == nil {
 		t.Fatal("runtime missing")
 	}
-	if _, err := runtime.mutateRun(func(run *agentRun) { run.ReplacementPending = true }); err != nil {
+	if _, err := runtime.mutateGeneration(func(record *generationRecord) { record.ReplacementPending = true }); err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
-	session := fake.sessions[oldRun.AgentHubSessionID]
+	session := fake.sessions[oldGeneration.AgentHubSessionID]
 	session.State = "running"
 	session.CurrentTurnID = "turn-before-replacement"
 	fake.sessions[session.ID] = session
@@ -490,14 +490,14 @@ func TestResourceMailboxInterruptRetiresReplacingGeneration(t *testing.T) {
 	for time.Now().Before(deadline) {
 		message, found, err = mailboxMessageByID(workspace.Path, message.ID)
 		current, currentFound, currentErr := currentResourceGeneration(workspace.Path, "project1.task1")
-		if err == nil && found && currentErr == nil && currentFound && current.Generation > oldRun.Generation && message.Status == resourceMessageDelivered {
+		if err == nil && found && currentErr == nil && currentFound && current.Generation > oldGeneration.Generation && message.Status == resourceMessageDelivered {
 			// The generation and mailbox files become observable before the
 			// retirement goroutine publishes its final notice. Join that bounded
 			// critical section so TempDir cleanup cannot race the last disk write.
 			if err := manager.withResourceController(context.Background(), workspace, "project1.task1", func() error { return nil }); err != nil {
 				t.Fatalf("join resource controller: %v", err)
 			}
-			if message.GenerationID == oldRun.GenerationID {
+			if message.GenerationID == oldGeneration.GenerationID {
 				t.Fatalf("interrupt message was delivered to the retired generation: %#v", message)
 			}
 			fake.mu.Lock()
@@ -733,12 +733,12 @@ func TestResourceServerAPIListsAndSteersWaitingMessageInPlace(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 
 	_ = acceptTestResourceMessage(t, manager, workspace, "project1.task1", "start", resourceMessageModeSteer, nil)
-	run, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
+	record, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
 	if err != nil || !found {
 		t.Fatalf("generation missing: found=%v err=%v", found, err)
 	}
 	fake.mu.Lock()
-	session := fake.sessions[run.AgentHubSessionID]
+	session := fake.sessions[record.AgentHubSessionID]
 	session.State = "running"
 	session.CurrentTurnID = "turn-active"
 	session.InputCapabilities.Steer = true

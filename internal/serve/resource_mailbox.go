@@ -410,7 +410,7 @@ func writeLegacyResourceMailboxLocked(workspacePath string, mailbox resourceMail
 	}
 	data = append(data, '\n')
 	path := resourceMailboxPath(workspacePath)
-	tmp := path + "." + newRunID() + ".tmp"
+	tmp := path + "." + newGenerationRecordID() + ".tmp"
 	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -474,7 +474,7 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 	if err != nil {
 		return err
 	}
-	runs, err := loadAgentRunsLocked(workspacePath)
+	records, err := loadGenerationRecordsLocked(workspacePath)
 	if err != nil {
 		return err
 	}
@@ -483,9 +483,9 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 		seen[message.ID] = true
 	}
 	mailboxChanged := false
-	updatedRuns := make([]agentRun, 0)
-	for runIndex := range runs {
-		for _, legacy := range runs[runIndex].PendingMessages {
+	updatedRecords := make([]generationRecord, 0)
+	for recordIndex := range records {
+		for _, legacy := range records[recordIndex].PendingMessages {
 			if strings.TrimSpace(legacy.ID) == "" || seen[legacy.ID] {
 				continue
 			}
@@ -496,27 +496,27 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 			}
 			acceptedAt := strings.TrimSpace(legacy.AcceptedAt)
 			if acceptedAt == "" {
-				acceptedAt = strings.TrimSpace(runs[runIndex].UpdatedAt)
+				acceptedAt = strings.TrimSpace(records[recordIndex].UpdatedAt)
 			}
 			if acceptedAt == "" {
 				acceptedAt = time.Now().Format(time.RFC3339Nano)
 			}
 			mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
 				ID: legacy.ID, Sequence: mailbox.NextSequence,
-				ResourceID: normalizedResourceID(runs[runIndex].ResourceID),
+				ResourceID: normalizedResourceID(records[recordIndex].ResourceID),
 				Text:       legacy.Text, Role: legacy.Role, Sender: legacy.Sender,
 				RequestedMode: resourceMessageModeSteer, ActualMode: actual,
 				ModeFrozen: legacy.Steer != nil,
 				Status:     resourceMessageQueued, AcceptedAt: acceptedAt, UpdatedAt: acceptedAt,
-				GenerationID:      runs[runIndex].GenerationID,
-				AgentHubSessionID: runs[runIndex].AgentHubSessionID,
+				GenerationID:      records[recordIndex].GenerationID,
+				AgentHubSessionID: records[recordIndex].AgentHubSessionID,
 			})
 			seen[legacy.ID] = true
 			mailboxChanged = true
 		}
-		if len(runs[runIndex].PendingMessages) > 0 && !runs[runIndex].Retired && !runs[runIndex].Legacy {
-			runs[runIndex].PendingMessages = nil
-			updatedRuns = append(updatedRuns, runs[runIndex])
+		if len(records[recordIndex].PendingMessages) > 0 && !records[recordIndex].Retired && !records[recordIndex].Legacy {
+			records[recordIndex].PendingMessages = nil
+			updatedRecords = append(updatedRecords, records[recordIndex])
 		}
 	}
 	if mailboxChanged {
@@ -524,8 +524,8 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 			return fmt.Errorf("persist migrated resource mailbox: %w", err)
 		}
 	}
-	for _, run := range updatedRuns {
-		if err := saveAgentRun(workspacePath, run); err != nil {
+	for _, record := range updatedRecords {
+		if err := saveGenerationRecord(workspacePath, record); err != nil {
 			return fmt.Errorf("clear migrated generation queues: %w", err)
 		}
 	}
@@ -702,7 +702,7 @@ func acceptMailboxMessage(workspacePath, resourceID string, request resourceMess
 		resultSubscriptionStatus = resourceResultSubscriptionDisabled
 	}
 	message := resourceMailboxMessage{
-		ID: "msg-" + newRunID(), ResourceID: resourceID, Text: text,
+		ID: "msg-" + newGenerationRecordID(), ResourceID: resourceID, Text: text,
 		Role: role, Sender: request.Sender, SenderWorkspaceInstanceID: strings.TrimSpace(request.SenderWorkspaceInstanceID), SubscribeResult: subscribeResult,
 		ResultSubscriptionStatus: resultSubscriptionStatus, RequestedMode: mode, ActualMode: mode,
 		subscribeResultPresent: true,
@@ -915,7 +915,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorksp
 		status.ConfigError = cfgErr.Error()
 		unavailableReason = cfgErr.Error()
 	}
-	run, found, loadErr := currentResourceGeneration(workspace.Path, resourceID)
+	record, found, loadErr := currentResourceGeneration(workspace.Path, resourceID)
 	if loadErr != nil {
 		return resourceStatusResponse{}, loadErr
 	}
@@ -924,21 +924,21 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorksp
 		return status, nil
 	}
 	status.Generation = &resourceGenerationStatus{
-		Generation: run.Generation, GenerationID: run.GenerationID,
-		Status: run.Status, ReplacementPending: run.ReplacementPending,
-		CompletionState: run.CompletionState, CompletionHasFinalReply: run.CompletionHasFinalReply,
-		IdleSuspended:     run.Status == "idle-suspended" || (run.IdleSleepStopRequested && run.Status == "stopped"),
-		ResumeUnavailable: run.SessionResumeUnavailable,
-		IdleSinceAt:       run.IdleSinceAt, IdleDeadlineAt: run.IdleDeadlineAt,
-		IdleSleepRequested: run.IdleSleepStopRequested,
-		TurnNumber:         run.TurnNumber,
-		AgentHubSessionID:  run.AgentHubSessionID,
+		Generation: record.Generation, GenerationID: record.GenerationID,
+		Status: record.Status, ReplacementPending: record.ReplacementPending,
+		CompletionState: record.CompletionState, CompletionHasFinalReply: record.CompletionHasFinalReply,
+		IdleSuspended:     record.Status == "idle-suspended" || (record.IdleSleepStopRequested && record.Status == "stopped"),
+		ResumeUnavailable: record.SessionResumeUnavailable,
+		IdleSinceAt:       record.IdleSinceAt, IdleDeadlineAt: record.IdleDeadlineAt,
+		IdleSleepRequested: record.IdleSleepStopRequested,
+		TurnNumber:         record.TurnNumber,
+		AgentHubSessionID:  record.AgentHubSessionID,
 	}
-	if strings.TrimSpace(run.AgentHubSessionID) == "" || cfgErr != nil {
+	if strings.TrimSpace(record.AgentHubSessionID) == "" || cfgErr != nil {
 		status.State = publicResourceState(archived, unavailableReason, status.Generation, nil, "")
 		return status, nil
 	}
-	session, sessionErr := client.GetSession(ctx, run.AgentHubSessionID)
+	session, sessionErr := client.GetSession(ctx, record.AgentHubSessionID)
 	if sessionErr != nil {
 		if status.LastError == "" {
 			status.LastError = sessionErr.Error()
@@ -950,8 +950,8 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorksp
 		ID: session.ID, State: session.State, CurrentTurnID: session.CurrentTurnID,
 		InputCapabilities: session.InputCapabilities,
 	}
-	status.Generation.Resumable = session.State == "stopped" && !run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested
-	status.CanSteerWaiting = !archived && !run.ReplacementPending && (session.State == "running" || session.State == "waiting_approval") && session.InputCapabilities.Steer
+	status.Generation.Resumable = session.State == "stopped" && !record.SessionResumeUnavailable && !record.ReplacementPending && !record.ArchivedTaskStopRequested
+	status.CanSteerWaiting = !archived && !record.ReplacementPending && (session.State == "running" || session.State == "waiting_approval") && session.InputCapabilities.Steer
 	status.State = publicResourceState(archived, unavailableReason, status.Generation, status.Session, "")
 	return status, nil
 }
@@ -1048,82 +1048,82 @@ func selectPendingMailboxMessage(mailbox resourceMailbox, resourceID string) (re
 }
 
 func mailboxAttemptDue(message resourceMailboxMessage, interval time.Duration) bool {
-	last := agentRunTime(message.LastAttemptAt)
+	last := generationTime(message.LastAttemptAt)
 	return last.IsZero() || time.Since(last) >= interval
 }
 
-func runByGenerationID(workspacePath, generationID string) (agentRun, bool, error) {
-	runs, err := loadAgentRuns(workspacePath)
+func generationRecordByID(workspacePath, generationID string) (generationRecord, bool, error) {
+	records, err := loadGenerationRecords(workspacePath)
 	if err != nil {
-		return agentRun{}, false, err
+		return generationRecord{}, false, err
 	}
-	for _, run := range runs {
-		if run.GenerationID == strings.TrimSpace(generationID) {
-			return run, true, nil
+	for _, record := range records {
+		if record.GenerationID == strings.TrimSpace(generationID) {
+			return record, true, nil
 		}
 	}
-	return agentRun{}, false, nil
+	return generationRecord{}, false, nil
 }
 
-// currentRunByGenerationID is the lifecycle-facing lookup. History and
-// notification code may inspect retired manifests through runByGenerationID,
+// currentGenerationRecordByID is the lifecycle-facing lookup. History and
+// notification code may inspect retired manifests through generationRecordByID,
 // but a retired or cold generation must never be reintroduced as a mutable
 // mailbox execution target.
-func currentRunByGenerationID(workspacePath, generationID string) (agentRun, bool, error) {
-	runs, err := loadAgentRunsCurrent(workspacePath)
+func currentGenerationRecordByID(workspacePath, generationID string) (generationRecord, bool, error) {
+	records, err := loadCurrentGenerationRecords(workspacePath)
 	if err != nil {
-		return agentRun{}, false, err
+		return generationRecord{}, false, err
 	}
 	generationID = strings.TrimSpace(generationID)
-	for _, run := range runs {
-		if run.GenerationID == generationID && !run.Retired && !run.Legacy {
-			return run, true, nil
+	for _, record := range records {
+		if record.GenerationID == generationID && !record.Retired && !record.Legacy {
+			return record, true, nil
 		}
 	}
-	return agentRun{}, false, nil
+	return generationRecord{}, false, nil
 }
 
-func (m *agentManager) ensureRuntime(workspace serveWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
-	rt := m.runtimeByID(run.ID)
+func (m *agentManager) ensureRuntime(workspace serveWorkspace, record generationRecord, client *agentHubClient) *agentRuntime {
+	rt := m.runtimeByID(record.ID)
 	if rt != nil {
 		return rt
 	}
-	rt = newAgentHubRuntime(m, workspace, run, client)
-	rt.agentHubState = agentHubStateForPUAStatus(run.Status)
+	rt = newAgentHubRuntime(m, workspace, record, client)
+	rt.agentHubState = agentHubStateForPUAStatus(record.Status)
 	m.registerRuntime(rt)
 	return rt
 }
 
-func (m *agentManager) ensureMailboxGeneration(ctx context.Context, workspace serveWorkspace, resourceID string) (agentRun, *agentRuntime, *agentHubClient, error) {
-	if run, found, err := currentResourceGeneration(workspace.Path, resourceID); err != nil {
-		return agentRun{}, nil, nil, err
+func (m *agentManager) ensureMailboxGeneration(ctx context.Context, workspace serveWorkspace, resourceID string) (generationRecord, *agentRuntime, *agentHubClient, error) {
+	if record, found, err := currentResourceGeneration(workspace.Path, resourceID); err != nil {
+		return generationRecord{}, nil, nil, err
 	} else if found {
 		_, client, cfgErr := m.agentHubRuntimeConfig()
 		if cfgErr != nil {
-			return run, nil, nil, cfgErr
+			return record, nil, nil, cfgErr
 		}
-		return run, m.ensureRuntime(workspace, run, client), client, nil
+		return record, m.ensureRuntime(workspace, record, client), client, nil
 	}
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
-		return agentRun{}, nil, nil, err
+		return generationRecord{}, nil, nil, err
 	}
 	resolved, err := m.resolveResourceAgent(workspace, resourceID, cfg)
 	if err != nil {
-		return agentRun{}, nil, client, &resourceAPIError{Code: "binding_unavailable", Message: err.Error()}
+		return generationRecord{}, nil, client, &resourceAPIError{Code: "binding_unavailable", Message: err.Error()}
 	}
 	if err == nil {
-		resolved.AgentName, err = validateAgentHubRunAgent(ctx, client, resolved.AgentName)
+		resolved.AgentName, err = validateAgentHubGenerationAgent(ctx, client, resolved.AgentName)
 	}
 	if err != nil {
 		if strings.Contains(err.Error(), " is unavailable") || strings.Contains(err.Error(), "not present in the catalog") {
 			err = &resourceAPIError{Code: "binding_unavailable", Message: err.Error()}
 		}
-		return agentRun{}, nil, client, err
+		return generationRecord{}, nil, client, err
 	}
-	cwd, err := m.agentRunCwd(ctx, workspace, resourceID, "")
+	cwd, err := m.generationCwd(ctx, workspace, resourceID, "")
 	if err != nil {
-		return agentRun{}, nil, client, err
+		return generationRecord{}, nil, client, err
 	}
 	created, err := m.createResourceGeneration(ctx, workspace, resourceID, cwd, cfg, client, resolved)
 	if err != nil {
@@ -1269,18 +1269,18 @@ func (m *agentManager) promoteWaitingMessageLocked(ctx context.Context, workspac
 	if archived {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "resource_archived", Message: fmt.Sprintf("resource %s is archived", message.ResourceID)}
 	}
-	run, runFound, err := currentResourceGeneration(workspace.Path, message.ResourceID)
+	record, recordFound, err := currentResourceGeneration(workspace.Path, message.ResourceID)
 	if err != nil {
 		return resourceMailboxMessage{}, err
 	}
-	if !runFound || run.ReplacementPending || strings.TrimSpace(run.AgentHubSessionID) == "" {
+	if !recordFound || record.ReplacementPending || strings.TrimSpace(record.AgentHubSessionID) == "" {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "steer_unavailable", Message: "the target task does not have an active steer-capable turn"}
 	}
 	_, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "steer_unavailable", Message: err.Error()}
 	}
-	session, err := client.GetSession(ctx, run.AgentHubSessionID)
+	session, err := client.GetSession(ctx, record.AgentHubSessionID)
 	if err != nil {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "steer_unavailable", Message: err.Error()}
 	}
@@ -1332,21 +1332,21 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		if !found {
 			return nil
 		}
-		var run agentRun
+		var record generationRecord
 		var rt *agentRuntime
 		var client *agentHubClient
 		if message.GenerationID != "" && (message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting) {
-			associated, associatedFound, associatedErr := currentRunByGenerationID(workspace.Path, message.GenerationID)
+			associated, associatedFound, associatedErr := currentGenerationRecordByID(workspace.Path, message.GenerationID)
 			if associatedErr != nil {
 				return associatedErr
 			}
 			if associatedFound {
-				run = associated
+				record = associated
 				_, client, err = m.agentHubRuntimeConfig()
 				if err != nil {
 					return err
 				}
-				rt = m.ensureRuntime(workspace, run, client)
+				rt = m.ensureRuntime(workspace, record, client)
 			}
 		}
 		if rt == nil {
@@ -1363,7 +1363,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 				}
 				continue
 			}
-			run, rt, client, err = m.ensureMailboxGeneration(ctx, workspace, resourceID)
+			record, rt, client, err = m.ensureMailboxGeneration(ctx, workspace, resourceID)
 			if err != nil {
 				recordMailboxFailure(workspace.Path, message.ID, err)
 				return err
@@ -1372,10 +1372,10 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		// Replacement/archive owns the old generation until its terminal
 		// sequence completes. Idle sleep is different: the stopped current
 		// Session is the exact target of an on-demand Resume.
-		if resourceGenerationLifecyclePending(run) {
+		if resourceGenerationLifecyclePending(record) {
 			return nil
 		}
-		if run.ReplacementPending && message.Status == resourceMessageQueued {
+		if record.ReplacementPending && message.Status == resourceMessageQueued {
 			if message.RequestedMode == resourceMessageModeSteer {
 				_, err = updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
 					current.ActualMode = resourceMessageModeEnqueue
@@ -1393,7 +1393,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 				return nil
 			}
 		}
-		session, err := client.GetSession(ctx, run.AgentHubSessionID)
+		session, err := client.GetSession(ctx, record.AgentHubSessionID)
 		if err != nil {
 			if isTerminalResumeError(err) {
 				if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, err); retireErr != nil {
@@ -1408,21 +1408,21 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		if cfgErr != nil {
 			return cfgErr
 		}
-		if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
-			if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, fmt.Errorf("AgentHub Session %s source does not match generation %s", session.ID, run.GenerationID)); retireErr != nil {
+		if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+			if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, fmt.Errorf("AgentHub Session %s source does not match generation %s", session.ID, record.GenerationID)); retireErr != nil {
 				return retireErr
 			}
 			continue
 		}
 		rt.applyAgentHubSessionState(m, session)
-		run = rt.snapshotRun()
+		record = rt.snapshotGeneration()
 		active := session.State == "running" || session.State == "waiting_approval"
 		lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
-			Run: run, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: run.UpdatedAt,
+			Generation: record, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: record.UpdatedAt,
 		}))
 		switch lifecyclePlan.Operation {
 		case GenerationOperationResumeSession:
-			resumed, terminal, resumeErr := m.resumeStoppedGenerationLocked(ctx, workspace, run, rt, client, lifecyclePlan)
+			resumed, terminal, resumeErr := m.resumeStoppedGenerationLocked(ctx, workspace, record, rt, client, lifecyclePlan)
 			if terminal {
 				if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, resumeErr); retireErr != nil {
 					return retireErr
@@ -1503,7 +1503,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 			if err != nil {
 				return err
 			}
-			if run.ReplacementPending {
+			if record.ReplacementPending {
 				return nil
 			}
 		}
@@ -1514,7 +1514,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 				if message.InterruptAt != "" {
 					break
 				}
-				if run.ReplacementPending && !active {
+				if record.ReplacementPending && !active {
 					_, err = updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
 						current.ActualMode = resourceMessageModeEnqueue
 						current.ModeFrozen = true
@@ -1530,7 +1530,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 						current.ActualMode = resourceMessageModeInterrupt
 						current.ModeFrozen = true
 						current.Status = resourceMessageInterrupting
-						current.GenerationID = run.GenerationID
+						current.GenerationID = record.GenerationID
 						current.AgentHubSessionID = session.ID
 						current.InterruptTurnID = session.CurrentTurnID
 						current.AttemptCount++
@@ -1600,7 +1600,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		deliveryPlan := lifecyclePlan
 		message, err = updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
 			current.Status = resourceMessageDelivering
-			current.GenerationID = run.GenerationID
+			current.GenerationID = record.GenerationID
 			current.AgentHubSessionID = session.ID
 			current.TurnID = session.CurrentTurnID
 			current.AttemptCount++

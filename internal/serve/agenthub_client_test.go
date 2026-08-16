@@ -37,7 +37,7 @@ func TestAgentHubClientContract(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Errorf("decode create request: %v", err)
 			}
-			if request.AgentName != "gpt-5.6-sol" || request.Source == nil || request.Source.ExternalID != "run-1" {
+			if request.AgentName != "gpt-5.6-sol" || request.Source == nil || request.Source.ExternalID != "gen-1" {
 				t.Errorf("unexpected create request: %+v", request)
 			}
 			w.WriteHeader(http.StatusCreated)
@@ -94,7 +94,7 @@ func TestAgentHubClientContract(t *testing.T) {
 	created, err := client.CreateSession(ctx, agentHubCreateSessionRequest{
 		Cwd:       t.TempDir(),
 		AgentName: "gpt-5.6-sol",
-		Source:    &agentHubSource{App: "pua", InstanceID: "instance-1", ExternalID: "run-1"},
+		Source:    &agentHubSource{App: "pua", InstanceID: "instance-1", ExternalID: "gen-1"},
 	})
 	if err != nil || created.ID != "ses_1" {
 		t.Fatalf("create: %+v, %v", created, err)

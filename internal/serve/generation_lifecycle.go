@@ -7,7 +7,7 @@ import (
 )
 
 // GenerationLifecyclePhase is the canonical phase of one generation. It is
-// deliberately independent from the legacy agentRun status strings and from
+// deliberately independent from the legacy generationRecord status strings and from
 // any AgentHub schema version.
 type GenerationLifecyclePhase string
 
@@ -609,7 +609,7 @@ func legacyLifecyclePlanStillCurrent(workspace serveWorkspace, plan GenerationLi
 			return false, nil
 		}
 	}
-	run, found, err := currentRunByGenerationID(workspace.Path, plan.GenerationID)
+	record, found, err := currentGenerationRecordByID(workspace.Path, plan.GenerationID)
 	if err != nil {
 		return false, err
 	}
@@ -621,7 +621,7 @@ func legacyLifecyclePlanStillCurrent(workspace serveWorkspace, plan GenerationLi
 		return false, err
 	}
 	facts := AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
-		Run: run, Session: session, Mailbox: mailbox, Revision: run.UpdatedAt,
+		Generation: record, Session: session, Mailbox: mailbox, Revision: record.UpdatedAt,
 	})
 	return LifecycleGuardMatchesFacts(plan, facts), nil
 }
@@ -639,12 +639,12 @@ func nextMessageID(facts GenerationLifecycleFacts) string {
 }
 
 // LegacyGenerationLifecycleInput is the compatibility boundary for the
-// legacy agentRun/mailbox projection. It is intentionally the only place
+// legacy generation/mailbox projection. It is intentionally the only place
 // where old flags and old status values are translated into canonical
 // lifecycle facts. The resource-scoped generation store owns persistence;
 // changing its adapter does not change PlanGeneration.
 type LegacyGenerationLifecycleInput struct {
-	Run                   agentRun
+	Generation            generationRecord
 	Session               *agentHubSession
 	ResourceArchived      bool
 	BindingChanged        bool
@@ -660,32 +660,32 @@ type LegacyGenerationLifecycleInput struct {
 // the store boundary. It does not read files or call time.Now; callers supply
 // all observations explicitly.
 func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) GenerationLifecycleFacts {
-	run := input.Run
+	record := input.Generation
 	facts := GenerationLifecycleFacts{
 		WorkspaceInstanceID: strings.TrimSpace(input.WorkspaceInstanceID),
-		ResourceID:          normalizedResourceID(run.ResourceID),
+		ResourceID:          normalizedResourceID(record.ResourceID),
 		Revision:            strings.TrimSpace(input.Revision),
-		CurrentGeneration:   strings.TrimSpace(run.GenerationID) != "" || strings.TrimSpace(run.AgentHubSessionID) != "",
-		GenerationID:        strings.TrimSpace(run.GenerationID),
-		GenerationNumber:    run.Generation,
-		Phase:               legacyGenerationPhase(run.Status),
+		CurrentGeneration:   strings.TrimSpace(record.GenerationID) != "" || strings.TrimSpace(record.AgentHubSessionID) != "",
+		GenerationID:        strings.TrimSpace(record.GenerationID),
+		GenerationNumber:    record.Generation,
+		Phase:               legacyGenerationPhase(record.Status),
 		Binding: GenerationBindingFacts{
-			Kind:            strings.TrimSpace(run.BindingKind),
-			Name:            strings.TrimSpace(run.BindingName),
-			ResolvedAgent:   strings.TrimSpace(run.AgentHubAgentName),
-			ProfileRevision: strings.TrimSpace(run.ProfileRevision),
+			Kind:            strings.TrimSpace(record.BindingKind),
+			Name:            strings.TrimSpace(record.BindingName),
+			ResolvedAgent:   strings.TrimSpace(record.AgentHubAgentName),
+			ProfileRevision: strings.TrimSpace(record.ProfileRevision),
 		},
 		BindingChanged:   input.BindingChanged,
 		ResourceArchived: input.ResourceArchived,
-		SessionID:        strings.TrimSpace(run.AgentHubSessionID),
+		SessionID:        strings.TrimSpace(record.AgentHubSessionID),
 		Lifecycle: GenerationLifecycleState{
-			Intent: legacyLifecycleIntent(run, input.ResourceArchived),
-			Phase:  legacyGenerationPhase(run.Status),
-			Reason: legacyLifecycleReason(run, input.ResourceArchived),
+			Intent: legacyLifecycleIntent(record, input.ResourceArchived),
+			Phase:  legacyGenerationPhase(record.Status),
+			Reason: legacyLifecycleReason(record, input.ResourceArchived),
 		},
 	}
 	if facts.Revision == "" {
-		facts.Revision = strings.TrimSpace(run.UpdatedAt)
+		facts.Revision = strings.TrimSpace(record.UpdatedAt)
 	}
 	if input.Session != nil {
 		session := input.Session
@@ -700,24 +700,24 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 		facts.Lifecycle.Phase = facts.Phase
 		facts.SessionResumable = session.State == "stopped" && strings.TrimSpace(facts.SessionID) != ""
 	}
-	facts.SessionResumeUnavailable = run.SessionResumeUnavailable
-	if !input.Now.IsZero() && strings.TrimSpace(run.ResumeRetryAt) != "" {
-		if retryAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(run.ResumeRetryAt)); err == nil {
+	facts.SessionResumeUnavailable = record.SessionResumeUnavailable
+	if !input.Now.IsZero() && strings.TrimSpace(record.ResumeRetryAt) != "" {
+		if retryAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(record.ResumeRetryAt)); err == nil {
 			facts.ResumeBackoffActive = input.Now.Before(retryAt)
 		}
 	}
-	if run.LifecycleReceipt != nil {
-		facts.Lifecycle.Receipt = *run.LifecycleReceipt
+	if record.LifecycleReceipt != nil {
+		facts.Lifecycle.Receipt = *record.LifecycleReceipt
 	}
 	if facts.TurnID == "" && !facts.SessionKnown {
-		facts.TurnID = strings.TrimSpace(run.CurrentTurnID)
+		facts.TurnID = strings.TrimSpace(record.CurrentTurnID)
 	}
-	facts.MailboxPending, facts.NextMessage = legacyMailboxFacts(input.Mailbox, facts.ResourceID, run.PendingMessages)
+	facts.MailboxPending, facts.NextMessage = legacyMailboxFacts(input.Mailbox, facts.ResourceID, record.PendingMessages)
 	if facts.TurnID == "" && facts.NextMessage != nil {
 		facts.TurnID = firstNonEmpty(facts.NextMessage.InterruptTurnID, facts.NextMessage.TurnID)
 	}
-	if !input.Now.IsZero() && strings.TrimSpace(run.IdleDeadlineAt) != "" {
-		if deadline, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(run.IdleDeadlineAt)); err == nil {
+	if !input.Now.IsZero() && strings.TrimSpace(record.IdleDeadlineAt) != "" {
+		if deadline, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(record.IdleDeadlineAt)); err == nil {
 			facts.IdleDeadlineDue = !input.Now.Before(deadline)
 		}
 	}
@@ -736,26 +736,26 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 // ApplyLegacyLifecyclePlan is the reverse compatibility mapping. It is for a
 // guarded store commit only; the planner never calls it and never sees these
 // field names.
-func ApplyLegacyLifecyclePlan(run *agentRun, plan GenerationLifecyclePlan) {
-	if run == nil {
+func ApplyLegacyLifecyclePlan(record *generationRecord, plan GenerationLifecyclePlan) {
+	if record == nil {
 		return
 	}
 	switch plan.Intent {
 	case GenerationIntentArchive:
-		run.ArchivedTaskStopRequested = true
+		record.ArchivedTaskStopRequested = true
 	case GenerationIntentReplacement:
-		run.ReplacementPending = true
+		record.ReplacementPending = true
 	case GenerationIntentIdle:
-		run.IdleSleepStopRequested = true
+		record.IdleSleepStopRequested = true
 	}
 	switch plan.Operation {
 	case GenerationOperationStopSession, GenerationOperationWaitForStopped:
-		run.Status = "stopping"
+		record.Status = "stopping"
 	case GenerationOperationResumeSession:
-		run.Status = "starting"
-		run.AgentHubStoppedObserved = false
+		record.Status = "starting"
+		record.AgentHubStoppedObserved = false
 	case GenerationOperationArchiveSession, GenerationOperationRetireGeneration:
-		run.Status = "stopped"
+		record.Status = "stopped"
 	}
 	if plan.Operation == GenerationOperationStopSession || plan.Operation == GenerationOperationResumeSession || plan.Operation == GenerationOperationArchiveSession {
 		receipt := GenerationLifecycleReceipt{
@@ -768,13 +768,13 @@ func ApplyLegacyLifecyclePlan(run *agentRun, plan GenerationLifecyclePlan) {
 			MessageID:    plan.MessageID,
 			Revision:     plan.Guard.Revision,
 		}
-		run.LifecycleReceipt = &receipt
+		record.LifecycleReceipt = &receipt
 	}
 	if plan.Operation == GenerationOperationRetireGeneration {
-		run.ReplacementPending = false
-		run.IdleSleepStopRequested = false
-		run.ArchivedTaskStopRequested = false
-		run.AgentHubStoppedObserved = true
+		record.ReplacementPending = false
+		record.IdleSleepStopRequested = false
+		record.ArchivedTaskStopRequested = false
+		record.AgentHubStoppedObserved = true
 	}
 }
 
@@ -801,36 +801,36 @@ func legacyGenerationPhase(status string) GenerationLifecyclePhase {
 	}
 }
 
-func legacyLifecycleIntent(run agentRun, resourceArchived bool) GenerationLifecycleIntent {
-	if resourceArchived || run.ArchivedTaskStopRequested {
+func legacyLifecycleIntent(record generationRecord, resourceArchived bool) GenerationLifecycleIntent {
+	if resourceArchived || record.ArchivedTaskStopRequested {
 		return GenerationIntentArchive
 	}
-	if run.ReplacementPending {
+	if record.ReplacementPending {
 		return GenerationIntentReplacement
 	}
-	if run.SessionResumeUnavailable {
+	if record.SessionResumeUnavailable {
 		return GenerationIntentRecovery
 	}
-	if run.IdleSleepStopRequested {
+	if record.IdleSleepStopRequested {
 		return GenerationIntentIdle
 	}
 	return GenerationIntentNone
 }
 
-func legacyLifecycleReason(run agentRun, resourceArchived bool) string {
-	if resourceArchived || run.ArchivedTaskStopRequested {
+func legacyLifecycleReason(record generationRecord, resourceArchived bool) string {
+	if resourceArchived || record.ArchivedTaskStopRequested {
 		return "resource_archived"
 	}
-	if run.ReplacementPending {
-		if run.ManualStopRequested {
+	if record.ReplacementPending {
+		if record.ManualStopRequested {
 			return "manual_generation_stop"
 		}
 		return "binding_changed"
 	}
-	if run.SessionResumeUnavailable {
+	if record.SessionResumeUnavailable {
 		return "session_resume_unavailable"
 	}
-	if run.IdleSleepStopRequested {
+	if record.IdleSleepStopRequested {
 		return "idle_deadline"
 	}
 	return ""

@@ -74,19 +74,19 @@ func TestTurnResultSubscriptionsOnlyNotifyTurnOpeners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := agentRun{ID: "run-target", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-target", AgentHubSessionID: "ses-target", Status: "ready", CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano)}
-	if err := saveAgentRun(root, run); err != nil {
+	record := generationRecord{ID: "gen-target", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-target", AgentHubSessionID: "ses-target", Status: "ready", CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano)}
+	if err := saveGenerationRecord(root, record); err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
-	fake.turns[run.AgentHubSessionID] = map[string]agentHubTurn{"turn-target": {TurnID: "turn-target", Status: "completed", Closed: true, Items: []agentHubTurnItem{{Type: "message", Role: "assistant", Text: "The shared result."}}}}
+	fake.turns[record.AgentHubSessionID] = map[string]agentHubTurn{"turn-target": {TurnID: "turn-target", Status: "completed", Closed: true, Items: []agentHubTurnItem{{Type: "message", Role: "assistant", Text: "The shared result."}}}}
 	fake.mu.Unlock()
 	now := time.Now().Format(time.RFC3339Nano)
 	appendMessage := func(id, sender, actualMode string) {
 		appendNotificationTestMessage(t, root, resourceMailboxMessage{
 			ID: id, ResourceID: "project1.task1", Text: id, Role: "agent", Sender: &agentHubMessageSender{ID: sender, Name: sender}, SenderWorkspaceInstanceID: runtimeConfig.InstanceID,
 			SubscribeResult: true, ResultSubscriptionStatus: resourceResultSubscriptionPending, RequestedMode: actualMode, ActualMode: actualMode,
-			Status: resourceMessageDelivered, AcceptedAt: now, UpdatedAt: now, DeliveredAt: now, TerminalAt: now, GenerationID: run.GenerationID, AgentHubSessionID: run.AgentHubSessionID, TurnID: "turn-target",
+			Status: resourceMessageDelivered, AcceptedAt: now, UpdatedAt: now, DeliveredAt: now, TerminalAt: now, GenerationID: record.GenerationID, AgentHubSessionID: record.AgentHubSessionID, TurnID: "turn-target",
 		})
 	}
 	appendMessage("msg-opener", "project1.task2", resourceMessageModeEnqueue)
@@ -124,18 +124,18 @@ func TestTurnResultSubscriptionsOnlyNotifyTurnOpeners(t *testing.T) {
 
 func TestGeneratedNotificationModesUseOrdinaryMailboxReconciliation(t *testing.T) {
 	tests := []struct {
-		name          string
-		runStatus     string
-		sessionState  string
-		steer         bool
-		wantActual    string
-		wantReason    string
-		wantStatus    string
-		wantSteerCall bool
+		name             string
+		generationStatus string
+		sessionState     string
+		steer            bool
+		wantActual       string
+		wantReason       string
+		wantStatus       string
+		wantSteerCall    bool
 	}{
-		{name: "active steer", runStatus: "running", sessionState: "running", steer: true, wantActual: resourceMessageModeSteer, wantStatus: resourceMessageDelivered, wantSteerCall: true},
-		{name: "no active turn", runStatus: "idle", sessionState: "ready", steer: true, wantActual: resourceMessageModeEnqueue, wantReason: resourceMessageReasonNoActiveTurn, wantStatus: resourceMessageDelivered},
-		{name: "active turn without steer capability", runStatus: "running", sessionState: "running", wantActual: resourceMessageModeEnqueue, wantReason: resourceMessageReasonSteerUnsupported, wantStatus: resourceMessageQueued},
+		{name: "active steer", generationStatus: "running", sessionState: "running", steer: true, wantActual: resourceMessageModeSteer, wantStatus: resourceMessageDelivered, wantSteerCall: true},
+		{name: "no active turn", generationStatus: "idle", sessionState: "ready", steer: true, wantActual: resourceMessageModeEnqueue, wantReason: resourceMessageReasonNoActiveTurn, wantStatus: resourceMessageDelivered},
+		{name: "active turn without steer capability", generationStatus: "running", sessionState: "running", wantActual: resourceMessageModeEnqueue, wantReason: resourceMessageReasonSteerUnsupported, wantStatus: resourceMessageQueued},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -144,19 +144,19 @@ func TestGeneratedNotificationModesUseOrdinaryMailboxReconciliation(t *testing.T
 			defer hub.Close()
 			manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 			now := time.Now().Format(time.RFC3339Nano)
-			run := agentRun{
-				ID: "run-generated-" + strings.ReplaceAll(test.name, " ", "-"), WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+			record := generationRecord{
+				ID: "gen-generated-" + strings.ReplaceAll(test.name, " ", "-"), WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 				Generation: 1, GenerationID: "gen-generated-" + strings.ReplaceAll(test.name, " ", "-"), AgentHubSessionID: "ses-generated-" + strings.ReplaceAll(test.name, " ", "-"),
-				AgentHubAgentName: "fake-agent", SourceExternalID: workspace.ID + "/generated", Status: test.runStatus,
+				AgentHubAgentName: "fake-agent", SourceExternalID: workspace.ID + "/generated", Status: test.generationStatus,
 				CreatedAt: now, UpdatedAt: now,
 			}
-			seedPollerRun(t, fake, workspace, run, agentHubSession{
-				ID: run.AgentHubSessionID, State: test.sessionState, CurrentTurnID: "turn-generated",
+			seedPollerGeneration(t, fake, workspace, record, agentHubSession{
+				ID: record.AgentHubSessionID, State: test.sessionState, CurrentTurnID: "turn-generated",
 				InputCapabilities: agentHubInputCapabilities{Steer: test.steer}, UpdatedAt: now,
 			})
 
 			generated := resourceMailboxMessage{
-				ID: "generated-" + strings.ReplaceAll(test.name, " ", "-"), ResourceID: run.ResourceID, Text: "generated result",
+				ID: "generated-" + strings.ReplaceAll(test.name, " ", "-"), ResourceID: record.ResourceID, Text: "generated result",
 				RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
 				Type:      resourceMessageTypeTurnResult,
 				Causation: &resourceMessageCausation{Type: resourceMessageTypeTurnResult, SourceResourceID: "project1.task2", MessageID: "source-message"},
@@ -169,8 +169,8 @@ func TestGeneratedNotificationModesUseOrdinaryMailboxReconciliation(t *testing.T
 				accepted.RequestedMode != resourceMessageModeSteer || accepted.ActualMode != resourceMessageModeSteer || accepted.ModeFrozen {
 				t.Fatalf("generated durable accept did not preserve initial steer mapping: %#v", accepted)
 			}
-			if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
-				return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+			if err := manager.withResourceController(context.Background(), workspace, record.ResourceID, func() error {
+				return manager.reconcileResourceMailboxLocked(context.Background(), workspace, record.ResourceID)
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -208,16 +208,16 @@ func TestGeneratedNotificationFrozenModeDoesNotDriftOnRetry(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339Nano)
-	run := agentRun{
-		ID: "run-frozen-generated", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1,
+	record := generationRecord{
+		ID: "gen-frozen-generated", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1,
 		GenerationID: "gen-frozen-generated", AgentHubSessionID: "ses-frozen-generated", AgentHubAgentName: "fake-agent",
 		SourceExternalID: workspace.ID + "/frozen-generated", Status: "running", CreatedAt: now, UpdatedAt: now,
 	}
-	seedPollerRun(t, fake, workspace, run, agentHubSession{
-		ID: run.AgentHubSessionID, State: "running", CurrentTurnID: "turn-frozen", UpdatedAt: now,
+	seedPollerGeneration(t, fake, workspace, record, agentHubSession{
+		ID: record.AgentHubSessionID, State: "running", CurrentTurnID: "turn-frozen", UpdatedAt: now,
 	})
 	generated := resourceMailboxMessage{
-		ID: "generated-frozen", ResourceID: run.ResourceID, Text: "frozen result",
+		ID: "generated-frozen", ResourceID: record.ResourceID, Text: "frozen result",
 		RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
 		Type:      resourceMessageTypeTurnResult,
 		Causation: &resourceMessageCausation{Type: resourceMessageTypeTurnResult, SourceResourceID: "project1.task2", MessageID: "source-frozen"},
@@ -225,8 +225,8 @@ func TestGeneratedNotificationFrozenModeDoesNotDriftOnRetry(t *testing.T) {
 	if _, err := acceptGeneratedMailboxMessage(workspace.Path, generated); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
-		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	if err := manager.withResourceController(context.Background(), workspace, record.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, record.ResourceID)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -237,12 +237,12 @@ func TestGeneratedNotificationFrozenModeDoesNotDriftOnRetry(t *testing.T) {
 	}
 
 	fake.mu.Lock()
-	session := fake.sessions[run.AgentHubSessionID]
+	session := fake.sessions[record.AgentHubSessionID]
 	session.InputCapabilities.Steer = true
 	fake.sessions[session.ID] = session
 	fake.mu.Unlock()
-	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
-		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	if err := manager.withResourceController(context.Background(), workspace, record.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, record.ResourceID)
 	}); err != nil {
 		t.Fatal(err)
 	}

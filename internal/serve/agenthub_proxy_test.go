@@ -119,8 +119,8 @@ func newProxyTestManager(t *testing.T, hubURL string) (*agentManager, serveWorks
 	return manager, workspace
 }
 
-func registerProxyTestRun(manager *agentManager, workspace serveWorkspace, run agentRun) {
-	manager.registerRuntime(&agentRuntime{workspace: workspace, run: run})
+func registerProxyTestGeneration(manager *agentManager, workspace serveWorkspace, record generationRecord) {
+	manager.registerRuntime(&agentRuntime{workspace: workspace, record: record})
 }
 
 func (f *proxyFakeAgentHub) eventsQuery(t *testing.T, index int) url.Values {
@@ -138,14 +138,14 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{
-		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
+	registerProxyTestGeneration(manager, workspace, generationRecord{
+		ID: "gen-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
 
 	request := httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/workspace-one/agent/runs/run-one/events?before=8&limit=250", nil)
 	recorder := httptest.NewRecorder()
-	manager.proxyAgentHubEvents(recorder, request, workspace.ID, "run-one")
+	manager.proxyAgentHubEvents(recorder, request, workspace.ID, "gen-one")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("proxy events failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -163,7 +163,7 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 	second := httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/workspace-one/agent/runs/run-one/events?latest=true&limit=250", nil)
 	secondRecorder := httptest.NewRecorder()
-	manager.proxyAgentHubEvents(secondRecorder, second, workspace.ID, "run-one")
+	manager.proxyAgentHubEvents(secondRecorder, second, workspace.ID, "gen-one")
 	if secondRecorder.Code != http.StatusOK {
 		t.Fatalf("proxy latest events failed: %d %s", secondRecorder.Code, secondRecorder.Body.String())
 	}
@@ -178,10 +178,10 @@ func TestAgentHubProxyBoundedEvents(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle"})
+	registerProxyTestGeneration(manager, workspace, generationRecord{ID: "gen-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle"})
 
 	bounded := httptest.NewRecorder()
-	manager.proxyAgentHubEvents(bounded, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?start=2&end=9&after=5&limit=3", nil), workspace.ID, "run-one")
+	manager.proxyAgentHubEvents(bounded, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?start=2&end=9&after=5&limit=3", nil), workspace.ID, "gen-one")
 	if bounded.Code != http.StatusOK {
 		t.Fatalf("bounded Event proxy = %d %s", bounded.Code, bounded.Body.String())
 	}
@@ -196,13 +196,13 @@ func TestAgentHubProxyEventsSingleUpstreamRequestPerClientPage(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{
-		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
+	registerProxyTestGeneration(manager, workspace, generationRecord{
+		ID: "gen-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
 
 	latest := httptest.NewRecorder()
 	manager.proxyAgentHubEvents(latest, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?latest=true&limit=250", nil),
-		workspace.ID, "run-one")
+		workspace.ID, "gen-one")
 	if latest.Code != http.StatusOK {
 		t.Fatalf("latest page failed: %d %s", latest.Code, latest.Body.String())
 	}
@@ -214,14 +214,14 @@ func TestAgentHubProxyEventsSingleUpstreamRequestPerClientPage(t *testing.T) {
 	}
 }
 
-func TestAgentHubProxyEventsWithoutRuntimeLoadsRunFromDisk(t *testing.T) {
+func TestAgentHubProxyEventsWithoutRuntimeLoadsGenerationFromDisk(t *testing.T) {
 	fake := &proxyFakeAgentHub{eventsBody: `{"events":[],"page":{"after":3,"nextAfter":3,"hasMore":false},"latestCursor":3}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339)
-	if err := saveAgentRun(workspace.Path, agentRun{
-		ID: "run-disk", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_disk",
+	if err := saveGenerationRecord(workspace.Path, generationRecord{
+		ID: "gen-disk", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_disk",
 		Title: "Disk", Cwd: workspace.Path, Status: "stopped", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestAgentHubProxyEventsWithoutRuntimeLoadsRunFromDisk(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/workspace-one/agent/runs/run-disk/events?after=3&limit=10", nil)
 	recorder := httptest.NewRecorder()
-	manager.proxyAgentHubEvents(recorder, request, workspace.ID, "run-disk")
+	manager.proxyAgentHubEvents(recorder, request, workspace.ID, "gen-disk")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("proxy disk-run events failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -243,32 +243,32 @@ func TestAgentHubProxyEventsWithoutRuntimeLoadsRunFromDisk(t *testing.T) {
 	}
 }
 
-func TestAgentHubProxyEventsRunLookupFailures(t *testing.T) {
+func TestAgentHubProxyEventsGenerationLookupFailures(t *testing.T) {
 	fake := &proxyFakeAgentHub{eventsBody: `{"events":[]}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{
-		ID: "run-unbound", WorkspaceID: workspace.ID, Status: "idle",
+	registerProxyTestGeneration(manager, workspace, generationRecord{
+		ID: "gen-unbound", WorkspaceID: workspace.ID, Status: "idle",
 	})
 
 	missing := httptest.NewRecorder()
 	manager.proxyAgentHubEvents(missing, httptest.NewRequest(http.MethodGet, "/runs/run-missing/events", nil),
-		workspace.ID, "run-missing")
+		workspace.ID, "gen-missing")
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("unknown run must return 404, got %d: %s", missing.Code, missing.Body.String())
 	}
 
 	unbound := httptest.NewRecorder()
 	manager.proxyAgentHubEvents(unbound, httptest.NewRequest(http.MethodGet, "/runs/run-unbound/events", nil),
-		workspace.ID, "run-unbound")
+		workspace.ID, "gen-unbound")
 	if unbound.Code != http.StatusConflict || !strings.Contains(unbound.Body.String(), "not attached to AgentHub") {
 		t.Fatalf("unbound run must return 409, got %d: %s", unbound.Code, unbound.Body.String())
 	}
 
 	streamUnbound := httptest.NewRecorder()
 	manager.proxyAgentHubStream(streamUnbound, httptest.NewRequest(http.MethodGet, "/runs/run-unbound/stream", nil),
-		workspace.ID, "run-unbound")
+		workspace.ID, "gen-unbound")
 	if streamUnbound.Code != http.StatusConflict {
 		t.Fatalf("unbound stream must return 409, got %d: %s", streamUnbound.Code, streamUnbound.Body.String())
 	}
@@ -285,13 +285,13 @@ func TestAgentHubProxyEventsMapsUpstreamErrors(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{
-		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
+	registerProxyTestGeneration(manager, workspace, generationRecord{
+		ID: "gen-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
 
 	recorder := httptest.NewRecorder()
 	manager.proxyAgentHubEvents(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?before=1&latest=true", nil),
-		workspace.ID, "run-one")
+		workspace.ID, "gen-one")
 	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "invalid_event_cursor") {
 		t.Fatalf("upstream 400 must keep its status and code, got %d: %s", recorder.Code, recorder.Body.String())
 	}
@@ -302,16 +302,16 @@ func TestAgentHubProxyEventsMapsUpstreamErrors(t *testing.T) {
 	fake.mu.Unlock()
 	failing := httptest.NewRecorder()
 	manager.proxyAgentHubEvents(failing, httptest.NewRequest(http.MethodGet, "/runs/run-one/events", nil),
-		workspace.ID, "run-one")
+		workspace.ID, "gen-one")
 	if failing.Code != http.StatusBadGateway || !strings.Contains(failing.Body.String(), "boom") {
 		t.Fatalf("upstream 500 must map to 502, got %d: %s", failing.Code, failing.Body.String())
 	}
 }
 
-func proxyServeServer(t *testing.T, manager *agentManager, workspaceID, runID, endpoint string) *httptest.Server {
+func proxyServeServer(t *testing.T, manager *agentManager, workspaceID, recordID, endpoint string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		manager.proxyAgentHubStream(w, r, workspaceID, runID)
+		manager.proxyAgentHubStream(w, r, workspaceID, recordID)
 	}))
 	t.Cleanup(server.Close)
 	return server
@@ -335,10 +335,10 @@ func TestAgentHubProxyStreamForwardsFramesCursorAndCacheHeader(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{
-		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
+	registerProxyTestGeneration(manager, workspace, generationRecord{
+		ID: "gen-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
-	serveServer := proxyServeServer(t, manager, workspace.ID, "run-one", "stream")
+	serveServer := proxyServeServer(t, manager, workspace.ID, "gen-one", "stream")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -394,10 +394,10 @@ func TestAgentHubProxyStreamInterleavesPUANotice(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{
-		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
+	registerProxyTestGeneration(manager, workspace, generationRecord{
+		ID: "gen-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
-	serveServer := proxyServeServer(t, manager, workspace.ID, "run-one", "stream")
+	serveServer := proxyServeServer(t, manager, workspace.ID, "gen-one", "stream")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -415,7 +415,7 @@ func TestAgentHubProxyStreamInterleavesPUANotice(t *testing.T) {
 		t.Fatalf("upstream frame missing before notice: %q", got)
 	}
 
-	manager.publishNotice("run-one", puaNotice{
+	manager.publishNotice("gen-one", puaNotice{
 		Source: "pua", Type: "pua.notice", Time: "2026-08-01T00:00:00Z",
 		Data: puaNoticeData{Level: "error", Method: "agenthub/recovery", Text: "synthetic proxy notice"},
 	})
@@ -442,10 +442,10 @@ func TestAgentHubProxyStreamDisconnectCancelsUpstream(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
-	registerProxyTestRun(manager, workspace, agentRun{
-		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
+	registerProxyTestGeneration(manager, workspace, generationRecord{
+		ID: "gen-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
-	serveServer := proxyServeServer(t, manager, workspace.ID, "run-one", "stream")
+	serveServer := proxyServeServer(t, manager, workspace.ID, "gen-one", "stream")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, serveServer.URL+"/stream", nil)

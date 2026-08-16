@@ -21,8 +21,8 @@ type resolvedResourceAgent struct {
 	InstanceID      string
 }
 
-func runSourceInstanceID(cfg config, run agentRun) string {
-	if value := strings.TrimSpace(run.SourceInstanceID); value != "" {
+func generationSourceInstanceID(cfg config, record generationRecord) string {
+	if value := strings.TrimSpace(record.SourceInstanceID); value != "" {
 		return value
 	}
 	return strings.TrimSpace(cfg.AgentHubInstanceID)
@@ -33,27 +33,27 @@ func sourceLookupKey(instanceID, externalID string) string {
 }
 
 func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace serveWorkspace, resourceID string) (bool, error) {
-	runs, err := loadAgentRunsCurrent(workspace.Path)
+	records, err := loadCurrentGenerationRecords(workspace.Path)
 	if err != nil {
 		return false, err
 	}
 	_, client, configErr := m.agentHubRuntimeConfig()
-	for _, run := range runs {
-		if !agentRunMatchesResource(run, resourceID) {
+	for _, record := range records {
+		if !generationMatchesResource(record, resourceID) {
 			continue
 		}
-		if run.Status == "running" || run.Status == "waiting_approval" {
+		if record.Status == "running" || record.Status == "waiting_approval" {
 			return true, nil
 		}
-		if !isAgentHubRun(run) || strings.TrimSpace(run.AgentHubSessionID) == "" {
+		if !isAgentHubGeneration(record) || strings.TrimSpace(record.AgentHubSessionID) == "" {
 			continue
 		}
 		if configErr != nil {
 			return false, fmt.Errorf("verify resource Turn state: %w", configErr)
 		}
-		session, fetchErr := client.GetSession(ctx, run.AgentHubSessionID)
+		session, fetchErr := client.GetSession(ctx, record.AgentHubSessionID)
 		if fetchErr != nil {
-			return false, fmt.Errorf("verify resource generation %s Turn state: %w", run.GenerationID, fetchErr)
+			return false, fmt.Errorf("verify resource generation %s Turn state: %w", record.GenerationID, fetchErr)
 		}
 		if session.State == "running" || session.State == "waiting_approval" {
 			return true, nil
@@ -189,32 +189,32 @@ func resourceGenerationTitle(workspace serveWorkspace, resourceID string, genera
 	return fmt.Sprintf("%s (gen #%d)", title, generation), nil
 }
 
-func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool, error) {
+func currentResourceGeneration(workspacePath, resourceID string) (generationRecord, bool, error) {
 	store, err := openGenerationStore(workspacePath, "")
 	if err != nil {
-		return agentRun{}, false, err
+		return generationRecord{}, false, err
 	}
-	record, found, err := store.Current(resourceID)
+	storeRecord, found, err := store.Current(resourceID)
 	if err != nil || !found {
-		return agentRun{}, found, err
+		return generationRecord{}, found, err
 	}
-	run, err := generationRecordToAgentRun(record)
+	record, err := fromStoreRecord(storeRecord)
 	if err != nil {
-		return agentRun{}, false, err
+		return generationRecord{}, false, err
 	}
-	if !agentRunMatchesResource(run, resourceID) || strings.TrimSpace(run.GenerationID) == "" {
-		return agentRun{}, false, nil
+	if !generationMatchesResource(record, resourceID) || strings.TrimSpace(record.GenerationID) == "" {
+		return generationRecord{}, false, nil
 	}
-	return run, true, nil
+	return record, true, nil
 }
 
 // deliverPendingResourceMessages retries only messages carrying stable IDs.
 // AgentHub's at-least-once capability makes an unknown response safe: PUA
 // retains the same stable ID until AgentHub durably accepts retry ownership.
 func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *agentManager) error {
-	run := rt.snapshotRun()
-	return m.withResourceController(ctx, rt.workspace, run.ResourceID, func() error {
-		return m.reconcileResourceMailboxLocked(ctx, rt.workspace, run.ResourceID)
+	record := rt.snapshotGeneration()
+	return m.withResourceController(ctx, rt.workspace, record.ResourceID, func() error {
+		return m.reconcileResourceMailboxLocked(ctx, rt.workspace, record.ResourceID)
 	})
 }
 
@@ -222,23 +222,23 @@ func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *a
 // resource ordering must invoke it from that resource's controller. Pending
 // inputs remain owned by the Workspace mailbox; generation creation never
 // transfers or rewrites them.
-func (m *agentManager) createResourceGeneration(ctx context.Context, workspace serveWorkspace, resourceID, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (agentRun, error) {
+func (m *agentManager) createResourceGeneration(ctx context.Context, workspace serveWorkspace, resourceID, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (generationRecord, error) {
 	generation, err := nextResourceGeneration(workspace.Path, resourceID)
 	if err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
 	title, err := resourceGenerationTitle(workspace, resourceID, generation)
 	if err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
 	now := time.Now().Format(time.RFC3339Nano)
 	providerID, providerName, model := snapshotAgentHubAgent(ctx, client, resolved.AgentName)
-	run := agentRun{
-		ID:                 newRunID(),
+	record := generationRecord{
+		ID:                 newGenerationRecordID(),
 		WorkspaceID:        workspace.ID,
 		ResourceID:         strings.TrimSpace(resourceID),
 		Generation:         generation,
-		GenerationID:       "gen-" + newRunID(),
+		GenerationID:       "gen-" + newGenerationRecordID(),
 		SourceInstanceID:   resolved.InstanceID,
 		BindingKind:        resolved.Binding.Kind,
 		BindingName:        resolved.Binding.Name,
@@ -253,61 +253,61 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace s
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	resourceKey := run.ResourceID
+	resourceKey := record.ResourceID
 	if resourceKey == "" {
 		resourceKey = "workspace"
 	}
-	run.SourceExternalID = resourceKey + "/" + fmt.Sprint(run.Generation)
+	record.SourceExternalID = resourceKey + "/" + fmt.Sprint(record.Generation)
 
-	rt := newAgentHubRuntime(m, workspace, run, client)
+	rt := newAgentHubRuntime(m, workspace, record, client)
 	persisted := false
 	defer func() {
 		if !persisted {
-			m.removeRuntime(run.ID)
+			m.removeRuntime(record.ID)
 		}
 	}()
-	if err := saveAgentRun(workspace.Path, run); err != nil {
-		return agentRun{}, err
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		return generationRecord{}, err
 	}
 	persisted = true
 	m.registerRuntime(rt)
 
 	source := agentHubSource{
-		App: agentHubSourceApp, InstanceID: run.SourceInstanceID, ExternalID: run.SourceExternalID,
+		App: agentHubSourceApp, InstanceID: record.SourceInstanceID, ExternalID: record.SourceExternalID,
 		Metadata: map[string]string{
-			"workspaceInstanceId": run.SourceInstanceID, "resourceId": resourceKey,
-			"generation": fmt.Sprint(run.Generation), "generationId": run.GenerationID,
-			"bindingKind": run.BindingKind, "bindingName": run.BindingName,
-			"profileRevision": run.ProfileRevision,
+			"workspaceInstanceId": record.SourceInstanceID, "resourceId": resourceKey,
+			"generation": fmt.Sprint(record.Generation), "generationId": record.GenerationID,
+			"bindingKind": record.BindingKind, "bindingName": record.BindingName,
+			"profileRevision": record.ProfileRevision,
 		},
 	}
 	launchEnvironment := map[string]string{
 		"PUA_WORKSPACE_ROOT":        workspace.Path,
-		"PUA_WORKSPACE_INSTANCE_ID": run.SourceInstanceID,
+		"PUA_WORKSPACE_INSTANCE_ID": record.SourceInstanceID,
 		"PUA_RESOURCE_ID":           resourceKey,
 	}
 	session, err := m.findOrCreateAgentHubSession(ctx, client, source, agentHubCreateSessionRequest{
-		Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
-		Source: &source, IdempotencyKey: run.GenerationID, LaunchEnvironment: launchEnvironment,
+		Title: record.Title, Cwd: record.Cwd, AgentName: record.AgentHubAgentName,
+		Source: &source, IdempotencyKey: record.GenerationID, LaunchEnvironment: launchEnvironment,
 	})
 	if err != nil {
 		rt.setRecoveryError(m, err)
-		return rt.snapshotRun(), err
+		return rt.snapshotGeneration(), err
 	}
-	run, err = rt.mutateRun(func(run *agentRun) {
-		run.AgentHubSessionID = session.ID
+	record, err = rt.mutateGeneration(func(record *generationRecord) {
+		record.AgentHubSessionID = session.ID
 		if strings.TrimSpace(session.AgentName) != "" {
-			run.AgentHubAgentName = session.AgentName
+			record.AgentHubAgentName = session.AgentName
 		}
-		run.CompletionSessionID = session.ID
-		run.CompletionCursor = session.LastEventID
+		record.CompletionSessionID = session.ID
+		record.CompletionCursor = session.LastEventID
 	})
 	if err != nil {
 		rt.setRecoveryError(m, err)
-		return rt.snapshotRun(), err
+		return rt.snapshotGeneration(), err
 	}
 	rt.applyAgentHubSessionState(m, session)
-	return rt.snapshotRun(), nil
+	return rt.snapshotGeneration(), nil
 }
 
 func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace serveWorkspace, resourceID string, binding app.AgentBinding) error {
@@ -318,16 +318,16 @@ func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace ser
 
 func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspace serveWorkspace, resourceID string, binding app.AgentBinding) error {
 	_ = binding
-	run, found, err := currentResourceGeneration(workspace.Path, resourceID)
+	record, found, err := currentResourceGeneration(workspace.Path, resourceID)
 	if err != nil || !found {
 		return err
 	}
 	// A hand-written or pre-profile legacy projection has no binding to
 	// reconcile. Keep it attached to its current generation until an explicit
 	// profile binding is persisted; otherwise a startup poll could replace a
-	// valid run merely because its old projection predates profile metadata.
-	if strings.TrimSpace(run.BindingKind) == "" && strings.TrimSpace(run.BindingName) == "" &&
-		strings.TrimSpace(run.AgentHubAgentName) == "" && strings.TrimSpace(run.ResolvedProfile) == "" {
+	// valid generation merely because its old projection predates profile metadata.
+	if strings.TrimSpace(record.BindingKind) == "" && strings.TrimSpace(record.BindingName) == "" &&
+		strings.TrimSpace(record.AgentHubAgentName) == "" && strings.TrimSpace(record.ResolvedProfile) == "" {
 		return nil
 	}
 	cfg, client, err := m.agentHubRuntimeConfig()
@@ -336,60 +336,60 @@ func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspa
 	}
 	resolved, err := m.resolveResourceAgent(workspace, resourceID, cfg)
 	if err != nil {
-		rt := m.runtimeByID(run.ID)
+		rt := m.runtimeByID(record.ID)
 		if rt == nil {
-			rt = newAgentHubRuntime(m, workspace, run, client)
+			rt = newAgentHubRuntime(m, workspace, record, client)
 			m.registerRuntime(rt)
 		}
-		_, persistErr := rt.mutateRun(func(run *agentRun) {
-			run.AgentConfigError = resolved.ConfigError
-			run.ResolvedProfile = ""
-			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		_, persistErr := rt.mutateGeneration(func(record *generationRecord) {
+			record.AgentConfigError = resolved.ConfigError
+			record.ResolvedProfile = ""
+			record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 		})
 		return persistErr
 	}
-	rt := m.runtimeByID(run.ID)
+	rt := m.runtimeByID(record.ID)
 	if rt == nil {
-		rt = newAgentHubRuntime(m, workspace, run, client)
+		rt = newAgentHubRuntime(m, workspace, record, client)
 		m.registerRuntime(rt)
 	}
-	if strings.EqualFold(run.AgentHubAgentName, resolved.AgentName) {
-		if run.BindingKind == resolved.Binding.Kind && run.BindingName == resolved.Binding.Name &&
-			run.ProfileRevision == resolved.ProfileRevision && run.ResolvedProfile == resolved.ResolvedProfile &&
-			run.AgentConfigError == resolved.ConfigError {
+	if strings.EqualFold(record.AgentHubAgentName, resolved.AgentName) {
+		if record.BindingKind == resolved.Binding.Kind && record.BindingName == resolved.Binding.Name &&
+			record.ProfileRevision == resolved.ProfileRevision && record.ResolvedProfile == resolved.ResolvedProfile &&
+			record.AgentConfigError == resolved.ConfigError {
 			return nil
 		}
-		_, err := rt.mutateRun(func(run *agentRun) {
-			run.BindingKind = resolved.Binding.Kind
-			run.BindingName = resolved.Binding.Name
-			run.ProfileRevision = resolved.ProfileRevision
-			run.ResolvedProfile = resolved.ResolvedProfile
-			run.AgentConfigError = resolved.ConfigError
-			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		_, err := rt.mutateGeneration(func(record *generationRecord) {
+			record.BindingKind = resolved.Binding.Kind
+			record.BindingName = resolved.Binding.Name
+			record.ProfileRevision = resolved.ProfileRevision
+			record.ResolvedProfile = resolved.ResolvedProfile
+			record.AgentConfigError = resolved.ConfigError
+			record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 		})
 		return err
 	}
 	rt.mu.Lock()
-	if rt.agentHubState == "running" || rt.agentHubState == "waiting_approval" || run.Status == "running" || run.Status == "waiting_approval" {
+	if rt.agentHubState == "running" || rt.agentHubState == "waiting_approval" || record.Status == "running" || record.Status == "waiting_approval" {
 		rt.mu.Unlock()
-		_, err := rt.mutateRun(func(run *agentRun) {
-			run.ReplacementPending = true
-			run.ResolvedProfile = resolved.ResolvedProfile
-			run.AgentConfigError = resolved.ConfigError
-			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		_, err := rt.mutateGeneration(func(record *generationRecord) {
+			record.ReplacementPending = true
+			record.ResolvedProfile = resolved.ResolvedProfile
+			record.AgentConfigError = resolved.ConfigError
+			record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 		})
 		return err
 	}
 	rt.mu.Unlock()
-	if _, err := rt.mutateRun(func(run *agentRun) {
-		run.ReplacementPending = true
-		run.ResolvedProfile = resolved.ResolvedProfile
-		run.AgentConfigError = resolved.ConfigError
-		run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+	if _, err := rt.mutateGeneration(func(record *generationRecord) {
+		record.ReplacementPending = true
+		record.ResolvedProfile = resolved.ResolvedProfile
+		record.AgentConfigError = resolved.ConfigError
+		record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 	}); err != nil {
 		return err
 	}
-	_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+	_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
 		m.retireResourceGenerationLocked(context.WithoutCancel(ctx), rt)
 		return nil
 	})
@@ -457,8 +457,8 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 	if rt == nil {
 		return
 	}
-	run := rt.snapshotRun()
-	_ = m.withResourceController(ctx, rt.workspace, run.ResourceID, func() error {
+	record := rt.snapshotGeneration()
+	_ = m.withResourceController(ctx, rt.workspace, record.ResourceID, func() error {
 		m.retireResourceGenerationLocked(ctx, rt)
 		return nil
 	})
@@ -480,14 +480,14 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.mu.Unlock()
 	}()
 	rt.mu.Lock()
-	run, client := rt.run, rt.agentHub
+	record, client := rt.record, rt.agentHub
 	rt.mu.Unlock()
-	if run.Retired {
+	if record.Retired {
 		return
 	}
-	automaticSleep := run.IdleSleepStopRequested
-	manualStop := run.ManualStopRequested
-	if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
+	automaticSleep := record.IdleSleepStopRequested
+	manualStop := record.ManualStopRequested
+	if client == nil || strings.TrimSpace(record.AgentHubSessionID) == "" {
 		return
 	}
 	cfg, _, cfgErr := m.agentHubRuntimeConfig()
@@ -495,22 +495,22 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource generation: %w", cfgErr))
 		return
 	}
-	session, err := client.GetSession(ctx, run.AgentHubSessionID)
+	session, err := client.GetSession(ctx, record.AgentHubSessionID)
 	if err != nil {
 		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource generation: %w", err))
 		return
 	}
-	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
-		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, run.GenerationID))
+	if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, record.GenerationID))
 		return
 	}
-	if automaticSleep && !run.ReplacementPending && !run.ArchivedTaskStopRequested && session.State == "stopped" {
+	if automaticSleep && !record.ReplacementPending && !record.ArchivedTaskStopRequested && session.State == "stopped" {
 		// Idle Stop is reversible. Keep this exact Session as the current
 		// generation for a later mailbox-triggered Resume; it never enters the
 		// Archive/retire tail below.
 		rt.applyAgentHubSessionState(m, session)
-		_, _ = rt.mutateRun(func(current *agentRun) {
-			if current.GenerationID == run.GenerationID && current.AgentHubSessionID == run.AgentHubSessionID &&
+		_, _ = rt.mutateGeneration(func(current *generationRecord) {
+			if current.GenerationID == record.GenerationID && current.AgentHubSessionID == record.AgentHubSessionID &&
 				current.LifecycleReceipt != nil && current.LifecycleReceipt.Operation == GenerationOperationStopSession {
 				receipt := *current.LifecycleReceipt
 				receipt.State = GenerationReceiptSucceeded
@@ -519,13 +519,13 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		})
 		return
 	}
-	mailbox, mailboxErr := loadHotResourceMailbox(rt.workspace.Path, run.ResourceID)
+	mailbox, mailboxErr := loadHotResourceMailbox(rt.workspace.Path, record.ResourceID)
 	if mailboxErr != nil {
 		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource mailbox: %w", mailboxErr))
 		return
 	}
 	lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
-		Run: run, Session: &session, Mailbox: mailbox, Revision: run.UpdatedAt,
+		Generation: record, Session: &session, Mailbox: mailbox, Revision: record.UpdatedAt,
 	}))
 	switch lifecyclePlan.Operation {
 	case GenerationOperationFinalizeArchivedMailbox, GenerationOperationDeliverMessage,
@@ -536,22 +536,22 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		// A message or provider action won the race after the ready snapshot.
 		// Never interrupt it for automatic sleep; the next ready boundary gets a
 		// fresh deadline.
-		_, _ = rt.mutateRun(func(run *agentRun) {
-			run.Status = puaStatusForAgentHubState(session.State)
-			run.IdleSinceAt = ""
-			run.IdleDeadlineAt = ""
-			run.IdleSleepStopRequested = false
-			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		_, _ = rt.mutateGeneration(func(record *generationRecord) {
+			record.Status = puaStatusForAgentHubState(session.State)
+			record.IdleSinceAt = ""
+			record.IdleDeadlineAt = ""
+			record.IdleSleepStopRequested = false
+			record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 		})
 		return
 	}
 	if session.State == "starting" {
-		_, _ = rt.mutateRun(func(run *agentRun) {
-			run.Status = "starting"
-			run.IdleSinceAt = ""
-			run.IdleDeadlineAt = ""
-			run.IdleSleepStopRequested = false
-			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		_, _ = rt.mutateGeneration(func(record *generationRecord) {
+			record.Status = "starting"
+			record.IdleSinceAt = ""
+			record.IdleDeadlineAt = ""
+			record.IdleSleepStopRequested = false
+			record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 		})
 		return
 	}
@@ -565,40 +565,40 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		return
 	}
 	if session.State == "ready" {
-		pending, pendingErr := mailboxPendingForResource(rt.workspace.Path, run.ResourceID)
+		pending, pendingErr := mailboxPendingForResource(rt.workspace.Path, record.ResourceID)
 		if pendingErr != nil {
 			rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource mailbox: %w", pendingErr))
 			return
 		}
-		if !run.IdleSleepStopRequested && !run.ReplacementPending && pending {
+		if !record.IdleSleepStopRequested && !record.ReplacementPending && pending {
 			// No automatic Stop guard was persisted for this attempt and a
 			// mailbox item is already available; leave the Session ready so the
 			// normal mailbox reconciler can deliver it.
 			return
 		}
 		_, err = rt.mutateRuntime(func(runtime *agentRuntime) {
-			runtime.run.Status = "stopping"
-			if automaticSleep && !runtime.run.ReplacementPending && !runtime.run.ArchivedTaskStopRequested {
+			runtime.record.Status = "stopping"
+			if automaticSleep && !runtime.record.ReplacementPending && !runtime.record.ArchivedTaskStopRequested {
 				receipt := GenerationLifecycleReceipt{
 					Operation:    GenerationOperationStopSession,
 					State:        GenerationReceiptRequested,
-					OperationID:  lifecycleOperationID(GenerationLifecyclePlan{Operation: GenerationOperationStopSession, GenerationID: runtime.run.GenerationID, SessionID: runtime.run.AgentHubSessionID}),
-					GenerationID: runtime.run.GenerationID,
-					SessionID:    runtime.run.AgentHubSessionID,
-					Revision:     runtime.run.UpdatedAt,
+					OperationID:  lifecycleOperationID(GenerationLifecyclePlan{Operation: GenerationOperationStopSession, GenerationID: runtime.record.GenerationID, SessionID: runtime.record.AgentHubSessionID}),
+					GenerationID: runtime.record.GenerationID,
+					SessionID:    runtime.record.AgentHubSessionID,
+					Revision:     runtime.record.UpdatedAt,
 				}
-				runtime.run.LifecycleReceipt = &receipt
+				runtime.record.LifecycleReceipt = &receipt
 			}
-			runtime.run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+			runtime.record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 			runtime.agentHubStopRequested = true
 		})
 		if err != nil {
 			rt.setRecoveryError(m, fmt.Errorf("persist retiring resource generation: %w", err))
 			return
 		}
-		session, err = client.Stop(ctx, run.AgentHubSessionID)
+		session, err = client.Stop(ctx, record.AgentHubSessionID)
 		if err != nil {
-			_, _ = rt.mutateRun(func(current *agentRun) {
+			_, _ = rt.mutateGeneration(func(current *generationRecord) {
 				if current.LifecycleReceipt != nil && current.LifecycleReceipt.Operation == GenerationOperationStopSession {
 					receipt := *current.LifecycleReceipt
 					receipt.State = GenerationReceiptUnknown
@@ -608,8 +608,8 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 			rt.setRecoveryError(m, fmt.Errorf("retire resource generation: %w", err))
 			return
 		}
-		if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
-			rt.setRecoveryError(m, fmt.Errorf("Stop response for generation %s did not match its AgentHub source", run.GenerationID))
+		if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+			rt.setRecoveryError(m, fmt.Errorf("Stop response for generation %s did not match its AgentHub source", record.GenerationID))
 			return
 		}
 	}
@@ -623,21 +623,21 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 				return
 			case <-timer.C:
 			}
-			session, err = client.GetSession(ctx, run.AgentHubSessionID)
+			session, err = client.GetSession(ctx, record.AgentHubSessionID)
 			if err != nil {
 				rt.setRecoveryError(m, fmt.Errorf("confirm retiring resource generation: %w", err))
 				return
 			}
-			if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
-				rt.setRecoveryError(m, fmt.Errorf("confirmation for generation %s did not match its AgentHub source", run.GenerationID))
+			if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+				rt.setRecoveryError(m, fmt.Errorf("confirmation for generation %s did not match its AgentHub source", record.GenerationID))
 				return
 			}
 		}
 	}
-	if automaticSleep && !run.ReplacementPending && !run.ArchivedTaskStopRequested {
+	if automaticSleep && !record.ReplacementPending && !record.ArchivedTaskStopRequested {
 		if session.State == "stopped" {
 			rt.applyAgentHubSessionState(m, session)
-			_, _ = rt.mutateRun(func(current *agentRun) {
+			_, _ = rt.mutateGeneration(func(current *generationRecord) {
 				if current.LifecycleReceipt != nil && current.LifecycleReceipt.Operation == GenerationOperationStopSession {
 					receipt := *current.LifecycleReceipt
 					receipt.State = GenerationReceiptSucceeded
@@ -660,24 +660,24 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		return
 	}
 	if session.State != "stopped" {
-		rt.setRecoveryError(m, fmt.Errorf("retiring resource generation %s did not reach durable stopped", run.GenerationID))
+		rt.setRecoveryError(m, fmt.Errorf("retiring resource generation %s did not reach durable stopped", record.GenerationID))
 		return
 	}
-	archived, err := client.Archive(ctx, run.AgentHubSessionID)
+	archived, err := client.Archive(ctx, record.AgentHubSessionID)
 	if err != nil {
 		rt.setRecoveryError(m, fmt.Errorf("archive retired resource generation: %w", err))
 		return
 	}
-	if !agentHubSessionExactlyMatchesRun(cfg, run, archived) || archived.State != "archived" {
-		rt.setRecoveryError(m, fmt.Errorf("Archive response for generation %s was not a matching archived Session", run.GenerationID))
+	if !agentHubSessionExactlyMatchesGeneration(cfg, record, archived) || archived.State != "archived" {
+		rt.setRecoveryError(m, fmt.Errorf("Archive response for generation %s was not a matching archived Session", record.GenerationID))
 		return
 	}
-	updated, err := rt.mutateRun(func(run *agentRun) {
-		run.Status = "stopped"
-		run.AgentHubStoppedObserved = true
-		run.ReplacementPending = false
-		run.IdleSleepStopRequested = false
-		run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+	updated, err := rt.mutateGeneration(func(record *generationRecord) {
+		record.Status = "stopped"
+		record.AgentHubStoppedObserved = true
+		record.ReplacementPending = false
+		record.IdleSleepStopRequested = false
+		record.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 	})
 	if err != nil {
 		rt.setRecoveryError(m, fmt.Errorf("persist retired generation: %w", err))
@@ -689,7 +689,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 	} else if automaticSleep {
 		retireReason = "idle_sleep"
 	}
-	if err := retireStoredAgentRun(rt, updated, retireReason); err != nil {
+	if err := retireStoredGeneration(rt, updated, retireReason); err != nil {
 		rt.setRecoveryError(m, fmt.Errorf("persist retired generation manifest: %w", err))
 		return
 	}
@@ -708,7 +708,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 	}
 	resolved, err := m.resolveResourceAgent(rt.workspace, updated.ResourceID, cfg)
 	if err == nil {
-		resolved.AgentName, err = validateAgentHubRunAgent(ctx, replacementClient, resolved.AgentName)
+		resolved.AgentName, err = validateAgentHubGenerationAgent(ctx, replacementClient, resolved.AgentName)
 	}
 	if err != nil {
 		rt.addPUANotice(m, "warning", "resource/replacement", "Queued replacement could not resolve its Agent: "+err.Error())

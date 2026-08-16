@@ -53,15 +53,15 @@ func TestRestoredProfileWithSameAgentClearsErrorWithoutReplacement(t *testing.T)
 		t.Fatal(err)
 	}
 	now := time.Now().Format(time.RFC3339Nano)
-	run := agentRun{
-		ID: "run-restored-profile", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-restored-profile",
+	record := generationRecord{
+		ID: "gen-restored-profile", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-restored-profile",
 		BindingKind: "profile", BindingName: "restored", ResolvedProfile: "default", AgentConfigError: "missing", AgentHubAgentName: "fake-agent",
 		Status: "idle", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
-	manager.registerRuntime(newAgentHubRuntime(manager, workspace, run, nil))
+	manager.registerRuntime(newAgentHubRuntime(manager, workspace, record, nil))
 	data, err := json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace}, AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "pua-runtime-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}, {Key: "restored", AgentName: "fake-agent"}},
@@ -75,7 +75,7 @@ func TestRestoredProfileWithSameAgentClearsErrorWithoutReplacement(t *testing.T)
 	if err := manager.resourceBindingChanged(context.Background(), workspace, "project1.task1", binding); err != nil {
 		t.Fatal(err)
 	}
-	updated := manager.runtimeByID(run.ID).snapshotRun()
+	updated := manager.runtimeByID(record.ID).snapshotGeneration()
 	if updated.ReplacementPending || updated.AgentConfigError != "" || updated.ResolvedProfile != "restored" || updated.AgentHubAgentName != "fake-agent" {
 		t.Fatalf("same-Agent restoration replaced generation or retained error: %#v", updated)
 	}

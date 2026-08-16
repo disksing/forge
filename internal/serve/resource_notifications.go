@@ -439,7 +439,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 				continue
 			}
 			if strings.TrimSpace(message.TurnID) == "" {
-				generation, generationFound, generationErr := runByGenerationID(workspace.Path, message.GenerationID)
+				generation, generationFound, generationErr := generationRecordByID(workspace.Path, message.GenerationID)
 				if generationErr != nil {
 					return generationErr
 				}
@@ -492,7 +492,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 			sourceIDs = append(sourceIDs, message.ID)
 		}
 
-		run, found, err := runByGenerationID(workspace.Path, group.GenerationID)
+		record, found, err := generationRecordByID(workspace.Path, group.GenerationID)
 		if err != nil {
 			return err
 		}
@@ -503,17 +503,17 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 			historyUnavailable = true
 		} else {
 			var turnErr error
-			if strings.TrimSpace(run.AgentHubSessionID) == "" {
+			if strings.TrimSpace(record.AgentHubSessionID) == "" {
 				turnErr = errors.New("generation has no AgentHub session")
 			} else {
-				turn, _, turnErr = client.SessionTurn(ctx, run.AgentHubSessionID, group.TurnID)
+				turn, _, turnErr = client.SessionTurn(ctx, record.AgentHubSessionID, group.TurnID)
 			}
 			if turnErr != nil {
-				if run.CompletionMarker != "" && run.CompletionTurnID == group.TurnID {
-					turn = agentHubTurn{TurnID: group.TurnID, Status: run.CompletionState, Closed: true, EndedAt: run.CompletionAt}
+				if record.CompletionMarker != "" && record.CompletionTurnID == group.TurnID {
+					turn = agentHubTurn{TurnID: group.TurnID, Status: record.CompletionState, Closed: true, EndedAt: record.CompletionAt}
 					historyUnavailable = true
-				} else if !isLiveAgentStatus(run.Status) {
-					turn = agentHubTurn{TurnID: group.TurnID, Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}
+				} else if !isLiveAgentStatus(record.Status) {
+					turn = agentHubTurn{TurnID: group.TurnID, Status: record.Status, Closed: true, EndedAt: record.UpdatedAt}
 					historyUnavailable = true
 				} else {
 					continue

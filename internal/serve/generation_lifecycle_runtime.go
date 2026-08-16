@@ -32,15 +32,15 @@ func resumeRetryDelay(failureCount int) time.Duration {
 // ResumeSession operation. The resource controller has already serialized the
 // resource, while turnActionMu serializes this Session with direct Turn
 // actions. No store write is held across the AgentHub request.
-func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, workspace serveWorkspace, run agentRun, rt *agentRuntime, client *agentHubClient, plan GenerationLifecyclePlan) (bool, bool, error) {
-	if rt == nil || client == nil || plan.Operation != GenerationOperationResumeSession || strings.TrimSpace(run.AgentHubSessionID) == "" {
+func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, workspace serveWorkspace, record generationRecord, rt *agentRuntime, client *agentHubClient, plan GenerationLifecyclePlan) (bool, bool, error) {
+	if rt == nil || client == nil || plan.Operation != GenerationOperationResumeSession || strings.TrimSpace(record.AgentHubSessionID) == "" {
 		return false, false, nil
 	}
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 
-	latest := rt.snapshotRun()
-	if latest.ID != run.ID || latest.GenerationID != run.GenerationID || latest.AgentHubSessionID != run.AgentHubSessionID ||
+	latest := rt.snapshotGeneration()
+	if latest.ID != record.ID || latest.GenerationID != record.GenerationID || latest.AgentHubSessionID != record.AgentHubSessionID ||
 		latest.ReplacementPending || latest.ArchivedTaskStopRequested || latest.SessionResumeUnavailable {
 		return false, false, nil
 	}
@@ -61,12 +61,12 @@ func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, worksp
 	if observed.State != "stopped" {
 		return false, false, nil
 	}
-	if !agentHubSessionExactlyMatchesRun(cfg, latest, observed) {
+	if !agentHubSessionExactlyMatchesGeneration(cfg, latest, observed) {
 		return false, true, fmt.Errorf("AgentHub Session %s does not match generation %s for Resume", observed.ID, latest.GenerationID)
 	}
 
 	receipt := lifecycleResumeReceipt(plan)
-	if _, err := rt.mutateRun(func(current *agentRun) {
+	if _, err := rt.mutateGeneration(func(current *generationRecord) {
 		if current.ID != latest.ID || current.GenerationID != latest.GenerationID || current.AgentHubSessionID != latest.AgentHubSessionID {
 			return
 		}
@@ -84,7 +84,7 @@ func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, worksp
 		if terminal {
 			receipt.State = GenerationReceiptTerminal
 		}
-		_, persistErr := rt.mutateRun(func(current *agentRun) {
+		_, persistErr := rt.mutateGeneration(func(current *generationRecord) {
 			if current.ID != latest.ID || current.GenerationID != latest.GenerationID || current.AgentHubSessionID != latest.AgentHubSessionID {
 				return
 			}
@@ -113,10 +113,10 @@ func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, worksp
 	if strings.TrimSpace(resumed.ID) == "" {
 		return false, true, errors.New("AgentHub Resume returned no Session identity")
 	}
-	if !agentHubSessionExactlyMatchesRun(cfg, latest, resumed) {
+	if !agentHubSessionExactlyMatchesGeneration(cfg, latest, resumed) {
 		terminalErr := fmt.Errorf("Resume response for generation %s did not match its AgentHub source", latest.GenerationID)
 		receipt.State = GenerationReceiptTerminal
-		_, persistErr := rt.mutateRun(func(current *agentRun) {
+		_, persistErr := rt.mutateGeneration(func(current *generationRecord) {
 			if current.ID == latest.ID && current.GenerationID == latest.GenerationID {
 				current.LifecycleReceipt = &receipt
 				current.SessionResumeUnavailable = true
@@ -129,7 +129,7 @@ func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, worksp
 		return false, true, terminalErr
 	}
 
-	current := rt.snapshotRun()
+	current := rt.snapshotGeneration()
 	if current.ID != latest.ID || current.GenerationID != latest.GenerationID || current.AgentHubSessionID != latest.AgentHubSessionID ||
 		(strings.TrimSpace(plan.Guard.Revision) != "" && strings.TrimSpace(current.UpdatedAt) != strings.TrimSpace(plan.Guard.Revision)) {
 		return false, false, nil
@@ -147,7 +147,7 @@ func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, worksp
 	}
 	rt.applyAgentHubSessionState(m, resumed)
 	receipt.State = GenerationReceiptSucceeded
-	if _, err := rt.mutateRun(func(current *agentRun) {
+	if _, err := rt.mutateGeneration(func(current *generationRecord) {
 		if current.ID == latest.ID && current.GenerationID == latest.GenerationID && current.AgentHubSessionID == latest.AgentHubSessionID {
 			current.LifecycleReceipt = &receipt
 			current.SessionResumeUnavailable = false
@@ -216,13 +216,13 @@ func (m *agentManager) retireUnresumableGenerationLocked(ctx context.Context, rt
 	if rt == nil {
 		return nil
 	}
-	latest := rt.snapshotRun()
+	latest := rt.snapshotGeneration()
 	if latest.Retired {
 		return nil
 	}
-	_, err := rt.mutateRun(func(run *agentRun) {
-		run.SessionResumeUnavailable = true
-		run.ReplacementPending = true
+	_, err := rt.mutateGeneration(func(record *generationRecord) {
+		record.SessionResumeUnavailable = true
+		record.ReplacementPending = true
 	})
 	if err != nil {
 		return err
@@ -237,28 +237,28 @@ func (m *agentManager) retireUnresumableGenerationLocked(ctx context.Context, rt
 		if !isMissingAgentHubSessionError(sessionErr) {
 			return sessionErr
 		}
-		updated, persistErr := rt.mutateRun(func(run *agentRun) {
-			run.Status = "stopped"
-			run.AgentHubStoppedObserved = true
-			run.ReplacementPending = false
-			run.RetireReason = resumeRetireReason(reason)
+		updated, persistErr := rt.mutateGeneration(func(record *generationRecord) {
+			record.Status = "stopped"
+			record.AgentHubStoppedObserved = true
+			record.ReplacementPending = false
+			record.RetireReason = resumeRetireReason(reason)
 		})
 		if persistErr != nil {
 			return persistErr
 		}
-		return retireStoredAgentRun(rt, updated, resumeRetireReason(reason))
+		return retireStoredGeneration(rt, updated, resumeRetireReason(reason))
 	}
-	if !agentHubSessionExactlyMatchesRun(cfg, latest, session) {
-		updated, persistErr := rt.mutateRun(func(run *agentRun) {
-			run.Status = "stopped"
-			run.AgentHubStoppedObserved = true
-			run.ReplacementPending = false
-			run.RetireReason = resumeRetireReason(reason)
+	if !agentHubSessionExactlyMatchesGeneration(cfg, latest, session) {
+		updated, persistErr := rt.mutateGeneration(func(record *generationRecord) {
+			record.Status = "stopped"
+			record.AgentHubStoppedObserved = true
+			record.ReplacementPending = false
+			record.RetireReason = resumeRetireReason(reason)
 		})
 		if persistErr != nil {
 			return persistErr
 		}
-		return retireStoredAgentRun(rt, updated, resumeRetireReason(reason))
+		return retireStoredGeneration(rt, updated, resumeRetireReason(reason))
 	}
 	if session.State == "archived" {
 		// An archived exact Session is already a terminal AgentHub boundary for
@@ -266,17 +266,17 @@ func (m *agentManager) retireUnresumableGenerationLocked(ctx context.Context, rt
 		// do not attempt to Resume or wait for a second provider proof; the
 		// archived Session cannot accept a new Turn.
 		retireReason := resumeRetireReason(reason)
-		updated, persistErr := rt.mutateRun(func(run *agentRun) {
-			run.Status = "stopped"
-			run.AgentHubStoppedObserved = true
-			run.ReplacementPending = false
-			run.IdleSleepStopRequested = false
-			run.RetireReason = retireReason
+		updated, persistErr := rt.mutateGeneration(func(record *generationRecord) {
+			record.Status = "stopped"
+			record.AgentHubStoppedObserved = true
+			record.ReplacementPending = false
+			record.IdleSleepStopRequested = false
+			record.RetireReason = retireReason
 		})
 		if persistErr != nil {
 			return persistErr
 		}
-		return retireStoredAgentRun(rt, updated, retireReason)
+		return retireStoredGeneration(rt, updated, retireReason)
 	}
 	return func() error {
 		m.retireResourceGenerationLocked(ctx, rt)

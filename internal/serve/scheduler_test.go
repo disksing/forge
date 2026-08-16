@@ -111,19 +111,19 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, found, err := runByGenerationID(workspace.Path, first.GenerationID)
+	record, found, err := generationRecordByID(workspace.Path, first.GenerationID)
 	if err != nil || !found {
-		t.Fatalf("Scheduler generation = %#v, found=%v err=%v", run, found, err)
+		t.Fatalf("Scheduler generation = %#v, found=%v err=%v", record, found, err)
 	}
 	fake.mu.Lock()
-	if fake.turns[run.AgentHubSessionID] == nil {
-		fake.turns[run.AgentHubSessionID] = make(map[string]agentHubTurn)
+	if fake.turns[record.AgentHubSessionID] == nil {
+		fake.turns[record.AgentHubSessionID] = make(map[string]agentHubTurn)
 	}
-	fake.turns[run.AgentHubSessionID][first.TurnID] = agentHubTurn{TurnID: first.TurnID, Status: "completed", Closed: true, EndedAt: endedAt.Format(time.RFC3339Nano)}
-	session := fake.sessions[run.AgentHubSessionID]
+	fake.turns[record.AgentHubSessionID][first.TurnID] = agentHubTurn{TurnID: first.TurnID, Status: "completed", Closed: true, EndedAt: endedAt.Format(time.RFC3339Nano)}
+	session := fake.sessions[record.AgentHubSessionID]
 	session.State = "ready"
 	session.CurrentTurnID = ""
-	fake.sessions[run.AgentHubSessionID] = session
+	fake.sessions[record.AgentHubSessionID] = session
 	fake.mu.Unlock()
 
 	manager.now = func() time.Time { return endedAt.Add(29 * time.Minute) }
@@ -196,15 +196,15 @@ func TestFailedSchedulerTickDoesNotResetInterval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, _, _ := runByGenerationID(workspace.Path, tick.GenerationID)
+	record, _, _ := generationRecordByID(workspace.Path, tick.GenerationID)
 	fake.mu.Lock()
-	if fake.turns[run.AgentHubSessionID] == nil {
-		fake.turns[run.AgentHubSessionID] = make(map[string]agentHubTurn)
+	if fake.turns[record.AgentHubSessionID] == nil {
+		fake.turns[record.AgentHubSessionID] = make(map[string]agentHubTurn)
 	}
-	fake.turns[run.AgentHubSessionID][tick.TurnID] = agentHubTurn{TurnID: tick.TurnID, Status: "failed", Closed: true, EndedAt: time.Now().Format(time.RFC3339Nano)}
-	session := fake.sessions[run.AgentHubSessionID]
+	fake.turns[record.AgentHubSessionID][tick.TurnID] = agentHubTurn{TurnID: tick.TurnID, Status: "failed", Closed: true, EndedAt: time.Now().Format(time.RFC3339Nano)}
+	session := fake.sessions[record.AgentHubSessionID]
 	session.State = "ready"
-	fake.sessions[run.AgentHubSessionID] = session
+	fake.sessions[record.AgentHubSessionID] = session
 	fake.mu.Unlock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
 	ticks := schedulerMessages(t, workspace.Path)

@@ -82,46 +82,46 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 }
 
 // agentHubSourceConflicts reports whether a session fetched by id belongs to
-// a different PUA source than the persisted run. A conflict means the
-// AgentHub session id no longer identifies this run's session, so no state
-// from it may drive terminal reconciliation.
-func agentHubSourceConflicts(cfg config, run agentRun, session agentHubSession) bool {
-	externalID := strings.TrimSpace(run.SourceExternalID)
+// a different PUA source than the persisted generation. A conflict means the
+// AgentHub session id no longer identifies this generation's session, so no
+// state from it may drive terminal reconciliation.
+func agentHubSourceConflicts(cfg config, record generationRecord, session agentHubSession) bool {
+	externalID := strings.TrimSpace(record.SourceExternalID)
 	if externalID == "" || session.Source == nil {
 		return false
 	}
 	return session.Source.App != agentHubSourceApp ||
-		session.Source.InstanceID != runSourceInstanceID(cfg, run) ||
+		session.Source.InstanceID != generationSourceInstanceID(cfg, record) ||
 		session.Source.ExternalID != externalID
 }
 
-// reconcileArchivedAgentHubSession resolves a run whose AgentHub session is
-// archived. The generation is retired only when a durable stopped edge was
-// already observed locally or archived event history continuously proves the
-// session passed through stopped. Every other outcome keeps the run in
-// recovering and publishes a diagnostic notice.
+// reconcileArchivedAgentHubSession resolves a generation whose AgentHub
+// session is archived. The generation is retired only when a durable stopped
+// edge was already observed locally or archived event history continuously
+// proves the session passed through stopped. Every other outcome keeps the
+// generation in recovering and publishes a diagnostic notice.
 func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client *agentHubClient, session agentHubSession) {
 	rt.mu.Lock()
-	run := rt.run
+	record := rt.record
 	proofFailed := rt.archivedProofFailed
 	rt.mu.Unlock()
 
-	if run.AgentHubStoppedObserved {
+	if record.AgentHubStoppedObserved {
 		// The durable stopped edge was observed before the archive, so the
 		// generation may be retired without proving it again.
 		// Completion history still needs to be reconciled because a transient
 		// event read may have happened after the stopped projection was saved.
-		_, _ = rt.mutateRun(func(run *agentRun) {
-			if run.Status != "stopped" {
-				run.Status = "stopped"
-				run.UpdatedAt = time.Now().Format(time.RFC3339)
+		_, _ = rt.mutateGeneration(func(record *generationRecord) {
+			if record.Status != "stopped" {
+				record.Status = "stopped"
+				record.UpdatedAt = time.Now().Format(time.RFC3339)
 			}
-			run.IdleSleepStopRequested = false
+			record.IdleSleepStopRequested = false
 		})
-		if run.CompletionPending {
+		if record.CompletionPending {
 			rt.recordTurnCompletion(session)
 		}
-		if err := retireStoredAgentRun(rt, rt.snapshotRun(), "agenthub_archived"); err != nil {
+		if err := retireStoredGeneration(rt, rt.snapshotGeneration(), "agenthub_archived"); err != nil {
 			rt.addPUANotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
 		}
 		return
@@ -152,10 +152,10 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	}
 
 	_, _ = rt.mutateRuntime(func(runtime *agentRuntime) {
-		runtime.run.AgentHubStoppedObserved = true
-		runtime.run.Status = "stopped"
-		runtime.run.IdleSleepStopRequested = false
-		runtime.run.UpdatedAt = time.Now().Format(time.RFC3339)
+		runtime.record.AgentHubStoppedObserved = true
+		runtime.record.Status = "stopped"
+		runtime.record.IdleSleepStopRequested = false
+		runtime.record.UpdatedAt = time.Now().Format(time.RFC3339)
 		runtime.agentHubState = session.State
 	})
 	// The archived projection is the recovery equivalent of the observed
@@ -163,7 +163,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	// generation.
 	rt.prepareTurnCompletion(session)
 	rt.recordTurnCompletionHistory(session, history, latestCursor)
-	if err := retireStoredAgentRun(rt, rt.snapshotRun(), "agenthub_archived"); err != nil {
+	if err := retireStoredGeneration(rt, rt.snapshotGeneration(), "agenthub_archived"); err != nil {
 		rt.addPUANotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
 	}
 }

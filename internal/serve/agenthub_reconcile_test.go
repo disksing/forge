@@ -20,9 +20,9 @@ func seedArchivedSession(fake *runtimeFakeAgentHub, session agentHubSession, wit
 	fake.mu.Unlock()
 }
 
-func archivedTestRun(workspace serveWorkspace, id string) agentRun {
+func archivedTestGeneration(workspace serveWorkspace, id string) generationRecord {
 	now := "2026-08-01T00:00:01Z"
-	return agentRun{
+	return generationRecord{
 		ID: id, WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_" + id, SourceExternalID: workspace.ID + "/" + id,
 		Status:    "running",
@@ -35,13 +35,13 @@ func TestAgentHubPollerRetiresArchivedGenerationAfterStopped(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-archived")
+	record := archivedTestGeneration(workspace, "gen-archived")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID},
+		ID: record.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
 	}
 	seedArchivedSession(fake, session, true)
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 
@@ -50,9 +50,9 @@ func TestAgentHubPollerRetiresArchivedGenerationAfterStopped(t *testing.T) {
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rt := manager.runtimeByID(run.ID)
+	rt := manager.runtimeByID(record.ID)
 	waitForRuntimeTest(t, func() bool {
-		updated := pollerRunState(rt)
+		updated := pollerGenerationState(rt)
 		return updated.Status == "stopped" && updated.AgentHubStoppedObserved
 	})
 
@@ -75,23 +75,23 @@ func TestAgentHubPollerRetainsGenerationForArchivedWithCursorGap(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-gap")
+	record := archivedTestGeneration(workspace, "gen-gap")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID},
+		ID: record.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
 	}
 	seedArchivedSession(fake, session, true)
 	fake.mu.Lock()
 	fake.gapAfter = 2
 	fake.mu.Unlock()
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	updated := pollerRunState(manager.runtimeByID(run.ID))
+	updated := pollerGenerationState(manager.runtimeByID(record.ID))
 	if updated.Status != "recovering" {
 		t.Fatalf("cursor gap must keep the generation recovering: %#v", updated)
 	}
@@ -106,7 +106,7 @@ func TestAgentHubPollerRetainsGenerationForArchivedWithCursorGap(t *testing.T) {
 	if eventsCalls != 1 {
 		t.Fatalf("permanent proof failure was retried: events calls = %d, want 1", eventsCalls)
 	}
-	if updated := pollerRunState(manager.runtimeByID(run.ID)); updated.Status != "recovering" {
+	if updated := pollerGenerationState(manager.runtimeByID(record.ID)); updated.Status != "recovering" {
 		t.Fatalf("repeated poll must keep failing closed: %#v", updated)
 	}
 }
@@ -116,20 +116,20 @@ func TestAgentHubPollerRetainsGenerationForArchivedWithoutStoppedHistory(t *test
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-nostop")
+	record := archivedTestGeneration(workspace, "gen-nostop")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID},
+		ID: record.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
 	}
 	seedArchivedSession(fake, session, false)
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	updated := pollerRunState(manager.runtimeByID(run.ID))
+	updated := pollerGenerationState(manager.runtimeByID(record.ID))
 	if updated.Status != "recovering" || updated.AgentHubStoppedObserved {
 		t.Fatalf("archived session without durable stopped must fail closed: %#v", updated)
 	}
@@ -140,23 +140,23 @@ func TestAgentHubPollerRetriesArchivedProofAfterTransientFailure(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-flaky")
+	record := archivedTestGeneration(workspace, "gen-flaky")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID},
+		ID: record.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
 	}
 	seedArchivedSession(fake, session, true)
 	fake.mu.Lock()
 	fake.failEvents = true
 	fake.mu.Unlock()
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	updated := pollerRunState(manager.runtimeByID(run.ID))
+	updated := pollerGenerationState(manager.runtimeByID(record.ID))
 	if updated.Status != "recovering" {
 		t.Fatalf("transient proof failure must fail closed: %#v", updated)
 	}
@@ -169,9 +169,9 @@ func TestAgentHubPollerRetriesArchivedProofAfterTransientFailure(t *testing.T) {
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rt := manager.runtimeByID(run.ID)
+	rt := manager.runtimeByID(record.ID)
 	waitForRuntimeTest(t, func() bool {
-		updated := pollerRunState(rt)
+		updated := pollerGenerationState(rt)
 		return updated.Status == "stopped"
 	})
 }
@@ -181,20 +181,20 @@ func TestAgentHubPollerRejectsArchivedSessionWithConflictingSource(t *testing.T)
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-conflict")
+	record := archivedTestGeneration(workspace, "gen-conflict")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
+		ID: record.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: "other-workspace/other-run"},
 	}
 	seedArchivedSession(fake, session, true)
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	updated := pollerRunState(manager.runtimeByID(run.ID))
+	updated := pollerGenerationState(manager.runtimeByID(record.ID))
 	if updated.Status != "recovering" {
 		t.Fatalf("conflicting source must fail closed: %#v", updated)
 	}
@@ -210,15 +210,15 @@ func TestAgentHubPollerUnreachableLeavesGenerationUntouched(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-offline")
+	record := archivedTestGeneration(workspace, "gen-offline")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "ready", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID},
+		ID: record.AgentHubSessionID, State: "ready", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
 	}
 	fake.mu.Lock()
 	fake.sessions[session.ID] = session
 	fake.mu.Unlock()
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 	hub.Close()
@@ -226,9 +226,9 @@ func TestAgentHubPollerUnreachableLeavesGenerationUntouched(t *testing.T) {
 	if err := manager.pollAgentHubSessions(context.Background()); err == nil {
 		t.Fatal("poll against an unreachable AgentHub must report an error")
 	}
-	// The poll aborts before touching any run: no runtime is registered and
+	// The poll aborts before touching any generation: no runtime is registered and
 	// the persisted projection keeps its live status.
-	updated, err := loadAgentRun(workspace.Path, run.ID)
+	updated, err := loadGenerationRecord(workspace.Path, record.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,24 +242,24 @@ func TestAgentHubRecoveryReleasesArchivedAfterStoppedOnRestart(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-restart")
+	record := archivedTestGeneration(workspace, "gen-restart")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID},
+		ID: record.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
 	}
 	seedArchivedSession(fake, session, true)
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 
 	// The service stopped before observing the stopped edge and only sees the
 	// archived session on restart recovery.
-	if err := manager.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rt := manager.runtimeByID(run.ID)
+	rt := manager.runtimeByID(record.ID)
 	waitForRuntimeTest(t, func() bool {
-		updated := pollerRunState(rt)
+		updated := pollerGenerationState(rt)
 		return updated.Status == "stopped" && updated.AgentHubStoppedObserved
 	})
 }
@@ -269,30 +269,30 @@ func TestAgentHubRecoveryRetainsArchivedWithoutProofOnRestart(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := archivedTestRun(workspace, "run-restart-gap")
+	record := archivedTestGeneration(workspace, "gen-restart-gap")
 	session := agentHubSession{
-		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID},
+		ID: record.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
 	}
 	seedArchivedSession(fake, session, true)
 	fake.mu.Lock()
 	fake.gapAfter = 2
 	fake.mu.Unlock()
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := manager.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rt := manager.runtimeByID(run.ID)
+	rt := manager.runtimeByID(record.ID)
 	waitForRuntimeTest(t, func() bool {
-		return pollerRunState(rt).Status == "recovering"
+		return pollerGenerationState(rt).Status == "recovering"
 	})
 	// Give the asynchronous proof a chance to complete before asserting the
 	// generation remains unproven.
 	time.Sleep(200 * time.Millisecond)
-	updated := pollerRunState(rt)
+	updated := pollerGenerationState(rt)
 	if updated.AgentHubStoppedObserved {
 		t.Fatalf("unproven archived session must retain the generation after restart: %#v", updated)
 	}

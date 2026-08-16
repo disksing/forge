@@ -45,7 +45,7 @@ var (
 )
 
 // Record is the storage-neutral representation of one PUA generation. The
-// payload is the complete caller-owned projection (normally an agentRun). It
+// payload is the complete caller-owned projection (a serve generationRecord). It
 // is intentionally opaque here so the CLI/application package and Serve can
 // share one persistence boundary without sharing their domain types.
 type Record struct {

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestAgentRunCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
+func TestGenerationCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -27,8 +27,8 @@ func TestAgentRunCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
 	session := fake.sessions[sessionID]
 	fake.mu.Unlock()
 
-	rt := newAgentHubRuntime(manager, workspace, agentRun{
-		ID:                  "run-completion",
+	rt := newAgentHubRuntime(manager, workspace, generationRecord{
+		ID:                  "gen-completion",
 		WorkspaceID:         workspace.ID,
 		AgentHubSessionID:   sessionID,
 		CompletionSessionID: sessionID,
@@ -36,7 +36,7 @@ func TestAgentRunCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
 		Status:              "running",
 	}, client)
 	rt.recordTurnCompletion(session)
-	got := rt.snapshotRun()
+	got := rt.snapshotGeneration()
 	if got.CompletionCursor != 4 || got.CompletionEventID != 4 || got.CompletionMarker != sessionID+":4" || got.CompletionState != "completed" {
 		t.Fatalf("unexpected completion projection: %#v", got)
 	}
@@ -49,7 +49,7 @@ func TestAgentRunCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
 	}
 
 	rt.recordTurnCompletion(session)
-	got = rt.snapshotRun()
+	got = rt.snapshotGeneration()
 	fake.mu.Lock()
 	duplicateCalls := fake.eventsCalls
 	fake.mu.Unlock()
@@ -64,14 +64,14 @@ func TestAgentRunCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
 	fake.appendLocked(baselineID, "turn.completed", map[string]any{"turnId": "old-turn"})
 	baselineSession := fake.sessions[baselineID]
 	fake.mu.Unlock()
-	baselineRuntime := newAgentHubRuntime(manager, workspace, agentRun{
-		ID:                "run-baseline",
+	baselineRuntime := newAgentHubRuntime(manager, workspace, generationRecord{
+		ID:                "gen-baseline",
 		WorkspaceID:       workspace.ID,
 		AgentHubSessionID: baselineID,
 		Status:            "idle",
 	}, client)
 	baselineRuntime.recordTurnCompletion(baselineSession)
-	baseline := baselineRuntime.snapshotRun()
+	baseline := baselineRuntime.snapshotGeneration()
 	if baseline.CompletionCursor != baselineSession.LastEventID || baseline.CompletionMarker != "" {
 		t.Fatalf("fresh session was not baselined without a historical marker: %#v", baseline)
 	}
@@ -90,31 +90,31 @@ func TestAgentHubTurnTerminalKinds(t *testing.T) {
 	}
 }
 
-func TestAgentRunCompletionProjectionPreservesCancellationAndReplyPresence(t *testing.T) {
+func TestGenerationCompletionProjectionPreservesCancellationAndReplyPresence(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	session := agentHubSession{ID: "ses-cancelled", State: "ready", LastEventID: 3}
-	runtime := newAgentHubRuntime(manager, workspace, agentRun{
-		ID: "run-cancelled", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
+	runtime := newAgentHubRuntime(manager, workspace, generationRecord{
+		ID: "gen-cancelled", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
 		CompletionSessionID: session.ID, CompletionCursor: 1, Status: "running",
 	}, nil)
 	runtime.recordTurnCompletionHistory(session, []agentHubEvent{
 		{ID: 2, Type: "tool.event", TurnID: "turn-cancelled"},
 		{ID: 3, Type: "turn.cancelled", TurnID: "turn-cancelled", Time: "2026-08-15T01:00:03Z"},
 	}, 3)
-	got := runtime.snapshotRun()
+	got := runtime.snapshotGeneration()
 	if got.CompletionState != "cancelled" || got.CompletionTurnID != "turn-cancelled" || got.CompletionHasFinalReply {
 		t.Fatalf("cancelled completion projection = %#v", got)
 	}
 
-	runtime = newAgentHubRuntime(manager, workspace, agentRun{
-		ID: "run-cancelled-with-reply", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
+	runtime = newAgentHubRuntime(manager, workspace, generationRecord{
+		ID: "gen-cancelled-with-reply", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
 		CompletionSessionID: session.ID, CompletionCursor: 1, Status: "running",
 	}, nil)
 	runtime.recordTurnCompletionHistory(session, []agentHubEvent{
 		{ID: 2, Type: "message.assistant.delta", TurnID: "turn-cancelled", Data: json.RawMessage(`{"text":"answer"}`)},
 		{ID: 3, Type: "turn.cancelled", TurnID: "turn-cancelled", Time: "2026-08-15T01:00:03Z"},
 	}, 3)
-	got = runtime.snapshotRun()
+	got = runtime.snapshotGeneration()
 	if got.CompletionState != "cancelled" || !got.CompletionHasFinalReply {
 		t.Fatalf("cancelled completion with reply = %#v", got)
 	}
@@ -125,8 +125,8 @@ func TestResourceTreeProjectsCompletionMarker(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	if err := saveAgentRun(workspace.Path, agentRun{
-		ID: "run-tree", Generation: 1, GenerationID: "gen-tree",
+	if err := saveGenerationRecord(workspace.Path, generationRecord{
+		ID: "gen-tree", Generation: 1, GenerationID: "gen-tree",
 		WorkspaceID:       workspace.ID,
 		AgentHubSessionID: "ses-tree",
 		ResourceID:        "project1.task1",
@@ -163,8 +163,8 @@ func TestAgentHubPollerRetriesCompletionHistoryAfterTransientFailure(t *testing.
 	}
 	fake.failEvents = true
 	fake.mu.Unlock()
-	if err := saveAgentRun(workspace.Path, agentRun{
-		ID: "run-retry", WorkspaceID: workspace.ID, AgentHubSessionID: sessionID,
+	if err := saveGenerationRecord(workspace.Path, generationRecord{
+		ID: "gen-retry", WorkspaceID: workspace.ID, AgentHubSessionID: sessionID,
 		SourceExternalID: source.ExternalID, Status: "running",
 		CompletionSessionID: sessionID, CompletionCursor: 1,
 	}); err != nil {
@@ -174,12 +174,12 @@ func TestAgentHubPollerRetriesCompletionHistoryAfterTransientFailure(t *testing.
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	rt := manager.runtimeByID("run-retry")
+	rt := manager.runtimeByID("gen-retry")
 	waitForRuntimeTest(t, func() bool {
 		fake.mu.Lock()
 		eventsAttempts := fake.eventsAttempts
 		fake.mu.Unlock()
-		return eventsAttempts >= 1 && rt.snapshotRun().CompletionMarker == ""
+		return eventsAttempts >= 1 && rt.snapshotGeneration().CompletionMarker == ""
 	})
 
 	fake.mu.Lock()
@@ -189,6 +189,6 @@ func TestAgentHubPollerRetriesCompletionHistoryAfterTransientFailure(t *testing.
 		t.Fatal(err)
 	}
 	waitForRuntimeTest(t, func() bool {
-		return rt.snapshotRun().CompletionMarker == sessionID+":2"
+		return rt.snapshotGeneration().CompletionMarker == sessionID+":2"
 	})
 }

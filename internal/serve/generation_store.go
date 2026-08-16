@@ -19,110 +19,110 @@ func openGenerationStore(workspacePath, instanceHint string) (*generation.Store,
 	return generation.Open(workspacePath, instanceID)
 }
 
-func agentRunToGenerationRecord(run agentRun) (generation.Record, error) {
-	payload, err := json.Marshal(run)
+func toStoreRecord(record generationRecord) (generation.Record, error) {
+	payload, err := json.Marshal(record)
 	if err != nil {
-		return generation.Record{}, fmt.Errorf("encode generation %s: %w", run.GenerationID, err)
+		return generation.Record{}, fmt.Errorf("encode generation %s: %w", record.GenerationID, err)
 	}
 	return generation.Record{
-		WorkspaceInstanceID: strings.TrimSpace(run.SourceInstanceID),
-		ResourceID:          generation.NormalizeResourceID(run.ResourceID),
-		ID:                  run.ID,
-		Generation:          run.Generation,
-		GenerationID:        run.GenerationID,
-		CreatedAt:           run.CreatedAt,
-		UpdatedAt:           run.UpdatedAt,
+		WorkspaceInstanceID: strings.TrimSpace(record.SourceInstanceID),
+		ResourceID:          generation.NormalizeResourceID(record.ResourceID),
+		ID:                  record.ID,
+		Generation:          record.Generation,
+		GenerationID:        record.GenerationID,
+		CreatedAt:           record.CreatedAt,
+		UpdatedAt:           record.UpdatedAt,
 		Payload:             payload,
-		Retired:             run.Retired,
-		Legacy:              run.Legacy,
-		RetireReason:        run.RetireReason,
+		Retired:             record.Retired,
+		Legacy:              record.Legacy,
+		RetireReason:        record.RetireReason,
 	}, nil
 }
 
-func generationRecordToAgentRun(record generation.Record) (agentRun, error) {
-	var run agentRun
-	if err := json.Unmarshal(record.Payload, &run); err != nil {
-		return agentRun{}, fmt.Errorf("decode generation %s: %w", record.GenerationID, err)
+func fromStoreRecord(storeRecord generation.Record) (generationRecord, error) {
+	var record generationRecord
+	if err := json.Unmarshal(storeRecord.Payload, &record); err != nil {
+		return generationRecord{}, fmt.Errorf("decode generation %s: %w", storeRecord.GenerationID, err)
 	}
-	if strings.TrimSpace(run.ResourceID) == "" {
-		run.ResourceID = record.ResourceID
+	if strings.TrimSpace(record.ResourceID) == "" {
+		record.ResourceID = storeRecord.ResourceID
 	}
-	if strings.TrimSpace(run.ID) == "" {
-		run.ID = record.ID
+	if strings.TrimSpace(record.ID) == "" {
+		record.ID = storeRecord.ID
 	}
-	if run.Generation == 0 {
-		run.Generation = record.Generation
+	if record.Generation == 0 {
+		record.Generation = storeRecord.Generation
 	}
-	if strings.TrimSpace(run.GenerationID) == "" {
-		run.GenerationID = record.GenerationID
+	if strings.TrimSpace(record.GenerationID) == "" {
+		record.GenerationID = storeRecord.GenerationID
 	}
-	if strings.TrimSpace(run.CreatedAt) == "" {
-		run.CreatedAt = record.CreatedAt
+	if strings.TrimSpace(record.CreatedAt) == "" {
+		record.CreatedAt = storeRecord.CreatedAt
 	}
-	if strings.TrimSpace(run.UpdatedAt) == "" {
-		run.UpdatedAt = record.UpdatedAt
+	if strings.TrimSpace(record.UpdatedAt) == "" {
+		record.UpdatedAt = storeRecord.UpdatedAt
 	}
-	run.Retired = record.Retired
-	run.Legacy = record.Legacy
-	if strings.TrimSpace(record.RetireReason) != "" {
-		run.RetireReason = record.RetireReason
+	record.Retired = storeRecord.Retired
+	record.Legacy = storeRecord.Legacy
+	if strings.TrimSpace(storeRecord.RetireReason) != "" {
+		record.RetireReason = storeRecord.RetireReason
 	}
-	return run, nil
+	return record, nil
 }
 
-func generationRecordsToAgentRuns(records []generation.Record) ([]agentRun, error) {
-	runs := make([]agentRun, 0, len(records))
-	for _, record := range records {
-		run, err := generationRecordToAgentRun(record)
+func fromStoreRecords(storeRecords []generation.Record) ([]generationRecord, error) {
+	records := make([]generationRecord, 0, len(storeRecords))
+	for _, storeRecord := range storeRecords {
+		record, err := fromStoreRecord(storeRecord)
 		if err != nil {
 			return nil, err
 		}
-		runs = append(runs, run)
+		records = append(records, record)
 	}
-	return runs, nil
+	return records, nil
 }
 
-// loadAgentRunsLocked remains source-compatible with the mailbox migration
+// loadGenerationRecordsLocked remains source-compatible with the mailbox migration
 // helper while the old process-wide mutex is retired from generation writes.
 // The caller may hold agentIndexMu for mailbox and generation compatibility
 // work; this function itself deliberately does not acquire it.
-func loadAgentRunsLocked(workspacePath string) ([]agentRun, error) {
-	return loadAgentRuns(workspacePath)
+func loadGenerationRecordsLocked(workspacePath string) ([]generationRecord, error) {
+	return loadGenerationRecords(workspacePath)
 }
 
-func retireStoredAgentRun(rt *agentRuntime, run agentRun, reason string) error {
+func retireStoredGeneration(rt *agentRuntime, record generationRecord, reason string) error {
 	if rt == nil {
 		return nil
 	}
 	rt.retirementMu.Lock()
 	defer rt.retirementMu.Unlock()
-	run = rt.snapshotRun()
-	if strings.TrimSpace(run.GenerationID) == "" || run.Retired {
+	record = rt.snapshotGeneration()
+	if strings.TrimSpace(record.GenerationID) == "" || record.Retired {
 		return nil
 	}
 	reason = strings.TrimSpace(reason)
 	if reason != "" {
-		run.RetireReason = reason
+		record.RetireReason = reason
 	}
 	// RetireCurrent writes the immutable manifest from the durable current
 	// payload and stores the reason in the manifest envelope. Keep the
 	// payload unchanged here so a retry after the manifest/current crash edge
 	// compares the same generation bytes.
-	record, err := agentRunToGenerationRecord(run)
+	storeRecord, err := toStoreRecord(record)
 	if err != nil {
 		return err
 	}
-	store, err := openGenerationStore(rt.workspace.Path, run.SourceInstanceID)
+	store, err := openGenerationStore(rt.workspace.Path, record.SourceInstanceID)
 	if err != nil {
 		return err
 	}
-	if err := store.RetireCurrent(record, run.RetireReason); err != nil {
+	if err := store.RetireCurrent(storeRecord, record.RetireReason); err != nil {
 		return err
 	}
 	rt.mu.Lock()
-	if rt.run.GenerationID == run.GenerationID {
-		rt.run.Retired = true
-		rt.run.RetireReason = run.RetireReason
+	if rt.record.GenerationID == record.GenerationID {
+		rt.record.Retired = true
+		rt.record.RetireReason = record.RetireReason
 	}
 	rt.mu.Unlock()
 	return nil

@@ -236,9 +236,9 @@ func TestAgentHubSettingsReadDoesNotSynthesizeScheduler(t *testing.T) {
 	}
 }
 
-func TestAgentHubRunProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
-	data, err := json.Marshal(agentRun{
-		ID: "run-1", WorkspaceID: "workspace-1", AgentHubSessionID: "ses_1",
+func TestAgentHubGenerationProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
+	data, err := json.Marshal(generationRecord{
+		ID: "gen-1", WorkspaceID: "workspace-1", AgentHubSessionID: "ses_1",
 		AgentHubAgentName: "gpt-5.6-sol",
 		SourceExternalID:  "workspace-1/run-1",
 	})
@@ -254,7 +254,7 @@ func TestAgentHubRunProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
 			t.Fatalf("run projection is missing %s: %s", field, data)
 		}
 	}
-	var current agentRun
+	var current generationRecord
 	if err := json.Unmarshal([]byte(`{"id":"old","workspaceId":"workspace-1","providerSessionId":"thread-1","agentHubEventCursor":42,"status":"stopped"}`), &current); err != nil {
 		t.Fatal(err)
 	}

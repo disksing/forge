@@ -292,7 +292,7 @@ func writeResourceMailboxFile(path string, data []byte, mode os.FileMode) error 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp := path + "." + newRunID() + ".tmp"
+	tmp := path + "." + newGenerationRecordID() + ".tmp"
 	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
 		return err
@@ -357,7 +357,7 @@ func writeResourceMailboxIndexJSON(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp := path + "." + newRunID() + ".tmp"
+	tmp := path + "." + newGenerationRecordID() + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
@@ -893,7 +893,7 @@ func writeResourceMailboxStoreDocuments(directory string, meta resourceMailboxMe
 		if err != nil {
 			return err
 		}
-		tmp := item.path + "." + newRunID() + ".tmp"
+		tmp := item.path + "." + newGenerationRecordID() + ".tmp"
 		file, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
 			return err
@@ -1350,15 +1350,15 @@ func mailboxMigrationMarkerExists(workspacePath string) (bool, error) {
 	return true, nil
 }
 
-func migratedMailboxResourceIDs(mailbox resourceMailbox, runs []agentRun) []string {
+func migratedMailboxResourceIDs(mailbox resourceMailbox, records []generationRecord) []string {
 	seen := make(map[string]bool)
 	for _, message := range mailbox.Messages {
 		seen[normalizedResourceID(message.ResourceID)] = true
 	}
-	for _, run := range runs {
-		for _, pending := range run.PendingMessages {
+	for _, record := range records {
+		for _, pending := range record.PendingMessages {
 			if strings.TrimSpace(pending.ID) != "" {
-				seen[normalizedResourceID(run.ResourceID)] = true
+				seen[normalizedResourceID(record.ResourceID)] = true
 			}
 		}
 	}
@@ -1411,10 +1411,10 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 	// staged resource stores have been durably written, so a crash can replay
 	// this merge by stable message ID.
 	agentIndexMu.Lock()
-	runs, runsErr := loadAgentRunsLocked(workspacePath)
+	records, recordsErr := loadGenerationRecordsLocked(workspacePath)
 	agentIndexMu.Unlock()
-	if runsErr != nil {
-		return runsErr
+	if recordsErr != nil {
+		return recordsErr
 	}
 	seenIDs := make(map[string]bool)
 	for _, message := range legacyMailbox.Messages {
@@ -1441,10 +1441,10 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 			}
 		}
 	}
-	clearedRuns := cloneAgentRuns(runs)
-	runsChanged := false
-	for runIndex := range clearedRuns {
-		for _, pending := range clearedRuns[runIndex].PendingMessages {
+	clearedRecords := cloneGenerationRecords(records)
+	recordsChanged := false
+	for recordIndex := range clearedRecords {
+		for _, pending := range clearedRecords[recordIndex].PendingMessages {
 			if strings.TrimSpace(pending.ID) == "" || seenIDs[pending.ID] {
 				continue
 			}
@@ -1454,28 +1454,28 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 			}
 			acceptedAt := strings.TrimSpace(pending.AcceptedAt)
 			if acceptedAt == "" {
-				acceptedAt = strings.TrimSpace(clearedRuns[runIndex].UpdatedAt)
+				acceptedAt = strings.TrimSpace(clearedRecords[recordIndex].UpdatedAt)
 			}
 			if acceptedAt == "" {
 				acceptedAt = time.Now().Format(time.RFC3339Nano)
 			}
-			resourceID := normalizedResourceID(clearedRuns[runIndex].ResourceID)
+			resourceID := normalizedResourceID(clearedRecords[recordIndex].ResourceID)
 			nextSequenceByResource[resourceID]++
 			byResource[resourceID] = append(byResource[resourceID], resourceMailboxMessage{
 				ID: pending.ID, Sequence: nextSequenceByResource[resourceID], ResourceID: resourceID, Text: pending.Text, Role: pending.Role, Sender: pending.Sender,
 				RequestedMode: resourceMessageModeSteer, ActualMode: actual, ModeFrozen: pending.Steer != nil,
 				Status: resourceMessageQueued, AcceptedAt: acceptedAt, UpdatedAt: acceptedAt,
-				GenerationID: clearedRuns[runIndex].GenerationID, AgentHubSessionID: clearedRuns[runIndex].AgentHubSessionID,
+				GenerationID: clearedRecords[recordIndex].GenerationID, AgentHubSessionID: clearedRecords[recordIndex].AgentHubSessionID,
 			})
 			seenIDs[pending.ID] = true
 		}
-		if len(clearedRuns[runIndex].PendingMessages) > 0 {
-			clearedRuns[runIndex].PendingMessages = nil
-			runsChanged = true
+		if len(clearedRecords[recordIndex].PendingMessages) > 0 {
+			clearedRecords[recordIndex].PendingMessages = nil
+			recordsChanged = true
 		}
 	}
 
-	resourceIDs := migratedMailboxResourceIDs(legacyMailbox, runs)
+	resourceIDs := migratedMailboxResourceIDs(legacyMailbox, records)
 	for resourceID := range byResource {
 		found := false
 		for _, current := range resourceIDs {
@@ -1504,7 +1504,7 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 	if err := os.MkdirAll(resourceMailboxResourcesRoot(workspacePath), 0o700); err != nil {
 		return err
 	}
-	stageRoot := filepath.Join(resourceMailboxResourcesRoot(workspacePath), ".mailbox-migration-"+newRunID())
+	stageRoot := filepath.Join(resourceMailboxResourcesRoot(workspacePath), ".mailbox-migration-"+newGenerationRecordID())
 	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
 		return err
 	}
@@ -1576,9 +1576,9 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 		}
 		lock.Unlock()
 	}
-	if runsChanged {
+	if recordsChanged {
 		agentIndexMu.Lock()
-		writeErr := writeAgentRunsIndexLocked(workspacePath, clearedRuns)
+		writeErr := writeGenerationRecordsIndexLocked(workspacePath, clearedRecords)
 		agentIndexMu.Unlock()
 		if writeErr != nil {
 			return fmt.Errorf("clear migrated generation queues: %w", writeErr)
@@ -1591,10 +1591,10 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 	return nil
 }
 
-func cloneAgentRuns(runs []agentRun) []agentRun {
-	cloned := make([]agentRun, len(runs))
-	for index, run := range runs {
-		cloned[index] = cloneAgentRun(run)
+func cloneGenerationRecords(records []generationRecord) []generationRecord {
+	cloned := make([]generationRecord, len(records))
+	for index, record := range records {
+		cloned[index] = cloneGenerationRecord(record)
 	}
 	return cloned
 }

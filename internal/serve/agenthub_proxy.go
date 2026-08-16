@@ -29,25 +29,25 @@ var errAgentHubProxyConfig = errors.New("AgentHub is not configured")
 // AgentHub client without loading any event history. The returned status is
 // the HTTP code to report when err is non-nil. Its runID argument is an
 // implementation key, never a resource address.
-func (m *agentManager) resolveAgentHubProxyTarget(workspaceID, runID string) (agentRun, *agentHubClient, int, error) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
+func (m *agentManager) resolveAgentHubProxyTarget(workspaceID, recordID string) (generationRecord, *agentHubClient, int, error) {
+	workspace, rt, err := m.workspaceRuntime(workspaceID, recordID)
 	if err != nil {
-		return agentRun{}, nil, http.StatusNotFound, err
+		return generationRecord{}, nil, http.StatusNotFound, err
 	}
-	var run agentRun
+	var record generationRecord
 	if rt != nil {
-		run = rt.snapshotRun()
+		record = rt.snapshotGeneration()
 	} else {
-		run, err = loadAgentRun(workspace.Path, runID)
-		if err != nil || run.WorkspaceID != workspaceID || !isAgentHubRun(run) {
+		record, err = loadGenerationRecord(workspace.Path, recordID)
+		if err != nil || record.WorkspaceID != workspaceID || !isAgentHubGeneration(record) {
 			if err == nil {
-				err = fmt.Errorf("run not found: %s", runID)
+				err = fmt.Errorf("run not found: %s", recordID)
 			}
-			return agentRun{}, nil, http.StatusNotFound, err
+			return generationRecord{}, nil, http.StatusNotFound, err
 		}
 	}
-	if strings.TrimSpace(run.AgentHubSessionID) == "" {
-		return agentRun{}, nil, http.StatusConflict, errAgentHubProxyUnbound
+	if strings.TrimSpace(record.AgentHubSessionID) == "" {
+		return generationRecord{}, nil, http.StatusConflict, errAgentHubProxyUnbound
 	}
 	var client *agentHubClient
 	if rt != nil {
@@ -57,18 +57,18 @@ func (m *agentManager) resolveAgentHubProxyTarget(workspaceID, runID string) (ag
 	}
 	if client == nil {
 		if _, client, err = m.agentHubRuntimeConfig(); err != nil {
-			return agentRun{}, nil, http.StatusServiceUnavailable, fmt.Errorf("%w: %v", errAgentHubProxyConfig, err)
+			return generationRecord{}, nil, http.StatusServiceUnavailable, fmt.Errorf("%w: %v", errAgentHubProxyConfig, err)
 		}
 	}
-	return run, client, http.StatusOK, nil
+	return record, client, http.StatusOK, nil
 }
 
-func (m *agentManager) proxyAgentHubEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	m.proxyAgentHubJSON(w, r, workspaceID, runID, "events", []string{"after", "before", "latest", "limit", "start", "end"})
+func (m *agentManager) proxyAgentHubEvents(w http.ResponseWriter, r *http.Request, workspaceID, recordID string) {
+	m.proxyAgentHubJSON(w, r, workspaceID, recordID, "events", []string{"after", "before", "latest", "limit", "start", "end"})
 }
 
-func (m *agentManager) proxyAgentHubJSON(w http.ResponseWriter, r *http.Request, workspaceID, runID, suffix string, queryKeys []string) {
-	run, client, status, err := m.resolveAgentHubProxyTarget(workspaceID, runID)
+func (m *agentManager) proxyAgentHubJSON(w http.ResponseWriter, r *http.Request, workspaceID, recordID, suffix string, queryKeys []string) {
+	record, client, status, err := m.resolveAgentHubProxyTarget(workspaceID, recordID)
 	if err != nil {
 		writeError(w, err, status)
 		return
@@ -80,7 +80,7 @@ func (m *agentManager) proxyAgentHubJSON(w http.ResponseWriter, r *http.Request,
 			query.Set(key, value)
 		}
 	}
-	path := sessionPath(run.AgentHubSessionID) + "/" + suffix
+	path := sessionPath(record.AgentHubSessionID) + "/" + suffix
 	if encoded := query.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
@@ -110,8 +110,8 @@ func (m *agentManager) proxyAgentHubJSON(w http.ResponseWriter, r *http.Request,
 	_, _ = io.Copy(w, response.Body)
 }
 
-func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	run, client, status, err := m.resolveAgentHubProxyTarget(workspaceID, runID)
+func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Request, workspaceID, recordID string) {
+	record, client, status, err := m.resolveAgentHubProxyTarget(workspaceID, recordID)
 	if err != nil {
 		writeError(w, err, status)
 		return
@@ -122,12 +122,12 @@ func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	afterID := agentStreamAfterID(r)
-	path := sessionPath(run.AgentHubSessionID) + "/events?stream=true"
+	path := sessionPath(record.AgentHubSessionID) + "/events?stream=true"
 	if afterID > 0 {
 		path += "&after=" + strconv.FormatInt(afterID, 10)
 	}
 	// Tie the upstream SSE request to the browser connection so AgentHub has no
-	// stream for a run nobody is watching.
+	// stream for a generation nobody is watching.
 	ctx := r.Context()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.endpoint+path, nil)
 	if err != nil {
@@ -157,11 +157,11 @@ func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	// Subscribe to PUA notices for this run so they interleave into the
+	// Subscribe to PUA notices for this generation so they interleave into the
 	// proxied stream; canonical event history always flows from AgentHub.
 	messages := make(chan agentStreamMessage, agentHubEventMaxCount)
-	m.subscribe(run.ID, messages)
-	defer m.unsubscribe(run.ID, messages)
+	m.subscribe(record.ID, messages)
+	defer m.unsubscribe(record.ID, messages)
 
 	// Pump upstream bytes through a channel so notices can be forwarded even
 	// while AgentHub has no new frames.
