@@ -96,6 +96,7 @@ export interface AppShellModel {
   error: string;
   version: string;
   activeWorkspaceId: string;
+  workspaceName: string;
   workspaces: ShellWorkspaceItem[];
   scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];

@@ -24,7 +24,7 @@ const noopAsync = async () => undefined;
 export function createPUAAppChannels(): PUAAppChannels {
   return {
     appShell: createModelChannel<AppShellModel>({
-      identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaces: [], projects: [], attentionList: [],
+      identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaceName: "", workspaces: [], projects: [], attentionList: [],
       doctor: { checking: true, complete: false, summary: { errors: 0, warnings: 0 }, workspaces: [] },
       paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 }, mobile: { sidebarOpen: false, view: "details", immersive: false },
       layout: { preference: "auto", effective: "three" },

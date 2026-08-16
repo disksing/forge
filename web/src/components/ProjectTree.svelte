@@ -11,6 +11,7 @@
     identity,
     loading,
     error,
+    workspaceName,
     projects,
     onCreate,
     onToggle,
@@ -23,6 +24,7 @@
     identity: string;
     loading: boolean;
     error: string;
+    workspaceName: string;
     projects: ShellResourceItem[];
     onCreate: () => void;
     onToggle: (id: string) => Promise<void>;
@@ -97,6 +99,18 @@
     drop = null;
   }
 
+  async function openWorkspace(event: MouseEvent): Promise<void> {
+    // Pointer clicks focus the button; drop that focus so the title does
+    // not stay highlighted after the pointer leaves. Keyboard activation
+    // (detail === 0) keeps it.
+    if (event.detail > 0) (event.currentTarget as HTMLElement | null)?.blur();
+    try {
+      await onSelect("workspace");
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
   async function activate(event: MouseEvent, item: ShellResourceItem): Promise<void> {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(".drag-handle")) return;
@@ -142,7 +156,7 @@
 </script>
 
 <section class="tree-section" data-component-owner="project-tree">
-  <div class="section-title"><span>Projects</span><button id="newProjectButton" type="button" title="New project" onclick={onCreate}><Icon name="plus" /></button></div>
+  <div class="section-title"><button id="workspaceTitle" class="workspace-title" type="button" title="Open workspace" onclick={openWorkspace}>{workspaceName || "Workspace"}</button><button id="newProjectButton" type="button" title="New project" onclick={onCreate}><Icon name="plus" /></button></div>
   <nav id="projectTree" class="project-tree" data-navigation-identity={identity}>
     {#if loading}
       <div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading workspace</strong><span>Refreshing navigation...</span></div>

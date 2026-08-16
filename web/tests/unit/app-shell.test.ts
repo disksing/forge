@@ -33,7 +33,7 @@ function activity(status: ShellStatusPresentation = emptyStatus): ShellAttention
 
 function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
   return {
-    identity: "workspace-a", loading: false, error: "", version: "v0.1.0", activeWorkspaceId: "workspace-a",
+    identity: "workspace-a", loading: false, error: "", version: "v0.1.0", activeWorkspaceId: "workspace-a", workspaceName: "Workspace A",
     workspaces: [
       { id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg" },
       { id: "workspace-b", name: "Workspace B", path: "/tmp/b", iconSrc: "/favicon.svg" },

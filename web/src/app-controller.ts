@@ -747,6 +747,7 @@ function renderAppShell() {
 		error: controllerState.navigationError || "",
 		version: "v0.1.0",
 		activeWorkspaceId: controllerState.activeWorkspaceId,
+		workspaceName: workspaceName(),
 		workspaces: (controllerState.config?.workspaces || []).map((workspace) => ({
 			id: workspace.id,
 			name: workspace.name || workspace.id,

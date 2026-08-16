@@ -27,7 +27,7 @@ export function largeTreeModel(): AppShellModel {
   const noop = () => undefined;
   const noopAsync = async () => undefined;
   return {
-    identity: "performance-workspace", loading: false, error: "", version: "test", activeWorkspaceId: "performance-workspace",
+    identity: "performance-workspace", loading: false, error: "", version: "test", activeWorkspaceId: "performance-workspace", workspaceName: "Performance Workspace",
     workspaces: [{ id: "performance-workspace", name: "Performance Workspace", path: "/tmp/performance", iconSrc: "/favicon.svg" }],
     projects, attentionList: [], doctor: { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] }, paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details", immersive: false }, layout: { preference: "auto", effective: "three" }, route: { path: "", revision: 0, replace: true },
