@@ -1,0 +1,58 @@
+package app_test
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+
+	"github.com/disksing/pua/internal/app"
+)
+
+func TestWorkspaceUsersLifecycleAndValidation(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	users, err := workspace.Users()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 1 || users[0].Name != app.DefaultUserName {
+		t.Fatalf("initialized users = %#v", users)
+	}
+
+	if _, err := workspace.RegisterUser("alice_2-test"); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := workspace.UpdateUserPreference("alice_2-test", "  concise replies  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Preference != "concise replies" {
+		t.Fatalf("preference = %q", profile.Preference)
+	}
+	users, err = workspace.Users()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotNames := []string{users[0].Name, users[1].Name}
+	if !reflect.DeepEqual(gotNames, []string{"User", "alice_2-test"}) {
+		t.Fatalf("user names = %v", gotNames)
+	}
+	if _, err := os.Stat(filepath.Join(workspace.Root(), ".pua", "users", "alice_2-test", "profile.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.DeleteUser("alice_2-test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.User("alice_2-test"); err == nil {
+		t.Fatal("deleted user remains readable")
+	}
+
+	for _, name := range []string{"", "two words", "../escape", "中文", "name.dot"} {
+		if err := app.ValidateUserName(name); err == nil {
+			t.Fatalf("invalid user name %q was accepted", name)
+		}
+	}
+}

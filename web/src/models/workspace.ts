@@ -28,7 +28,7 @@ export interface ResourceRecord {
 
 export interface ResourceAttention {
   followed?: boolean;
-  dismissedTurn?: number;
+  readTurnNumber?: number;
 }
 
 export interface ResourceRuntime {

@@ -307,6 +307,7 @@ pua scheduler update --id=<schedule> [--description=<text>] [--condition=<text>]
 pua scheduler remove --id=<schedule>
 
 pua agent list [--server=<url>] [--json]
+pua user list [--json]
 
 pua workspace status [--server=<url>]
 pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
@@ -333,6 +334,8 @@ pua serve [--addr=<address>] [--workspace=<path>] [--version]
 ```
 
 `pua agent list` queries the owning `pua serve` process for the configured PUA Agent Profiles and the read-only AgentHub agent catalog. The default output lists profiles (key, agent, description) followed by agents (name, provider, availability); pass `--json` for the complete structured result including profiles, providers, and probes.
+
+`pua user list` lists the users registered in the current Workspace together with their free-text preferences. User profiles and per-user UI/read state live under `.pua/users/<name>/`.
 
 `pua init` and `pua migrate` accept `--language=en` or `--language=zh-CN`.
 The selected language is stored in `workspace.json` and controls generated Markdown

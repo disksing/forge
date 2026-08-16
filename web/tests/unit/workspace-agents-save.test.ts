@@ -60,6 +60,7 @@ describe("Workspace AGENTS save flow", () => {
       if (url.pathname === "/api/settings/agenthub" && method === "GET") {
         return json({ connected: false, compatible: false, catalog: { providers: [], agents: [] }, config: { agentProfiles: [] } });
       }
+      if (url.pathname === "/api/workspaces/ws-test/users" && method === "POST") return json({ version: 1, name: "User", preference: "" });
       if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "GET") return json({});
       if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "PUT") return json({});
       if (url.pathname === "/api/workspaces/ws-test/tree" && method === "GET") {

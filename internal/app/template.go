@@ -637,4 +637,3 @@ func (w *Workspace) createTemplate(projectID, name, title string) (TaskTemplate,
 	return parseTaskTemplate(name, relPath(w.root, path), content), nil
 }
 
-

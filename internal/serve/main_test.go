@@ -598,7 +598,16 @@ func TestArchiveResourcePrunesPersistedUIState(t *testing.T) {
 			"project2.task2": {Followed: true},
 		},
 	}
-	if err := saveUIStateFile(uiStatePath(workspace), seed); err != nil {
+	if err := saveUIStateFile(userUIStatePath(workspace, app.DefaultUserName), seed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.RegisterUser("Alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveUIStateFile(userUIStatePath(workspace, "Alice"), seed); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveResourceStateFile(resourceStatePath(workspace), resourceState{Version: 1, TurnNumbers: map[string]int{"project1": 7, "project2": 4}}); err != nil {
 		t.Fatal(err)
 	}
 	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
@@ -618,7 +627,7 @@ func TestArchiveResourcePrunesPersistedUIState(t *testing.T) {
 
 	// Archiving a project prunes the project and every descendant task.
 	archive("project1")
-	state, err := loadUIStateFile(uiStatePath(workspace))
+	state, err := loadUIStateFile(userUIStatePath(workspace, app.DefaultUserName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,10 +651,24 @@ func TestArchiveResourcePrunesPersistedUIState(t *testing.T) {
 	if !state.Attention["project2"].Followed {
 		t.Fatalf("attention for unrelated project lost: %v", state.Attention)
 	}
+	aliceState, err := loadUIStateFile(userUIStatePath(workspace, "Alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := aliceState.Attention["project1"]; ok || aliceState.LastResourceID != "" {
+		t.Fatalf("archived resource retained in second user's state: %#v", aliceState)
+	}
+	shared, err := loadResourceStateFile(resourceStatePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := shared.TurnNumbers["project1"]; ok || shared.TurnNumbers["project2"] != 4 {
+		t.Fatalf("resource turn high-water marks not pruned selectively: %#v", shared.TurnNumbers)
+	}
 
 	// Archiving a single task prunes only that task and keeps its siblings.
 	archive("project2.task1")
-	state, err = loadUIStateFile(uiStatePath(workspace))
+	state, err = loadUIStateFile(userUIStatePath(workspace, app.DefaultUserName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -976,6 +999,9 @@ func TestRawFileServesUTF8Charset(t *testing.T) {
 
 func TestUIStateRoundTripsLastResource(t *testing.T) {
 	workspace := t.TempDir()
+	if _, err := app.Initialize(workspace, "en"); err != nil {
+		t.Fatal(err)
+	}
 	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
 	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
@@ -1009,7 +1035,7 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 		t.Fatalf("expected persisted ui-state, got %+v", loaded)
 	}
 
-	data, err := os.ReadFile(filepath.Join(workspace, ".pua", "ui-state.json"))
+	data, err := os.ReadFile(filepath.Join(workspace, ".pua", "users", "User", "ui-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1020,6 +1046,9 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 
 func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 	workspace := t.TempDir()
+	if _, err := app.Initialize(workspace, "en"); err != nil {
+		t.Fatal(err)
+	}
 	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
 	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
@@ -1049,7 +1078,7 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 		t.Fatalf("expected persisted task order, got %+v", loaded.TaskOrder)
 	}
 
-	data, err := os.ReadFile(filepath.Join(workspace, ".pua", "ui-state.json"))
+	data, err := os.ReadFile(filepath.Join(workspace, ".pua", "users", "User", "ui-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

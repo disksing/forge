@@ -10,24 +10,34 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/disksing/pua/internal/app"
 )
 
-// resourceAttentionState is the server-owned per-resource focus state. A nil
-// dismissed turn means the user has never dismissed the resource, so a newly
-// followed resource is visible even before its first turn.
+// resourceAttentionState is the per-user, per-resource focus state. A nil read
+// turn means the user has never marked the resource as read, so a newly
+// followed resource is visible even before its first turn. DismissedTurn and
+// TurnNumber are read-only legacy fields used while migrating the old shared
+// ui-state.json.
 type resourceAttentionState struct {
-	Followed      bool `json:"followed"`
-	DismissedTurn *int `json:"dismissedTurn,omitempty"`
-	TurnNumber    int  `json:"turnNumber,omitempty"`
+	Followed       bool `json:"followed"`
+	ReadTurnNumber *int `json:"readTurnNumber,omitempty"`
+	DismissedTurn  *int `json:"dismissedTurn,omitempty"`
+	TurnNumber     int  `json:"turnNumber,omitempty"`
 }
 
 type resourceAttentionSnapshot struct {
-	Followed      bool `json:"followed"`
-	DismissedTurn *int `json:"dismissedTurn,omitempty"`
+	Followed       bool `json:"followed"`
+	ReadTurnNumber *int `json:"readTurnNumber,omitempty"`
 }
 
 func resourceAttentionSnapshotForState(state resourceAttentionState) *resourceAttentionSnapshot {
-	return &resourceAttentionSnapshot{Followed: state.Followed, DismissedTurn: cloneIntPointer(state.DismissedTurn)}
+	return &resourceAttentionSnapshot{Followed: state.Followed, ReadTurnNumber: cloneIntPointer(state.ReadTurnNumber)}
+}
+
+type resourceState struct {
+	Version     int            `json:"version"`
+	TurnNumbers map[string]int `json:"turnNumbers,omitempty"`
 }
 
 func cloneIntPointer(value *int) *int {
@@ -59,6 +69,12 @@ func loadUIStateFile(path string) (uiState, error) {
 	if state.Attention == nil {
 		state.Attention = map[string]resourceAttentionState{}
 	}
+	for resourceID, attention := range state.Attention {
+		if attention.ReadTurnNumber == nil && attention.DismissedTurn != nil {
+			attention.ReadTurnNumber = cloneIntPointer(attention.DismissedTurn)
+		}
+		state.Attention[resourceID] = attention
+	}
 	return state, nil
 }
 
@@ -68,7 +84,16 @@ func saveUIStateFile(path string, state uiState) error {
 	if state.Attention == nil {
 		state.Attention = map[string]resourceAttentionState{}
 	}
-	data, err := json.MarshalIndent(state, "", "  ")
+	for resourceID, attention := range state.Attention {
+		attention.DismissedTurn = nil
+		attention.TurnNumber = 0
+		state.Attention[resourceID] = attention
+	}
+	return saveJSONStateFile(path, ".ui-state-*.tmp", state)
+}
+
+func saveJSONStateFile(path, pattern string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -76,7 +101,7 @@ func saveUIStateFile(path string, state uiState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".ui-state-*.tmp")
+	file, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
 		return err
 	}
@@ -100,28 +125,58 @@ func saveUIStateFile(path string, state uiState) error {
 	if err := os.Rename(tempPath, path); err != nil {
 		return err
 	}
-	// Best-effort removal of the pre-rename state file; it stays as a read
-	// fallback if removal fails.
-	if legacy := filepath.Join(filepath.Dir(path), "gui-state.json"); legacy != path {
-		_ = os.Remove(legacy)
-	}
 	return nil
 }
 
-func (s *server) loadAttentionAtPath(path string) (map[string]resourceAttentionState, error) {
+func loadResourceStateFile(path string) (resourceState, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return resourceState{Version: 1, TurnNumbers: map[string]int{}}, nil
+		}
+		return resourceState{}, err
+	}
+	var state resourceState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return resourceState{}, err
+	}
+	state.Version = 1
+	if state.TurnNumbers == nil {
+		state.TurnNumbers = map[string]int{}
+	}
+	return state, nil
+}
+
+func saveResourceStateFile(path string, state resourceState) error {
+	state.Version = 1
+	if state.TurnNumbers == nil {
+		state.TurnNumbers = map[string]int{}
+	}
+	return saveJSONStateFile(path, ".resource-state-*.tmp", state)
+}
+
+func selectedUserName(userNames []string) string {
+	if len(userNames) > 0 && strings.TrimSpace(userNames[0]) != "" {
+		return userNames[0]
+	}
+	return app.DefaultUserName
+}
+
+func (s *server) loadAttentionAtPath(path string, userNames ...string) (map[string]resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(uiStatePath(path))
+	state, err := loadUIStateFile(userUIStatePath(path, selectedUserName(userNames)))
 	if err != nil {
 		return nil, err
 	}
 	return state.Attention, nil
 }
 
-func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate func(*resourceAttentionState)) (resourceAttentionState, error) {
+func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate func(*resourceAttentionState), userNames ...string) (resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(uiStatePath(path))
+	statePath := userUIStatePath(path, selectedUserName(userNames))
+	state, err := loadUIStateFile(statePath)
 	if err != nil {
 		return resourceAttentionState{}, err
 	}
@@ -132,7 +187,7 @@ func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate f
 	attention := state.Attention[resourceID]
 	mutate(&attention)
 	state.Attention[resourceID] = attention
-	if err := saveUIStateFile(uiStatePath(path), state); err != nil {
+	if err := saveUIStateFile(statePath, state); err != nil {
 		return resourceAttentionState{}, err
 	}
 	return attention, nil
@@ -149,12 +204,48 @@ func (s *server) pruneUIStateForArchivedResources(workspacePath string, resource
 	for _, id := range resourceIDs {
 		archived[normalizedResourceID(id)] = true
 	}
-	s.uiStateMu.Lock()
-	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(uiStatePath(workspacePath))
+	workspace, err := app.OpenWorkspace(workspacePath)
 	if err != nil {
 		return err
 	}
+	users, err := workspace.Users()
+	if err != nil {
+		return err
+	}
+	s.uiStateMu.Lock()
+	defer s.uiStateMu.Unlock()
+	for _, user := range users {
+		statePath := userUIStatePath(workspacePath, user.Name)
+		state, err := loadUIStateFile(statePath)
+		if err != nil {
+			return err
+		}
+		state, changed := prunedUIState(state, archived)
+		if changed {
+			if err := saveUIStateFile(statePath, state); err != nil {
+				return err
+			}
+		}
+	}
+	sharedPath := resourceStatePath(workspacePath)
+	shared, err := loadResourceStateFile(sharedPath)
+	if err != nil {
+		return err
+	}
+	sharedChanged := false
+	for id := range shared.TurnNumbers {
+		if archived[id] {
+			delete(shared.TurnNumbers, id)
+			sharedChanged = true
+		}
+	}
+	if sharedChanged {
+		return saveResourceStateFile(sharedPath, shared)
+	}
+	return nil
+}
+
+func prunedUIState(state uiState, archived map[string]bool) (uiState, bool) {
 	changed := false
 	for id := range state.Attention {
 		if archived[id] {
@@ -185,10 +276,7 @@ func (s *server) pruneUIStateForArchivedResources(workspacePath string, resource
 		state.LastResourceID = ""
 		changed = true
 	}
-	if !changed {
-		return nil
-	}
-	return saveUIStateFile(uiStatePath(workspacePath), state)
+	return state, changed
 }
 
 func dropArchivedResourceIDs(ids []string, archived map[string]bool) ([]string, bool) {
@@ -213,16 +301,13 @@ func dropArchivedResourceIDs(ids []string, archived map[string]bool) ([]string, 
 func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(uiStatePath(path))
+	statePath := resourceStatePath(path)
+	state, err := loadResourceStateFile(statePath)
 	if err != nil {
 		return 0, err
 	}
-	if state.Attention == nil {
-		state.Attention = map[string]resourceAttentionState{}
-	}
 	resourceID = normalizedResourceID(resourceID)
-	attention := state.Attention[resourceID]
-	maximum := attention.TurnNumber
+	maximum := state.TurnNumbers[resourceID]
 	records, err := loadGenerationRecords(path)
 	if err != nil {
 		return 0, err
@@ -233,12 +318,11 @@ func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error
 			maximum = record.TurnNumber
 		}
 	}
-	attention.TurnNumber = maximum + 1
-	state.Attention[resourceID] = attention
-	if err := saveUIStateFile(uiStatePath(path), state); err != nil {
+	state.TurnNumbers[resourceID] = maximum + 1
+	if err := saveResourceStateFile(statePath, state); err != nil {
 		return 0, err
 	}
-	return attention.TurnNumber, nil
+	return state.TurnNumbers[resourceID], nil
 }
 
 func (s *server) handleResourceAttention(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
@@ -248,13 +332,18 @@ func (s *server) handleResourceAttention(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	resourceID = normalizedResourceID(resourceID)
+	userName, err := s.workspaceUserName(r, workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
 	if err := validateAttentionResource(workspace.Path, resourceID); err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		attention, err := s.attentionForResource(workspace.Path, resourceID)
+		attention, err := s.attentionForResource(workspace.Path, resourceID, userName)
 		if err != nil {
 			writeError(w, err, http.StatusInternalServerError)
 			return
@@ -276,9 +365,9 @@ func (s *server) handleResourceAttention(w http.ResponseWriter, r *http.Request,
 		attention, err := s.mutateResourceAttentionAtPath(workspace.Path, resourceID, func(state *resourceAttentionState) {
 			state.Followed = *body.Followed
 			if *body.Followed {
-				state.DismissedTurn = nil
+				state.ReadTurnNumber = nil
 			}
-		})
+		}, userName)
 		if err != nil {
 			writeError(w, err, http.StatusInternalServerError)
 			return
@@ -300,6 +389,11 @@ func (s *server) handleResourceAttentionDismiss(w http.ResponseWriter, r *http.R
 		return
 	}
 	resourceID = normalizedResourceID(resourceID)
+	userName, err := s.workspaceUserName(r, workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
 	if err := validateAttentionResource(workspace.Path, resourceID); err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -310,10 +404,10 @@ func (s *server) handleResourceAttentionDismiss(w http.ResponseWriter, r *http.R
 		return
 	}
 	attention, err := s.mutateResourceAttentionAtPath(workspace.Path, resourceID, func(state *resourceAttentionState) {
-		if state.DismissedTurn == nil || *state.DismissedTurn < turnNumber {
-			state.DismissedTurn = cloneIntPointer(&turnNumber)
+		if state.ReadTurnNumber == nil || *state.ReadTurnNumber < turnNumber {
+			state.ReadTurnNumber = cloneIntPointer(&turnNumber)
 		}
-	})
+	}, userName)
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -321,8 +415,8 @@ func (s *server) handleResourceAttentionDismiss(w http.ResponseWriter, r *http.R
 	writeJSON(w, resourceAttentionSnapshotForState(attention))
 }
 
-func (s *server) attentionForResource(path, resourceID string) (resourceAttentionState, error) {
-	attention, err := s.loadAttentionAtPath(path)
+func (s *server) attentionForResource(path, resourceID string, userNames ...string) (resourceAttentionState, error) {
+	attention, err := s.loadAttentionAtPath(path, userNames...)
 	if err != nil {
 		return resourceAttentionState{}, err
 	}
@@ -387,11 +481,11 @@ func (s *server) currentResourceTurnNumber(workspacePath, resourceID string) (in
 	if err != nil {
 		return 0, err
 	}
-	state, err := s.loadAttentionAtPath(workspacePath)
+	state, err := loadResourceStateFile(resourceStatePath(workspacePath))
 	if err != nil {
 		return 0, err
 	}
-	turnNumber := state[normalizedResourceID(resourceID)].TurnNumber
+	turnNumber := state.TurnNumbers[normalizedResourceID(resourceID)]
 	resourceID = normalizedResourceID(resourceID)
 	for _, record := range records {
 		if normalizedResourceID(record.ResourceID) == resourceID && record.TurnNumber > turnNumber {
@@ -423,12 +517,12 @@ func resourceAttentionVisible(item resourceSnapshot) bool {
 		return item.Runtime != nil && item.Runtime.ActiveTurn
 	}
 	if item.Runtime == nil {
-		return attention.DismissedTurn == nil
+		return attention.ReadTurnNumber == nil
 	}
 	if item.Runtime.ActiveTurn {
 		return true
 	}
-	return attention.DismissedTurn == nil || item.Runtime.TurnNumber > *attention.DismissedTurn
+	return attention.ReadTurnNumber == nil || item.Runtime.TurnNumber > *attention.ReadTurnNumber
 }
 
 func resourceAttentionSortTime(item resourceSnapshot) time.Time {
@@ -446,8 +540,8 @@ func resourceAttentionSortTime(item resourceSnapshot) time.Time {
 	return parsed
 }
 
-func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspaceTree) error {
-	attention, err := s.loadAttentionAtPath(workspacePath)
+func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspaceTree, userNames ...string) error {
+	attention, err := s.loadAttentionAtPath(workspacePath, userNames...)
 	if err != nil {
 		return fmt.Errorf("load resource attention for tree: %w", err)
 	}

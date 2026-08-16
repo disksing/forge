@@ -375,7 +375,17 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		tree, err := s.tree(r.Context(), id)
+		workspace, err := s.workspace(id)
+		if err != nil {
+			writeError(w, err, http.StatusNotFound)
+			return
+		}
+		userName, err := s.workspaceUserName(r, workspace.Path)
+		if err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		tree, err := s.tree(r.Context(), id, userName)
 		if err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -486,6 +496,8 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, detail)
 	case "scheduler":
 		s.handleScheduler(w, r, id, parts[2:])
+	case "users":
+		s.handleUsers(w, r, id, parts[2:])
 	case "messages":
 		if (len(parts) != 3 && len(parts) != 4) || parts[2] == "" {
 			writeError(w, &resourceAPIError{Code: "invalid_request", Message: "message id is required"}, http.StatusBadRequest)
@@ -756,9 +768,19 @@ func (s *server) updateResourceAgentBinding(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *server) handleUIState(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := s.workspace(id)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	userName, err := s.workspaceUserName(r, workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
-		state, err := s.loadUIState(id)
+		state, err := s.loadUIState(id, userName)
 		if err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -770,11 +792,11 @@ func (s *server) handleUIState(w http.ResponseWriter, r *http.Request, id string
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
-		if err := s.saveUIState(id, state); err != nil {
+		if err := s.saveUIState(id, state, userName); err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
-		saved, err := s.loadUIState(id)
+		saved, err := s.loadUIState(id, userName)
 		if err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -1401,6 +1423,9 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	if err != nil {
 		return serveWorkspace{}, err
 	}
+	if err := s.ensureWorkspaceUsersAndMigrateUIState(tree.Root); err != nil {
+		return serveWorkspace{}, err
+	}
 	if _, err := puaWorkspace.EnsureResourceRuntime(); err != nil {
 		return serveWorkspace{}, err
 	}
@@ -1542,15 +1567,15 @@ func (s *server) removeWorkspace(id string) error {
 	return nil
 }
 
-func (s *server) tree(ctx context.Context, id string) (workspaceTree, error) {
+func (s *server) tree(ctx context.Context, id string, userNames ...string) (workspaceTree, error) {
 	workspace, err := s.workspace(id)
 	if err != nil {
 		return workspaceTree{}, err
 	}
-	return s.treeAt(ctx, workspace.Path)
+	return s.treeAt(ctx, workspace.Path, userNames...)
 }
 
-func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error) {
+func (s *server) treeAt(ctx context.Context, path string, userNames ...string) (workspaceTree, error) {
 	if err := s.requireWorkspaceOwnership(path); err != nil {
 		return workspaceTree{}, err
 	}
@@ -1578,7 +1603,7 @@ func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error)
 	if err := s.enrichTreeResourceRuntime(path, &tree); err != nil {
 		return workspaceTree{}, err
 	}
-	if err := s.enrichTreeResourceAttention(path, &tree); err != nil {
+	if err := s.enrichTreeResourceAttention(path, &tree, userNames...); err != nil {
 		return workspaceTree{}, err
 	}
 	return tree, nil
@@ -1677,17 +1702,17 @@ func (s *server) resource(ctx context.Context, id string, resourceID string) (ap
 	return puaWorkspace.Resource(resourceID)
 }
 
-func (s *server) loadUIState(id string) (uiState, error) {
+func (s *server) loadUIState(id string, userNames ...string) (uiState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
 	workspace, err := s.workspace(id)
 	if err != nil {
 		return uiState{}, err
 	}
-	return loadUIStateFile(uiStatePath(workspace.Path))
+	return loadUIStateFile(userUIStatePath(workspace.Path, selectedUserName(userNames)))
 }
 
-func (s *server) saveUIState(id string, state uiState) error {
+func (s *server) saveUIState(id string, state uiState, userNames ...string) error {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
 	workspace, err := s.workspace(id)
@@ -1696,12 +1721,13 @@ func (s *server) saveUIState(id string, state uiState) error {
 	}
 	// UI navigation updates predate attention state. Preserve the server-owned
 	// attention map so an older browser cannot overwrite stars or dismissals.
-	existing, err := loadUIStateFile(uiStatePath(workspace.Path))
+	statePath := userUIStatePath(workspace.Path, selectedUserName(userNames))
+	existing, err := loadUIStateFile(statePath)
 	if err != nil {
 		return err
 	}
 	state.Attention = existing.Attention
-	return saveUIStateFile(uiStatePath(workspace.Path), state)
+	return saveUIStateFile(statePath, state)
 }
 
 func (s *server) buildDiff(ctx context.Context, worktreePath string, base string) (string, error) {

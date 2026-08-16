@@ -54,11 +54,17 @@ POST /api/workspaces/{workspaceId}/resources/{resourceId}/uploads
 GET  /api/workspaces/{workspaceId}/resources/{resourceId}/attention
 PUT  /api/workspaces/{workspaceId}/resources/{resourceId}/attention
 POST /api/workspaces/{workspaceId}/resources/{resourceId}/attention/dismiss
+GET  /api/workspaces/{workspaceId}/users
+POST /api/workspaces/{workspaceId}/users
+PUT  /api/workspaces/{workspaceId}/users/{name}
+DELETE /api/workspaces/{workspaceId}/users/{name}
 ```
 
 `POST .../generation/end?generationId={currentGenerationId}` 只在没有活动 Turn/approval 时接受。它以 generation ID 防止过期页面误操作，随后沿统一 lifecycle 完成 Session Stop、stopped 确认、Archive 和 generation retire；不会立即创建空 successor，下一条 mailbox 消息会按资源当前绑定懒创建新 generation。
 
-`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含 `attention.followed` 与 `attention.dismissedTurn`，runtime 快照包含资源级的 `turnNumber`、`activeTurn` 和 `turnStartedAt`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准，ready/stopped 快照即使残留上一个 `currentTurnId` 也会被清理。Activity 先列出 active 资源：active 组按当前 Turn 的 `turnStartedAt` 倒序，idle 组按最近规范终态的 `completionAt` 倒序，同时间再按标题和资源 ID 稳定排序；输出和轮询变化的 `updatedAt` 不参与排序。Turn 结束后，只有已关注且当前资源 turn ordinal 大于 dismiss ordinal 的资源继续保留。缺少 `dismissedTurn` 表示用户从未 dismiss 过该资源。`PUT .../attention` 接收 `{ "followed": true|false }`；重新关注会清除 dismiss 边界，使资源立即可见。`POST .../attention/dismiss` 记录当前资源 turn ordinal。创建 Project/Task 和向任意资源发送已接受的消息都会自动关注对应资源。关注状态持久化在 `<control-dir>/ui-state.json`（改名前的 `gui-state.json` 仍会读取并在下次保存时迁移），浏览器写入导航 UI 状态时会保留该字段。
+`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含当前用户的 `attention.followed` 与 `attention.readTurnNumber`，runtime 快照包含资源级的 `turnNumber`、`activeTurn` 和 `turnStartedAt`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准。Turn 结束后，只有已关注且资源最新 Turn 编号大于当前用户已读游标的资源继续保留。`POST .../attention/dismiss` 与 Web 自动已读都只单调推进当前用户的游标。个人 UI/关注状态保存在 `<control-dir>/users/{name}/ui-state.json`；公共 Turn 编号高水位保存在 `<control-dir>/resource-state.json`。用户级请求通过 `X-PUA-User` 指定用户，未提供时兼容使用默认 `User`。
+
+用户名只允许 ASCII 字母、数字、下划线和减号，最长 80 个字符。`POST .../users` 显式注册用户，`PUT .../users/{name}` 接收 `{ "preference": "..." }`，删除用户会级联删除该用户目录，但不会改写历史消息中的 sender。用户只是 Workspace 范围的身份标记，不构成认证或权限边界。
 
 发送正文示例：
 

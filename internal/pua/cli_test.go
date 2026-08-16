@@ -92,6 +92,35 @@ func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
 	})
 }
 
+func TestUserListShowsWorkspaceProfiles(t *testing.T) {
+	withTempCwd(t, func(_ string) {
+		run(t, "init")
+		workspace, err := openApplicationWorkspace()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := workspace.RegisterUser("alice_2"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := workspace.UpdateUserPreference("alice_2", "Use concise replies"); err != nil {
+			t.Fatal(err)
+		}
+		listed := run(t, "user", "list")
+		if !strings.Contains(listed, "User\t\n") || !strings.Contains(listed, "alice_2\tUse concise replies\n") {
+			t.Fatalf("user list = %q", listed)
+		}
+		var result struct {
+			Users []app.UserProfile `json:"users"`
+		}
+		if err := json.Unmarshal([]byte(run(t, "user", "list", "--json")), &result); err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Users) != 2 {
+			t.Fatalf("JSON users = %#v", result.Users)
+		}
+	})
+}
+
 func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	t.Setenv(puaWorkspaceRootEnvironment, "")
 	t.Setenv(puaWorkspaceInstanceEnvironment, "")

@@ -58,7 +58,7 @@ func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &state); err != nil {
 		t.Fatal(err)
 	}
-	if !state.Followed || state.DismissedTurn != nil {
+	if !state.Followed || state.ReadTurnNumber != nil {
 		t.Fatalf("unexpected followed state: %#v", state)
 	}
 
@@ -69,7 +69,7 @@ func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &state); err != nil {
 		t.Fatal(err)
 	}
-	if state.DismissedTurn == nil || *state.DismissedTurn != 3 {
+	if state.ReadTurnNumber == nil || *state.ReadTurnNumber != 3 {
 		t.Fatalf("dismiss did not record current turn: %#v", state)
 	}
 
@@ -108,7 +108,7 @@ func TestResourceAttentionActiveTurnAlwaysVisibleAndUIStatePreservesIt(t *testin
 		t.Fatal(err)
 	}
 	if _, err := server.mutateResourceAttentionAtPath(workspace, "project1", func(state *resourceAttentionState) {
-		state.DismissedTurn = cloneIntPointer(intPointer(2))
+		state.ReadTurnNumber = cloneIntPointer(intPointer(2))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestResourceAttentionActiveTurnAlwaysVisibleAndUIStatePreservesIt(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Attention["project1"].DismissedTurn == nil || *state.Attention["project1"].DismissedTurn != 2 {
+	if state.Attention["project1"].ReadTurnNumber == nil || *state.Attention["project1"].ReadTurnNumber != 2 {
 		t.Fatalf("ui-state update overwrote attention state: %#v", state.Attention)
 	}
 }

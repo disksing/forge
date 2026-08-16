@@ -40,11 +40,11 @@ export function createPUAAppChannels(): PUAAppChannels {
       onClose: noop, onPreview: noopAsync, onSubmit: noopAsync, previewRequestKey: () => "", onConfirmTemplateSwitch: async () => true, onIconsChanged: noop,
     }),
     settings: createModelChannel<SettingsModel>({
-      open: false, identity: "", dataVersion: 0, initialTab: "workspace", workspaces: [], activeWorkspaceId: "", workspaceIcons: [{ id: "", label: "PUA default", src: "/favicon.svg" }], workspaceIconSavingId: "", userName: "User",
+      open: false, identity: "", dataVersion: 0, initialTab: "workspace", workspaces: [], activeWorkspaceId: "", workspaceIcons: [{ id: "", label: "PUA default", src: "/favicon.svg" }], workspaceIconSavingId: "", userName: "User", users: [],
       appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
       agentHub: { configuredEndpoint: "", connected: false, compatible: false, error: "", apiVersion: "", version: "", capabilities: [], providers: [], agents: [] }, profiles: [], agents: [],
       notifications: { browser: false, sound: false, permission: "default", permissionError: "", soundError: "" },
-      onClose: noop, onAddWorkspace: noopAsync, onRemoveWorkspace: noopAsync, onWorkspaceIcon: noopAsync, onSaveWorkspaceName: noopAsync, onSaveUser: async (name) => name, onSaveAgentHub: noopAsync,
+      onClose: noop, onAddWorkspace: noopAsync, onRemoveWorkspace: noopAsync, onWorkspaceIcon: noopAsync, onSaveWorkspaceName: noopAsync, onSaveUser: async (name) => name, onSaveUserPreference: noopAsync, onDeleteUser: noopAsync, onSaveAgentHub: noopAsync,
       onLayoutPreference: noop, onFontScale: noop, onResetFontScales: noop,
       onBrowserNotifications: noop, onCompletionSound: noop, onToast: noop, onIconsChanged: noop,
     }),

@@ -336,9 +336,16 @@ const settingsController = createSettingsController({
 	agentOptions: svelteAgentOptions,
 	workspaceIcons: [DEFAULT_WORKSPACE_ICON, ...WORKSPACE_ICONS],
 	userName: currentUserName,
-	saveUser: (name) => {
+	saveUser: async (name) => {
 		if (!userSettingsController) throw new Error("User settings are unavailable.");
-		return userSettingsController.save(name);
+		const normalized = userSettingsController.validate(name);
+		if (controllerState.activeWorkspaceId) await registerWorkspaceUser(controllerState.activeWorkspaceId, normalized);
+		const saved = userSettingsController.save(normalized);
+		if (controllerState.activeWorkspaceId) {
+			await loadUIState();
+			await loadTree({ updateURL: false });
+		}
+		return saved;
 	},
 	appearance: () => {
 		const snapshot = paneLayoutController.snapshot();
@@ -352,7 +359,7 @@ const settingsController = createSettingsController({
 	setCompletionSound: (enabled) => notificationController?.setSoundEnabled(enabled),
 	flushDraft: flushAgentDraft,
 	resetAgentState,
-	reloadWorkspaceContext: async () => { await loadUIState(); await loadTree(); },
+	reloadWorkspaceContext: async () => { await registerWorkspaceUser(controllerState.activeWorkspaceId); await loadUIState(); await loadTree(); },
 	clearWorkspaceContext: () => {
 		controllerState.tree = null;
 		clearResourceDetailState();
@@ -424,9 +431,12 @@ function currentUserName() {
 	return userSettingsController?.current() || "User";
 }
 async function api<Response>(path: string, options: RequestInit = {}): Promise<Response> {
+	const headers = new Headers(options.headers);
+	if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+	if (path.startsWith("/api/workspaces/")) headers.set("X-PUA-User", currentUserName());
 	const response = await fetch(path, {
-		headers: { "Content-Type": "application/json" },
-		...options
+		...options,
+		headers
 	});
 	if (!response.ok) {
 		let message = `${response.status} ${response.statusText}`;
@@ -437,6 +447,14 @@ async function api<Response>(path: string, options: RequestInit = {}): Promise<R
 	}
 	if (response.status === 204) return null as Response;
 	return response.json() as Promise<Response>;
+}
+
+async function registerWorkspaceUser(workspaceId: string, name = currentUserName()): Promise<void> {
+	if (!workspaceId) return;
+	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/users`, {
+		method: "POST",
+		body: JSON.stringify({ name })
+	});
 }
 
 async function fetchDoctorSnapshot(): Promise<DoctorSnapshotModel> {
@@ -479,6 +497,7 @@ async function load() {
 	renderWorkspaceSelect();
 	if (controllerState.activeWorkspaceId) {
 		initializeNotificationState(controllerState.activeWorkspaceId);
+		await registerWorkspaceUser(controllerState.activeWorkspaceId);
 		await loadUIState();
 		if (!route.resourceId && controllerState.lastResourceId) controllerState.selectedId = controllerState.lastResourceId;
 		await loadTree({ replaceURL: true });
@@ -525,6 +544,8 @@ async function loadTree(options: LoadTreeOptions = {}) {
 	else if (controllerState.selectedId) await loadDetail(controllerState.selectedId);
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId());
+	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
+	await markSelectedResourceRead();
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	establishNotificationBaseline();
 	controllerState.navigationLoading = false;
@@ -637,6 +658,7 @@ async function autoRefresh() {
 		}
 		observeCompletionProjections(resourceNotificationProjections(tree));
 		if (await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId())) changed = true;
+		if (await markSelectedResourceRead()) changed = true;
 		if (taskOperationalStateKey() !== controllerState.taskOperationalStateKey) changed = true;
 		if (changed) publishViewModels();
 	} finally {
@@ -822,6 +844,7 @@ async function switchWorkspace(id: string): Promise<void> {
 	closeCreateDialog();
 	resetAgentState();
 	renderWorkspaceSelect();
+	await registerWorkspaceUser(id);
 	if (!await loadUIState(id, navigationVersion)) return;
 	controllerState.selectedId = controllerState.lastResourceId || "workspace";
 	await loadTree();
@@ -889,6 +912,7 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 		refreshResourceMessageStatus(controllerState.activeWorkspaceId, id)
 	]);
 	if (!isCurrentWorkspaceView(controllerState.activeWorkspaceId, controllerState.navigationVersion)) return;
+	await markSelectedResourceRead();
 	renderSelectionPanels();
 }
 async function toggleProject(id: string): Promise<void> {
@@ -1117,6 +1141,25 @@ async function dismissResourceAttention(resourceId: string): Promise<void> {
 	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/attention/dismiss`, { method: "POST" });
 	await refreshTreeAfterResourceMutation();
 	publishViewModels();
+}
+
+async function markSelectedResourceRead(): Promise<boolean> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	const resourceId = selectedAgentResourceId();
+	if (!workspaceId || !resourceId || !controllerState.tree) return false;
+	const item = resourceId === "workspace"
+		? controllerState.tree.attentionList?.find((candidate) => candidate.id === "workspace")
+		: findResource(resourceId);
+	if (!item?.attention?.followed || item.runtime?.activeTurn) return false;
+	const turnNumber = Number(item.runtime?.turnNumber) || 0;
+	const readTurnNumber = Number(item.attention.readTurnNumber) || 0;
+	if (turnNumber <= 0 || turnNumber <= readTurnNumber) return false;
+	const navigationVersion = controllerState.navigationVersion;
+	const attention = await api<{ followed?: boolean; readTurnNumber?: number }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/attention/dismiss`, { method: "POST" });
+	if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || selectedAgentResourceId() !== resourceId) return false;
+	item.attention = attention;
+	controllerState.tree.attentionList = (controllerState.tree.attentionList || []).filter((candidate) => candidate.id !== resourceId);
+	return true;
 }
 async function refreshResourceMessageStatus(workspaceId = controllerState.activeWorkspaceId, resourceId = selectedAgentResourceId()): Promise<boolean> {
 	if (!workspaceId || !resourceId) return false;
@@ -1811,6 +1854,7 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 	if (workspaceChanged) resetAgentState();
 	renderWorkspaceSelect();
 	if (workspaceChanged) {
+		await registerWorkspaceUser(route.workspaceId || "");
 		if (!await loadUIState(route.workspaceId || "", navigationVersion)) return;
 		if (!route.resourceId && controllerState.lastResourceId) controllerState.selectedId = controllerState.lastResourceId;
 		await loadTree({ updateURL: false });

@@ -111,6 +111,7 @@ describe("Archive resource flow", () => {
       if (url.pathname === "/api/settings/agenthub" && method === "GET") {
         return json({ connected: false, compatible: false, catalog: { providers: [], agents: [] }, config: { agentProfiles: [] } });
       }
+      if (url.pathname === "/api/workspaces/ws-test/users" && method === "POST") return json({ version: 1, name: "User", preference: "" });
       if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "GET") return json({ expandedProjects: ["project1", "project2"] });
       if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "PUT") {
         state.uiStateBodies.push(JSON.parse(String(init?.body || "{}")) as { expandedProjects?: string[] });

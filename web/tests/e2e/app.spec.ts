@@ -162,7 +162,7 @@ async function json(route: Route, body: unknown, status = 200) {
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle", settingsRefreshDelayMs = 0, conversationFixture: ConversationFixture = "default"): Promise<Harness> {
   const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [], markdownBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
-  const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
+  const attentionStates: Record<string, { followed: boolean; readTurnNumber?: number }> = {};
   let runtimeExists = !startWithoutRuntime;
   let turnRunning = initialTurnRunning;
   if (startWithoutRuntime) attentionStates["project1.task1"] = { followed: true };
@@ -170,6 +170,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
   let createdTask: MockTask | null = null;
   let scheduleSequence = 0;
   let savedTaskBrief: { content: string; contentHash: string } | null = null;
+  let users = [{ version: 1, name: "User", preference: "" }];
   let schedulerConfig = {
     schemaVersion: 1,
     agentBinding: { kind: "profile" as const, name: "fast" },
@@ -225,6 +226,25 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/pua-e2e" }],
       });
     }
+    if (path === "/api/workspaces/ws-test/users") {
+      if (method === "POST") {
+        const name = String((request.postDataJSON() as { name?: string }).name || "");
+        if (!users.some((user) => user.name === name)) users = [...users, { version: 1, name, preference: "" }];
+        return json(route, users.find((user) => user.name === name));
+      }
+      if (method === "GET") return json(route, { users });
+    }
+    const userMatch = path.match(/^\/api\/workspaces\/ws-test\/users\/([A-Za-z0-9_-]+)$/);
+    if (userMatch && method === "PUT") {
+      const name = userMatch[1];
+      const preference = String((request.postDataJSON() as { preference?: string }).preference || "");
+      users = users.map((user) => user.name === name ? { ...user, preference } : user);
+      return json(route, users.find((user) => user.name === name));
+    }
+    if (userMatch && method === "DELETE") {
+      users = users.filter((user) => user.name !== userMatch[1]);
+      return route.fulfill({ status: 204 });
+    }
     if (path === "/api/workspaces/ws-test/ui-state") {
       if (method === "PUT") {
         harness.uiStateBodies.push(request.postDataJSON());
@@ -257,7 +277,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         const runtime = (item as { runtime?: { activeTurn?: boolean; turnNumber?: number } }).runtime;
         if (runtime?.activeTurn) return true;
         if (!state?.followed) return false;
-        return state.dismissedTurn === undefined || Number(runtime?.turnNumber || 0) > state.dismissedTurn;
+        return state.readTurnNumber === undefined || Number(runtime?.turnNumber || 0) > state.readTurnNumber;
       }).map((item) => ({ ...item, children: undefined }));
       return json(route, {
         root: "/tmp/pua-e2e",
@@ -271,7 +291,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     if (attentionDismissMatch && method === "POST") {
       const resourceId = decodeURIComponent(attentionDismissMatch[1]);
       const current = attentionStates[resourceId] || { followed: false };
-      attentionStates[resourceId] = { ...current, dismissedTurn: turnRunning && resourceId === "project1.task1" ? 1 : 0 };
+      attentionStates[resourceId] = { ...current, readTurnNumber: turnRunning && resourceId === "project1.task1" ? 1 : 0 };
       harness.attentionBodies.push({ method, path });
       return json(route, attentionStates[resourceId]);
     }
@@ -540,6 +560,9 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     }
     if (path === "/api/settings/agenthub") {
       return json(route, { config: { agentProfiles: [] }, connected: false, compatible: false, catalog: { providers: [], agents: [], probes: [] } });
+    }
+    if (/^\/api\/workspaces\/ws-[ab]\/users$/.test(path) && method === "POST") {
+      return json(route, { version: 1, name: "User", preference: "" });
     }
     const uiStateMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/ui-state$/);
     if (uiStateMatch) {
@@ -1330,13 +1353,13 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
     const state = window as Window & { __settingsPublicationTimer?: number };
     state.__settingsPublicationTimer = window.setInterval(() => window.dispatchEvent(new StorageEvent("storage", {
       key: "pua.web.user.v1",
-      newValue: JSON.stringify({ version: 1, name: "Remote User" }),
+      newValue: JSON.stringify({ version: 1, name: "Remote_User" }),
     })), 10);
   });
   try {
-    await name.fill("Locator Probe");
+    await name.fill("Locator-Probe");
     await page.waitForTimeout(100);
-    await expect(name).toHaveValue("Locator Probe");
+    await expect(name).toHaveValue("Locator-Probe");
   } finally {
     await page.evaluate(() => {
       const state = window as Window & { __settingsPublicationTimer?: number };
@@ -1345,14 +1368,14 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
     });
   }
   await name.fill("");
-  await name.pressSequentially("Sequential Probe");
-  await expect(name).toHaveValue("Sequential Probe");
+  await name.pressSequentially("Sequential_Probe");
+  await expect(name).toHaveValue("Sequential_Probe");
   await name.fill("");
   await name.focus();
-  await page.keyboard.type("Native Probe");
-  await expect(name).toHaveValue("Native Probe");
-  await name.fill("Migration User");
-  await expect(name).toHaveValue("Migration User");
+  await page.keyboard.type("Native-Probe");
+  await expect(name).toHaveValue("Native-Probe");
+  await name.fill("Migration-User");
+  await expect(name).toHaveValue("Migration-User");
   await settings.getByRole("button", { name: "Save" }).click();
   await settings.getByRole("button", { name: "AgentHub" }).click();
   await settings.getByLabel("Endpoint").fill("http://127.0.0.1:5656");

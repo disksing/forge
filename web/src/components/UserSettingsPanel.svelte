@@ -1,6 +1,7 @@
 <script lang="ts">
   import "./UserSettingsPanel.css";
 
+  import { sanitizeUserNameInput } from "../controllers/user-settings-controller";
   import Icon from "./Icon.svelte";
   import type { SettingsDraft, SettingsModel } from "./models";
   import { settingsErrorMessage } from "./settings-draft";
@@ -38,8 +39,8 @@
   <form id="settingsUserForm" class="settings-user-form" onsubmit={saveUser}>
     <label>
       <span>Name</span>
-      <input id="settingsUserName" value={userName} oninput={(event) => onUserNameInput((event.currentTarget as HTMLInputElement).value)} maxlength="80" placeholder="User" />
-      <small>Stored only in this browser. Empty values use User.</small>
+      <input id="settingsUserName" value={userName} oninput={(event) => onUserNameInput(sanitizeUserNameInput((event.currentTarget as HTMLInputElement).value))} maxlength="80" pattern="[A-Za-z0-9_-]+" required placeholder="User" />
+      <small>Use letters, numbers, underscores, or hyphens. The selection is stored in this browser and registered in the active Workspace.</small>
     </label>
     <div class="settings-form-actions"><button type="submit" disabled={pending === "user"}><Icon name="save" /><span>Save</span></button></div>
   </form>

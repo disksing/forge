@@ -472,4 +472,3 @@ func templateCreate(options templateCLIOptions) error {
 	}
 	return printJSON(template)
 }
-

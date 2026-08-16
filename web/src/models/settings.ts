@@ -51,6 +51,7 @@ export interface SettingsModel {
   workspaceIcons: Array<{ id: string; label: string; src: string }>;
   workspaceIconSavingId: string;
   userName: string;
+  users: WorkspaceUser[];
   appearance: AppearanceSettings;
   agentHub: AgentHubSettings;
   profiles: ProfileDraft[];
@@ -62,6 +63,8 @@ export interface SettingsModel {
   onWorkspaceIcon: (id: string, icon: string, draft: SettingsDraft) => Promise<void>;
   onSaveWorkspaceName: (id: string, name: string, draft: SettingsDraft) => Promise<void>;
   onSaveUser: (name: string) => Promise<string>;
+  onSaveUserPreference: (name: string, preference: string) => Promise<void>;
+  onDeleteUser: (name: string) => Promise<void>;
   onLayoutPreference: (preference: AppearanceSettings["layout"]) => void;
   onFontScale: (column: keyof AppearanceSettings["fontScales"], value: number) => void;
   onResetFontScales: () => void;
@@ -70,4 +73,10 @@ export interface SettingsModel {
   onCompletionSound: (enabled: boolean) => void;
   onToast: (message: string) => void;
   onIconsChanged: () => void;
+}
+
+export interface WorkspaceUser {
+  version: number;
+  name: string;
+  preference: string;
 }

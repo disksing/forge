@@ -2,12 +2,29 @@ import type { ResourceScope } from "../runtime/resource-scope";
 
 const USER_SETTINGS_KEY = "pua.web.user.v1";
 const USER_SETTINGS_VERSION = 1;
-const USER_NAME_MAX_LENGTH = 80;
+export const USER_NAME_MAX_LENGTH = 80;
+const USER_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export function sanitizeUserNameInput(value: unknown): string {
+	return String(value || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, USER_NAME_MAX_LENGTH);
+}
+
+export function validateUserName(value: unknown): string {
+	const name = String(value || "");
+	if (!name) throw new Error("User name is required.");
+	if (name.length > USER_NAME_MAX_LENGTH) throw new Error(`User name must be at most ${USER_NAME_MAX_LENGTH} characters.`);
+	if (!USER_NAME_PATTERN.test(name)) throw new Error("User name may contain only letters, numbers, underscores, and hyphens.");
+	return name;
+}
 
 export function normalizeUserName(value: unknown): string {
 	const trimmed = String(value || "").trim();
 	if (!trimmed) return "User";
-	return Array.from(trimmed).slice(0, USER_NAME_MAX_LENGTH).join("") || "User";
+	try {
+		return validateUserName(trimmed);
+	} catch (_) {
+		return "User";
+	}
 }
 
 export function decodeStoredUserName(raw: string | null): string {
@@ -33,7 +50,7 @@ export function createUserSettingsController(scope: ResourceScope, onChange: () 
 	}
 
 	function save(value: unknown): string {
-		const normalized = normalizeUserName(value);
+		const normalized = validateUserName(value);
 		try {
 			window.localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify({
 				version: USER_SETTINGS_VERSION,
@@ -54,6 +71,7 @@ export function createUserSettingsController(scope: ResourceScope, onChange: () 
 
 	return {
 		current: () => name,
+		validate: validateUserName,
 		save
 	};
 }

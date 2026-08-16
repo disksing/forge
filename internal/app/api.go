@@ -196,6 +196,9 @@ func initializeWorkspaceLocked(root, language string) error {
 	if _, err := ensureSchedulerLocked(root, language); err != nil {
 		return err
 	}
+	if _, _, err := ensureUserLocked(root, DefaultUserName); err != nil {
+		return err
+	}
 	return updateOpenTaskAgentsMD(root, language)
 }
 
@@ -250,6 +253,9 @@ func (w *Workspace) migrate(language string) error {
 	}
 	if _, err := ensureSchedulerLocked(w.root, language); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "scheduler", Workspace: w.root, Err: err}
+	}
+	if _, _, err := ensureUserLocked(w.root, DefaultUserName); err != nil {
+		return &APIError{Operation: "migrate Workspace", Kind: "user", Workspace: w.root, Err: err}
 	}
 	config.Version, config.Language = 1, language
 	if strings.TrimSpace(config.InstanceID) == "" {

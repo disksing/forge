@@ -9,23 +9,31 @@
     workspaces,
     activeWorkspaceId,
     workspaceIcons,
+    users,
+    currentUserName,
     draft = $bindable(),
     pending = $bindable(),
     onAddWorkspace,
     onRemoveWorkspace,
     onWorkspaceIcon,
     onSaveWorkspaceName,
+    onSaveUserPreference,
+    onDeleteUser,
     onToast,
   }: {
     workspaces: SettingsModel["workspaces"];
     activeWorkspaceId: string;
     workspaceIcons: SettingsModel["workspaceIcons"];
+    users: SettingsModel["users"];
+    currentUserName: string;
     draft: SettingsDraft;
     pending: string;
     onAddWorkspace: SettingsModel["onAddWorkspace"];
     onRemoveWorkspace: SettingsModel["onRemoveWorkspace"];
     onWorkspaceIcon: SettingsModel["onWorkspaceIcon"];
     onSaveWorkspaceName: SettingsModel["onSaveWorkspaceName"];
+    onSaveUserPreference: SettingsModel["onSaveUserPreference"];
+    onDeleteUser: SettingsModel["onDeleteUser"];
     onToast: SettingsModel["onToast"];
   } = $props();
 
@@ -33,6 +41,7 @@
   let nameEditing = $state("");
   let nameDraft = $state("");
   let nameInput = $state<HTMLInputElement | null>(null);
+  let preferenceDrafts = $state<Record<string, string>>({});
 
   $effect(() => {
     if (nameEditing && nameInput) nameInput.focus();
@@ -121,6 +130,31 @@
     const workspace = workspaces.find((item) => item.id === id);
     return workspaceIcons.find((item) => item.id === (workspace?.icon || "")) || workspaceIcons[0];
   }
+
+  async function savePreference(name: string, fallback: string): Promise<void> {
+    if (pending) return;
+    pending = `user:${name}`;
+    try {
+      await onSaveUserPreference(name, preferenceDrafts[name] ?? fallback);
+      delete preferenceDrafts[name];
+    } catch (error) {
+      onToast(settingsErrorMessage(error));
+    } finally {
+      pending = "";
+    }
+  }
+
+  async function deleteUser(name: string): Promise<void> {
+    if (pending) return;
+    pending = `delete-user:${name}`;
+    try {
+      await onDeleteUser(name);
+    } catch (error) {
+      onToast(settingsErrorMessage(error));
+    } finally {
+      pending = "";
+    }
+  }
 </script>
 
 <div class="settings-panel" data-component-owner="workspace-settings-panel" data-settings-panel>
@@ -183,6 +217,30 @@
       </div>
     {:else}
       <div class="settings-empty">No workspaces managed by PUA.</div>
+    {/each}
+  </div>
+  <div class="settings-panel-header settings-users-header">
+    <h2>Workspace users</h2>
+    <p>Manage the users registered in the active Workspace and the preferences Agents can query with the CLI.</p>
+  </div>
+  <div class="settings-users-list">
+    {#each users as user (user.name)}
+      <div class="settings-user-entry">
+        <div class="settings-user-heading">
+          <strong>{user.name}</strong>
+          <div class="settings-row-actions">
+            {#if user.name === currentUserName}<span class="settings-pill">Current</span>{/if}
+            <button type="button" class="settings-danger-button" title={user.name === currentUserName ? "Switch to another user before deleting this user" : `Delete ${user.name}`} disabled={Boolean(pending) || user.name === currentUserName} onclick={() => deleteUser(user.name)}><Icon name="trash-2" /></button>
+          </div>
+        </div>
+        <label>
+          <span>Preference</span>
+          <textarea value={preferenceDrafts[user.name] ?? user.preference} oninput={(event) => preferenceDrafts[user.name] = (event.currentTarget as HTMLTextAreaElement).value} placeholder="How should Agents address this user or shape their replies?"></textarea>
+        </label>
+        <div class="settings-form-actions"><button type="button" disabled={Boolean(pending)} onclick={() => savePreference(user.name, user.preference)}><Icon name="save" /><span>{pending === `user:${user.name}` ? "Saving..." : "Save preference"}</span></button></div>
+      </div>
+    {:else}
+      <div class="settings-empty">No users registered in this Workspace.</div>
     {/each}
   </div>
 </div>
