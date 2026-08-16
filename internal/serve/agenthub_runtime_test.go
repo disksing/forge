@@ -535,7 +535,10 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, serveWor
 	manager := newAgentManager(server)
 	manager.now = func() time.Time { return time.Date(2026, 8, 1, 0, 0, 20, 0, time.UTC) }
 	server.agents = manager
-	t.Cleanup(manager.waitBackground)
+	// Some recovery tests replace the manager to model a daemon restart. Resolve
+	// the active manager at cleanup time so its queued controller work finishes
+	// before TempDir removal begins.
+	t.Cleanup(func() { server.agents.waitBackground() })
 	return manager, workspace, configPath
 }
 

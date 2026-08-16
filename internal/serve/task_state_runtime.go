@@ -94,11 +94,29 @@ func (m *agentManager) scheduleTaskTurnCompletion(rt *agentRuntime, record gener
 	if rt == nil || strings.TrimSpace(record.CompletionMarker) == "" {
 		return
 	}
+	// Most terminal events do not require another Turn. Handle those inline so
+	// startup recovery cannot leave an unnecessary background write racing with
+	// shutdown or test Workspace cleanup. Only an in-progress Task needs to
+	// re-enter the resource controller to enqueue a continuation.
+	detail, task, err := taskDetail(rt.workspace.Path, record.ResourceID)
+	if err == nil && (!task || detail.State != app.TaskStateInProgress) {
+		_ = markTaskTurnCompletionHandled(rt, record.CompletionMarker)
+		return
+	}
 	m.runBackground(func() {
 		_ = m.withResourceController(context.Background(), rt.workspace, record.ResourceID, func() error {
 			return m.handleTaskTurnCompletionLocked(context.Background(), rt)
 		})
 	})
+}
+
+func markTaskTurnCompletionHandled(rt *agentRuntime, marker string) error {
+	_, err := rt.mutateGeneration(func(current *generationRecord) {
+		if current.CompletionMarker == marker {
+			current.TaskStateCompletionMarker = marker
+		}
+	})
+	return err
 }
 
 func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *agentRuntime) error {
@@ -114,16 +132,8 @@ func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *a
 	if err != nil || !task {
 		return err
 	}
-	markHandled := func() error {
-		_, mutateErr := rt.mutateGeneration(func(current *generationRecord) {
-			if current.CompletionMarker == marker {
-				current.TaskStateCompletionMarker = marker
-			}
-		})
-		return mutateErr
-	}
 	if detail.State != app.TaskStateInProgress {
-		return markHandled()
+		return markTaskTurnCompletionHandled(rt, marker)
 	}
 	puaWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
 	if err != nil {
@@ -133,7 +143,7 @@ func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *a
 		if _, err := puaWorkspace.SetTaskState(record.ResourceID, app.TaskStateError, "连续 3 次自动续推后，Task 状态仍为 in_progress"); err != nil {
 			return err
 		}
-		return markHandled()
+		return markTaskTurnCompletionHandled(rt, marker)
 	}
 	attempt := record.TaskStateContinuationCount + 1
 	instanceID, err := workspaceInstanceID(rt.workspace.Path)
