@@ -97,6 +97,24 @@ func TestDoctorCommandAllowsWarnings(t *testing.T) {
 	})
 }
 
+func TestDoctorTextReportIncludesResourceID(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Doctor resource id")
+		run(t, "task", "create", "--project=project1", "Code task")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "pua")
+		writeGitRepo(t, repoPath, "master")
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
+		server := doctorCatalogServer(t)
+		defer server.Close()
+
+		output := run(t, "doctor", "--server="+server.URL)
+		if !strings.Contains(output, "[task_worktree_not_found] project1.task1 project1/task1/worktree/pua:") {
+			t.Fatalf("doctor text output missing resource id, got:\n%s", output)
+		}
+	})
+}
+
 func errorsAsExit(err error, target *interface{ ExitCode() int }) bool {
 	value, ok := err.(interface{ ExitCode() int })
 	if ok {
