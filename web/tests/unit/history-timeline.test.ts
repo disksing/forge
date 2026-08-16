@@ -63,7 +63,7 @@ describe("HistoryTimeline", () => {
       return value!;
     });
     link.click();
-    expect(onOpenFile).toHaveBeenCalledWith("project1/task388/artifacts/report.md");
+    expect(onOpenFile).toHaveBeenCalledWith("/project1/task388/artifacts/report.md");
   });
 
   it("labels a cancelled Turn without a final reply instead of showing the trigger as its reply", async () => {

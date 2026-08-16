@@ -415,6 +415,79 @@ func TestWorkspaceFileLinkResolvesSluggedDirectories(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFileLinkResolvesAbsolutePathsAndLineSuffixes(t *testing.T) {
+	workspace := t.TempDir()
+	projectDir := filepath.Join(workspace, "project1-pua")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(projectDir, "source.go")
+	if err := os.WriteFile(sourcePath, []byte("package example\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	colonPath := filepath.Join(projectDir, "source.go:42")
+	if err := os.WriteFile(colonPath, []byte("literal colon file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		target  string
+		wantAbs string
+		wantRel string
+	}{
+		{name: "workspace root path", target: "/project1/artifacts/missing.md", wantAbs: filepath.Join(projectDir, "artifacts", "missing.md"), wantRel: "project1-pua/artifacts/missing.md"},
+		{name: "absolute path", target: sourcePath, wantAbs: sourcePath, wantRel: "project1-pua/source.go"},
+		{name: "line suffix", target: sourcePath + ":73", wantAbs: sourcePath, wantRel: "project1-pua/source.go"},
+		{name: "line and column suffix", target: sourcePath + ":73:9", wantAbs: sourcePath, wantRel: "project1-pua/source.go"},
+		{name: "existing colon filename wins", target: colonPath, wantAbs: colonPath, wantRel: "project1-pua/source.go:42"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gotAbs, gotRel, err := resolveWorkspaceFileLink(workspace, test.target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotAbs != test.wantAbs || gotRel != test.wantRel {
+				t.Fatalf("resolveWorkspaceFileLink(%q) = (%q, %q), want (%q, %q)", test.target, gotAbs, gotRel, test.wantAbs, test.wantRel)
+			}
+		})
+	}
+}
+
+func TestWorkspaceFileLinkAbsolutePathCannotEscapeWorkspace(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	outsideRoot := filepath.Join(root, "workspace-other")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outsideRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(outsideRoot, "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := resolveWorkspaceFileLink(workspace, outside); err == nil || !strings.Contains(err.Error(), "must be inside the workspace") {
+		t.Fatalf("expected outside absolute path to be rejected, got %v", err)
+	}
+
+	escaped := workspace + string(filepath.Separator) + filepath.Join("nested", "..", "..", filepath.Base(outsideRoot), "secret.txt")
+	if _, _, err := resolveWorkspaceFileLink(workspace, escaped); err == nil || !strings.Contains(err.Error(), "escapes the workspace") {
+		t.Fatalf("expected Workspace-prefixed traversal to be rejected, got %v", err)
+	}
+
+	link := filepath.Join(workspace, "outside-link.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := resolveWorkspaceFileLink(workspace, link); err == nil || !strings.Contains(err.Error(), "escapes the workspace") {
+		t.Fatalf("expected external symlink to be rejected, got %v", err)
+	}
+}
+
 func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	workspace := t.TempDir()
 	puaWorkspace, err := app.Initialize(workspace, "en")

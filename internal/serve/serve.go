@@ -2008,18 +2008,23 @@ func safeWorkspacePath(root string, relPath string) (string, error) {
 }
 
 var (
-	linkProjectSegment = regexp.MustCompile(`^project([0-9]+)$`)
-	linkTaskSegment    = regexp.MustCompile(`^task([0-9]+)$`)
+	linkProjectSegment   = regexp.MustCompile(`^project([0-9]+)$`)
+	linkTaskSegment      = regexp.MustCompile(`^task([0-9]+)$`)
+	linkLineColumnSuffix = regexp.MustCompile(`^(.+):[1-9][0-9]*:[1-9][0-9]*$`)
+	linkLineSuffix       = regexp.MustCompile(`^(.+):[1-9][0-9]*$`)
 )
 
-// resolveWorkspaceFileLink resolves a Workspace-root-relative file link path to
-// its absolute path and its slug-resolved Workspace-relative path. Leading
-// projectN/taskN segments may name resources without a slug even when the
-// on-disk directory carries a slug suffix: for example
-// project1/task2/artifacts/foo.md resolves to the slugged project1-*/task2-*/
-// directories when they exist.
-func resolveWorkspaceFileLink(root, relPath string) (string, string, error) {
-	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(relPath)))
+// resolveWorkspaceFileLink resolves a Workspace-root link or a machine-local
+// absolute link inside the Workspace to its absolute path and canonical
+// Workspace-relative path. Leading projectN/taskN segments may name resources
+// without a slug even when the on-disk directory carries a slug suffix. Codex
+// :line and :line:column suffixes are ignored when the unsuffixed file exists.
+func resolveWorkspaceFileLink(root, target string) (string, string, error) {
+	relPath, err := workspaceRelativeFileLinkTarget(root, target)
+	if err != nil {
+		return "", "", err
+	}
+	clean := filepath.ToSlash(filepath.Clean(relPath))
 	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", "", errors.New("path must be relative to the workspace")
 	}
@@ -2036,7 +2041,73 @@ func resolveWorkspaceFileLink(root, relPath string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	if info, statErr := os.Stat(abs); statErr == nil && !info.IsDir() {
+		return abs, filepath.ToSlash(resolvedRel), nil
+	}
+	if base, found := fileLinkBaseWithoutPosition(filepath.ToSlash(resolvedRel)); found {
+		baseRel := filepath.FromSlash(base)
+		baseAbs, baseErr := safeWorkspacePath(root, baseRel)
+		if baseErr == nil {
+			if info, statErr := os.Stat(baseAbs); statErr == nil && !info.IsDir() {
+				return baseAbs, filepath.ToSlash(baseRel), nil
+			}
+		}
+	}
 	return abs, filepath.ToSlash(resolvedRel), nil
+}
+
+func workspaceRelativeFileLinkTarget(root, target string) (string, error) {
+	trimmed := strings.TrimSpace(target)
+	if trimmed == "" {
+		return "", errors.New("path must be relative to the workspace")
+	}
+	native := filepath.FromSlash(trimmed)
+	if !filepath.IsAbs(native) {
+		return native, nil
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	rootAbs = filepath.Clean(rootAbs)
+	targetAbs := filepath.Clean(native)
+	rel, relErr := filepath.Rel(rootAbs, targetAbs)
+	if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return rel, nil
+	}
+	// If an absolute target textually starts at this Workspace but cleans
+	// outside it, do not reinterpret the escaped suffix as a Workspace-root
+	// link. This preserves the existing traversal rejection.
+	rootPrefix := rootAbs + string(filepath.Separator)
+	if native == rootAbs || strings.HasPrefix(native, rootPrefix) {
+		return "", errors.New("path escapes the workspace")
+	}
+	// Existing Markdown uses a leading slash to mean Workspace root. Keep that
+	// syntax when the first path segment identifies a PUA Project or an actual
+	// top-level Workspace entry; otherwise reject a machine-absolute path that
+	// belongs to another location.
+	workspaceTarget := strings.TrimPrefix(native, string(filepath.Separator))
+	cleanWorkspaceTarget := filepath.Clean(workspaceTarget)
+	parts := strings.Split(filepath.ToSlash(cleanWorkspaceTarget), "/")
+	if len(parts) > 0 && linkProjectSegment.MatchString(parts[0]) {
+		return workspaceTarget, nil
+	}
+	if len(parts) > 0 {
+		if _, statErr := os.Lstat(filepath.Join(rootAbs, filepath.FromSlash(parts[0]))); statErr == nil {
+			return workspaceTarget, nil
+		}
+	}
+	return "", errors.New("absolute path must be inside the workspace")
+}
+
+func fileLinkBaseWithoutPosition(path string) (string, bool) {
+	if match := linkLineColumnSuffix.FindStringSubmatch(path); match != nil {
+		return match[1], true
+	}
+	if match := linkLineSuffix.FindStringSubmatch(path); match != nil {
+		return match[1], true
+	}
+	return "", false
 }
 
 func resolveSluggedDir(parent, segment string) string {

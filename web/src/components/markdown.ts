@@ -92,13 +92,16 @@ export function handleMarkdownResourceClick(event: MouseEvent, context: Markdown
 function workspaceFileLinkPath(href: string): string | null {
   if (!href.startsWith("/") || href.startsWith("//")) return null;
   if (href.startsWith("/w/") || href.startsWith("/api/")) return null;
-  const path = href.slice(1);
-  if (!path || path === "." || path === "..") return null;
+  let path = href;
   try {
-    return decodeURIComponent(path);
+    path = decodeURIComponent(path);
   } catch (_) {
-    return path;
+    // Keep the original href. The server remains responsible for validating
+    // and resolving every local file candidate.
   }
+  const withoutRoot = path.slice(1);
+  if (!withoutRoot || withoutRoot === "." || withoutRoot === "..") return null;
+  return path;
 }
 
 export function markdownResourceNavigation(node: HTMLElement, initialContext: MarkdownNavigationContext) {

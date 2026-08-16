@@ -176,7 +176,7 @@ describe("EventTimeline", () => {
     await vi.waitFor(() => expect(target.querySelector("[role='dialog'][aria-label='File preview']")?.textContent).toContain("Previewed report"));
     expect(window.location.pathname).toBe(routeBefore);
     expect(viewModel.onNavigate).not.toHaveBeenCalled();
-    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain("/api/workspaces/workspace-a/files?path=project1%2Ftask388%2Fartifacts%2Freport.md");
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain("/api/workspaces/workspace-a/files?path=%2Fproject1%2Ftask388%2Fartifacts%2Freport.md");
     expect(target.querySelector("[role='dialog'] .markdown-editor-shell")).toBeNull();
   });
 

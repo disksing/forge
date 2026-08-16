@@ -124,7 +124,7 @@ describe("PUA Markdown workspace file links", () => {
 
     const plainClick = new MouseEvent("click", { bubbles: true, cancelable: true });
     expect(link.dispatchEvent(plainClick)).toBe(false);
-    expect(onOpenFile).toHaveBeenCalledWith("project1/task2/artifacts/foobar.md");
+    expect(onOpenFile).toHaveBeenCalledWith("/project1/task2/artifacts/foobar.md");
     expect(onNavigate).not.toHaveBeenCalled();
 
     action.destroy();
@@ -159,7 +159,7 @@ describe("PUA Markdown workspace file links", () => {
     const plainClick = new MouseEvent("click", { bubbles: true, cancelable: true });
     Object.defineProperties(plainClick, { target: { value: file }, currentTarget: { value: container } });
     handleMarkdownResourceClick(plainClick, navigation);
-    expect(onOpenFile).toHaveBeenCalledWith("wiki/notes.md");
+    expect(onOpenFile).toHaveBeenCalledWith("/wiki/notes.md");
 
     for (const anchor of [route, api, external, protocol]) {
       const click = new MouseEvent("click", { bubbles: true, cancelable: true });
@@ -183,7 +183,21 @@ describe("PUA Markdown workspace file links", () => {
     const click = new MouseEvent("click", { bubbles: true, cancelable: true });
     Object.defineProperties(click, { target: { value: link }, currentTarget: { value: container } });
     handleMarkdownResourceClick(click, navigation);
-    expect(onOpenFile).toHaveBeenCalledWith("project1/task2/artifacts/foo bar.md");
+    expect(onOpenFile).toHaveBeenCalledWith("/project1/task2/artifacts/foo bar.md");
+    action.destroy();
+  });
+
+  it("preserves absolute paths and Codex line suffixes for server-side resolution", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    container.innerHTML = markdownHTML("[source](/Users/example/workspace/project1/task2/source.go:42:7)", context());
+    const onOpenFile = vi.fn();
+    const navigation = { resolveResourceTitle: context().resolveResourceTitle, onNavigate: vi.fn(), onOpenFile };
+    const action = markdownResourceNavigation(container, navigation);
+    const link = container.querySelector("a")!;
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    Object.defineProperties(click, { target: { value: link }, currentTarget: { value: container } });
+    handleMarkdownResourceClick(click, navigation);
+    expect(onOpenFile).toHaveBeenCalledWith("/Users/example/workspace/project1/task2/source.go:42:7");
     action.destroy();
   });
 });
