@@ -197,7 +197,7 @@
         <strong>General</strong>
       </div>
       <div class="resource-settings-list">
-        <div class="resource-settings-row resource-settings-name-row">
+        <div class="resource-settings-row resource-settings-name-row" class:editing={nameEditing}>
           {#if nameEditing}
             <div class="resource-settings-row-label">
               <strong>Name</strong>
@@ -212,7 +212,7 @@
             </div>
           {/if}
         </div>
-        <div class="resource-settings-row resource-settings-desc-row">
+        <div class="resource-settings-row resource-settings-desc-row" class:editing={descEditing}>
           {#if descEditing}
             <div class="resource-settings-row-label">
               <strong>Description</strong>
@@ -270,7 +270,7 @@
         <strong>General</strong>
       </div>
       <div class="resource-settings-list">
-        <div class="resource-settings-row resource-settings-name-row">
+        <div class="resource-settings-row resource-settings-name-row" class:editing={nameEditing}>
           {#if nameEditing}
             <div class="resource-settings-row-label">
               <strong>Name</strong>
@@ -285,7 +285,7 @@
             </div>
           {/if}
         </div>
-        <div class="resource-settings-row resource-settings-desc-row">
+        <div class="resource-settings-row resource-settings-desc-row" class:editing={descEditing}>
           {#if descEditing}
             <div class="resource-settings-row-label">
               <strong>Description</strong>

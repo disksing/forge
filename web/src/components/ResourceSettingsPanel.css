@@ -60,6 +60,23 @@
   font-size: 12px;
 }
 
+/* Editing rows keep the input usable on narrow panels: the label keeps a
+   minimum basis and the Save button wraps below, right-aligned, instead of
+   squeezing the input to a few pixels. */
+.resource-settings-row.editing {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.resource-settings-row.editing .resource-settings-row-label {
+  flex: 1 1 240px;
+}
+
+.resource-settings-row.editing .secondary-button {
+  margin-left: auto;
+}
+
 .resource-settings-row-value {
   align-items: center;
   display: inline-flex;

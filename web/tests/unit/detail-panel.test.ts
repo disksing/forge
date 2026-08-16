@@ -542,6 +542,7 @@ describe("DetailPanel", () => {
 
     const input = row.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
     expect(input.value).toBe("Project Alpha");
+    expect(row.classList.contains("editing")).toBe(true);
     input.value = "Project Beta";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await tick();
