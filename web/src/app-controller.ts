@@ -1511,8 +1511,37 @@ async function archiveResource(resourceId: string): Promise<void> {
 	toast(warnings.length > 0
 		? [`Archived.`, ...warnings.map((warning) => `Warning: ${warning.message}`)].join("\n")
 		: "Archived.");
-	controllerState.selectedId = redirectTarget;
-	await loadTree();
+	removeArchivedResourceFromTree(resourceId);
+	await selectResource(redirectTarget);
+}
+// removeArchivedResourceFromTree drops a just-archived resource (and, for
+// projects, its tasks) from the local tree so the sidebar only updates the
+// affected nodes instead of reloading the whole tree.
+function removeArchivedResourceFromTree(resourceId: string): void {
+	const tree = controllerState.tree;
+	const removedIds = new Set<string>([resourceId]);
+	if (tree) {
+		const projects = tree.projects || [];
+		const projectIndex = projects.findIndex((project) => project.id === resourceId);
+		if (projectIndex >= 0) {
+			const [removed] = projects.splice(projectIndex, 1);
+			for (const task of removed.children || []) removedIds.add(task.id);
+		} else {
+			for (const project of projects) {
+				const taskIndex = (project.children || []).findIndex((task) => task.id === resourceId);
+				if (taskIndex < 0) continue;
+				project.children!.splice(taskIndex, 1);
+				break;
+			}
+		}
+		if (tree.attentionList) tree.attentionList = tree.attentionList.filter((item) => !removedIds.has(item.id));
+	}
+	controllerState.projectOrder = controllerState.projectOrder.filter((id) => !removedIds.has(id));
+	for (const [projectId, order] of Object.entries(controllerState.taskOrder || {})) {
+		if (removedIds.has(projectId)) delete controllerState.taskOrder[projectId];
+		else if (order.some((id) => removedIds.has(id))) controllerState.taskOrder[projectId] = order.filter((id) => !removedIds.has(id));
+	}
+	for (const id of removedIds) clearUnreadForResource(id);
 }
 function findResource(id: string): ResourceRecord | null {
 	if (!controllerState.tree) return null;
