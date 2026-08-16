@@ -7,15 +7,21 @@
   import Icon from "./Icon.svelte";
   import type { DetailPanelModel } from "./models";
 
-  let { model }: { model: DetailPanelModel } = $props();
+  let { model, onOpenTemplate }: { model: DetailPanelModel; onOpenTemplate?: (path: string) => void } = $props();
 
   const client = new ApiClient();
 
   let pending = $state("");
   let interval = $state(30);
+  let nameEditing = $state(false);
+  let nameDraft = $state("");
+  let nameInput = $state<HTMLInputElement | null>(null);
   $effect(() => {
     const wake = model.detail?.scheduler?.wakeIntervalMinutes;
     if (typeof wake === "number") interval = wake;
+  });
+  $effect(() => {
+    if (nameEditing && nameInput) nameInput.focus();
   });
 
   const schedulerConfig = $derived(model.detail?.scheduler);
@@ -44,6 +50,40 @@
 
   function saveTaskDefault(binding: ResourceAgentBindingModel): void {
     void run("taskDefault", () => model.onSaveTaskDefault(model.resourceId, binding.name ? binding : null));
+  }
+
+  function startNameEdit(): void {
+    if (pending) return;
+    nameDraft = model.resourceTitle;
+    nameEditing = true;
+  }
+
+  function cancelNameEdit(): void {
+    nameEditing = false;
+    nameDraft = "";
+  }
+
+  function saveName(): void {
+    const title = nameDraft.trim();
+    if (!title || title === model.resourceTitle) {
+      cancelNameEdit();
+      return;
+    }
+    void run("title", async () => {
+      await model.onRenameResource(title);
+      nameEditing = false;
+      nameDraft = "";
+    });
+  }
+
+  function nameKeydown(event: KeyboardEvent): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveName();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancelNameEdit();
+    }
   }
 
   function saveSchedulerInterval(): void {
@@ -90,6 +130,22 @@
     {/if}
   {:else if model.resourceType === "project"}
     <section class="resource-settings-card">
+      <div>
+        {#if nameEditing}
+          <strong>Project name</strong>
+          <input class="resource-settings-name-input" type="text" bind:this={nameInput} bind:value={nameDraft} aria-label="Project name" disabled={Boolean(pending)} onkeydown={nameKeydown} />
+        {:else}
+          <strong>{model.resourceTitle}</strong>
+          <span>Project display name, shown in the sidebar and header.</span>
+        {/if}
+      </div>
+      {#if nameEditing}
+        <button type="button" class="secondary-button" disabled={Boolean(pending) || !nameDraft.trim()} onclick={saveName}><Icon name="save" /><span>Save</span></button>
+      {:else}
+        <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startNameEdit}><Icon name="pencil" /><span>Edit</span></button>
+      {/if}
+    </section>
+    <section class="resource-settings-card">
       <div><strong>Project Agent</strong><span>Runs the Project Agent itself. Matches the selector in the chat composer.</span></div>
       <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Project Agent binding" onSelect={saveOwnBinding} />
     </section>
@@ -97,7 +153,35 @@
       <div><strong>New Task default</strong><span>Applied once when a Task is created in this Project. Inherit uses the Workspace default.</span></div>
       <AgentBindingSelector value={taskDefault} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} allowInherit={true} inheritLabel="Inherit (Workspace default)" ariaLabel="New Task default binding" onSelect={saveTaskDefault} />
     </section>
+    <section class="resource-settings-card resource-settings-templates">
+      <div><strong>Task Templates</strong><span>Templates from templates/*.md, offered when creating a Task in this Project.</span></div>
+    </section>
+    <div class="template-list resource-settings-template-list">
+      {#if model.detail?.templates?.length}
+        {#each model.detail.templates as template (template.name)}
+          <button type="button" class:invalid={!template.valid} class="template-row" onclick={() => template.path && onOpenTemplate?.(template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}</small></span><Icon name="chevron-right" /></button>
+        {/each}
+      {:else}
+        <div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>
+      {/if}
+    </div>
   {:else if model.resourceType === "task"}
+    <section class="resource-settings-card">
+      <div>
+        {#if nameEditing}
+          <strong>Task name</strong>
+          <input class="resource-settings-name-input" type="text" bind:this={nameInput} bind:value={nameDraft} aria-label="Task name" disabled={Boolean(pending)} onkeydown={nameKeydown} />
+        {:else}
+          <strong>{model.resourceTitle}</strong>
+          <span>Task display name, shown in the sidebar and header.</span>
+        {/if}
+      </div>
+      {#if nameEditing}
+        <button type="button" class="secondary-button" disabled={Boolean(pending) || !nameDraft.trim()} onclick={saveName}><Icon name="save" /><span>Save</span></button>
+      {:else}
+        <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startNameEdit}><Icon name="pencil" /><span>Edit</span></button>
+      {/if}
+    </section>
     <section class="resource-settings-card">
       <div><strong>Task Agent</strong><span>Runs the Task Agent itself. Matches the selector in the chat composer.</span></div>
       <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Task Agent binding" onSelect={saveOwnBinding} />

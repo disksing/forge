@@ -48,3 +48,18 @@
   padding: 8px 9px;
   width: 92px;
 }
+
+.resource-settings-name-input {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-subtle, #ccd4df);
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+  margin-top: 4px;
+  padding: 8px 9px;
+  width: 100%;
+}
+
+.resource-settings-template-list {
+  padding: 0 2px;
+}

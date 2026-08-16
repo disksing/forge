@@ -422,6 +422,14 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			s.updateResourceAgentBinding(w, r, id, parts[2])
 			return
 		}
+		if len(parts) == 4 && parts[3] == "title" {
+			if r.Method != http.MethodPut {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			s.updateResourceTitle(w, r, id, parts[2])
+			return
+		}
 		if len(parts) == 4 && parts[3] == "task-default" {
 			if r.Method != http.MethodPut {
 				w.WriteHeader(http.StatusMethodNotAllowed)
@@ -572,6 +580,34 @@ func (s *server) updateWorkspaceDefaults(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, map[string]any{"resourceDefaults": updated})
+}
+
+func (s *server) updateResourceTitle(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+	var body struct {
+		Title string `json:"title"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	workspace, err := s.workspace(workspaceID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	updated, err := puaWorkspace.SetResourceTitle(resourceID, body.Title)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"title": updated})
 }
 
 func (s *server) updateProjectTaskDefault(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
