@@ -989,12 +989,14 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		return
 	}
 	var archiveResult app.ArchiveResult
+	var archivedResourceIDs []string
 	archive := func() error {
 		resourceIDs, resourceIDsErr := archiveResourceIDs(puaWorkspace, resourceID)
 		result, archiveErr := puaWorkspace.ArchiveResource(resourceID)
 		if archiveErr != nil {
 			return archiveErr
 		}
+		archivedResourceIDs = resourceIDs
 		if resourceIDsErr != nil {
 			warning := app.ArchiveWarning{
 				Severity:   "warning",
@@ -1033,6 +1035,14 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		}
 		writeError(w, archiveErr, status)
 		return
+	}
+	if err := s.pruneUIStateForArchivedResources(workspace.Path, archivedResourceIDs); err != nil {
+		archiveResult.Warnings = append(archiveResult.Warnings, app.ArchiveWarning{
+			Severity:   "warning",
+			Code:       "ui_state_prune_failed",
+			Message:    fmt.Sprintf("resource %s was archived, but its persisted UI state could not be pruned: %v", resourceID, err),
+			ResourceID: resourceID,
+		})
 	}
 	// Keep the existing path field while exposing non-blocking conditions to
 	// HTTP/Web callers. Warnings are omitted for the common clean case.

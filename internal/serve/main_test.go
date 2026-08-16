@@ -439,6 +439,114 @@ func TestArchiveResourceReturnsNonBlockingWarningsAfterMove(t *testing.T) {
 	}
 }
 
+func TestArchiveResourcePrunesPersistedUIState(t *testing.T) {
+	workspace := t.TempDir()
+	puaWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := puaWorkspace.CreateProject("Prune project", "prune")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Prune A", Slug: "prune-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Prune B", Slug: "prune-b"}); err != nil {
+		t.Fatal(err)
+	}
+	keep, err := puaWorkspace.CreateProject("Keep project", "keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: keep.ID, Title: "Keep A", Slug: "keep-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: keep.ID, Title: "Keep B", Slug: "keep-b"}); err != nil {
+		t.Fatal(err)
+	}
+	seed := uiState{
+		Version:          1,
+		ExpandedProjects: []string{"project1", "project2"},
+		LastResourceID:   "project1.task1",
+		ProjectOrder:     []string{"project1", "project2"},
+		TaskOrder: map[string][]string{
+			"project1": {"project1.task2", "project1.task1"},
+			"project2": {"project2.task1", "project2.task2"},
+		},
+		Attention: map[string]resourceAttentionState{
+			"project1":       {Followed: true},
+			"project1.task2": {Followed: true},
+			"project2":       {Followed: true},
+			"project2.task1": {Followed: true},
+			"project2.task2": {Followed: true},
+		},
+	}
+	if err := saveUIStateFile(uiStatePath(workspace), seed); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	archive := func(resourceID string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/archive", strings.NewReader(`{"resourceId":"`+resourceID+`"}`))
+		rec := httptest.NewRecorder()
+		s.archiveResource(rec, req, "workspace-one")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("archive %s: expected OK, got %d: %s", resourceID, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Archiving a project prunes the project and every descendant task.
+	archive("project1")
+	state, err := loadUIStateFile(uiStatePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(state.ExpandedProjects, ","); got != "project2" {
+		t.Fatalf("expandedProjects not pruned: %v", state.ExpandedProjects)
+	}
+	if state.LastResourceID != "" {
+		t.Fatalf("lastResourceId not cleared: %q", state.LastResourceID)
+	}
+	if got := strings.Join(state.ProjectOrder, ","); got != "project2" {
+		t.Fatalf("projectOrder not pruned: %v", state.ProjectOrder)
+	}
+	if _, ok := state.TaskOrder["project1"]; ok {
+		t.Fatalf("taskOrder for archived project retained: %v", state.TaskOrder)
+	}
+	for id := range state.Attention {
+		if id == "project1" || strings.HasPrefix(id, "project1.") {
+			t.Fatalf("attention for archived resource retained: %v", state.Attention)
+		}
+	}
+	if !state.Attention["project2"].Followed {
+		t.Fatalf("attention for unrelated project lost: %v", state.Attention)
+	}
+
+	// Archiving a single task prunes only that task and keeps its siblings.
+	archive("project2.task1")
+	state, err = loadUIStateFile(uiStatePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := state.Attention["project2.task1"]; ok {
+		t.Fatalf("attention for archived task retained: %v", state.Attention)
+	}
+	if !state.Attention["project2"].Followed || !state.Attention["project2.task2"].Followed {
+		t.Fatalf("attention for surviving resources lost: %v", state.Attention)
+	}
+	if got := strings.Join(state.TaskOrder["project2"], ","); got != "project2.task2" {
+		t.Fatalf("taskOrder for surviving project not pruned: %v", state.TaskOrder)
+	}
+	if got := strings.Join(state.ExpandedProjects, ","); got != "project2" {
+		t.Fatalf("expandedProjects changed by task archive: %v", state.ExpandedProjects)
+	}
+}
+
 func TestWorkspaceAgentsSaveRejectsChangedContentHash(t *testing.T) {
 	workspace, err := app.Initialize(t.TempDir(), "en")
 	if err != nil {

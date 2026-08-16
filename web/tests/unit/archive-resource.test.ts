@@ -17,9 +17,15 @@ function taskTreeItem(id: string, title: string) {
   return { id, type: "task", title, path: `project1/${id.replace("project1.", "")}`, archived: false, agentBinding: { kind: "profile", name: "default" } };
 }
 
-function taskDetail(id: string, title: string) {
+function resourceDetail(id: string, title: string) {
+  const isProject = !id.includes(".");
   return {
-    ...taskTreeItem(id, title),
+    id,
+    type: isProject ? "project" : "task",
+    title,
+    path: isProject ? id : `project1/${id.replace("project1.", "")}`,
+    archived: false,
+    agentBinding: { kind: "profile", name: "default" },
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     artifacts: [],
@@ -77,6 +83,7 @@ describe("Archive resource flow", () => {
     };
     let treeFetchCount = 0;
     let archivedResourceId = "";
+    const uiStateBodies: Array<{ expandedProjects?: string[] }> = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), window.location.origin);
       const method = init?.method || "GET";
@@ -86,8 +93,11 @@ describe("Archive resource flow", () => {
       if (url.pathname === "/api/settings/agenthub" && method === "GET") {
         return json({ connected: false, compatible: false, catalog: { providers: [], agents: [] }, config: { agentProfiles: [] } });
       }
-      if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "GET") return json({ expandedProjects: ["project1"] });
-      if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "PUT") return json({});
+      if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "GET") return json({ expandedProjects: ["project1", "project2"] });
+      if (url.pathname === "/api/workspaces/ws-test/ui-state" && method === "PUT") {
+        uiStateBodies.push(JSON.parse(String(init?.body || "{}")) as { expandedProjects?: string[] });
+        return json({});
+      }
       if (url.pathname === "/api/workspaces/ws-test/tree" && method === "GET") {
         treeFetchCount++;
         return json(tree);
@@ -99,7 +109,7 @@ describe("Archive resource flow", () => {
       const detailMatch = url.pathname.match(/^\/api\/workspaces\/ws-test\/resources\/([^/]+)$/);
       if (detailMatch && method === "GET") {
         const id = decodeURIComponent(detailMatch[1]);
-        return json(taskDetail(id, id));
+        return json(resourceDetail(id, id));
       }
       const statusMatch = url.pathname.match(/^\/api\/workspaces\/ws-test\/resources\/([^/]+)\/status$/);
       if (statusMatch && method === "GET") {
@@ -163,5 +173,22 @@ describe("Archive resource flow", () => {
       expect(detailModels.at(-1)?.detail?.id).toBe("project1.task2");
     });
     expect(treeFetchCount).toBe(treeFetchesBeforeArchive);
+
+    // Archiving a whole project also removes it from the expanded set that is
+    // persisted to ui-state, so the archived project cannot linger on disk.
+    await appShellModels.at(-1)!.onSelectResource("project2");
+    await vi.waitFor(() => {
+      expect(detailModels.at(-1)?.resourceId).toBe("project2");
+      expect(detailModels.at(-1)?.detail?.id).toBe("project2");
+    });
+    await detailModels.at(-1)!.onArchive("project2");
+    await vi.waitFor(() => {
+      const latest = appShellModels.at(-1);
+      expect(latest?.projects.map((project) => project.id)).toEqual(["project1"]);
+      expect(latest?.projects[0]?.active).toBe(true);
+    });
+    expect(treeFetchCount).toBe(treeFetchesBeforeArchive);
+    expect(appShellModels.filter((model) => model.loading).length).toBe(loadingModelsBeforeArchive);
+    expect(uiStateBodies.at(-1)?.expandedProjects).toEqual(["project1"]);
   });
 });
