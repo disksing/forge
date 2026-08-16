@@ -261,44 +261,26 @@ func TestTemplateDigestConflictAndValidationAreAtomic(t *testing.T) {
 	}
 }
 
-func TestLegacyTemplateBodyIsStaticAndAmbiguousTitleMigratesAsString(t *testing.T) {
+func TestTemplateWithoutSchemaVersionIsRejected(t *testing.T) {
 	workspace, root, project := templateWorkspace(t)
-	legacy := "---\ntitle: true\n---\n# Keep {{ literal }} unchanged\n"
-	// An unquoted YAML boolean is invalid for a string title.
-	path := writeTemplate(t, root, project, "legacy", legacy)
+	legacy := "---\ntitle: Legacy\n---\n# Keep {{ literal }} unchanged\n"
+	writeTemplate(t, root, project, "legacy", legacy)
 	templates, err := workspace.Templates(project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if templates[0].Valid {
-		t.Fatal("non-string legacy title should be rejected")
+		t.Fatal("template without schema-version should be rejected")
 	}
-	legacy = "---\ntitle: \"true\"\n---\n# Keep {{ literal }} unchanged\n"
-	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
-		t.Fatal(err)
+	var missing bool
+	for _, issue := range templates[0].Errors {
+		missing = missing || issue.Code == "required_property" && issue.Path == "schema-version"
 	}
-	rendered, err := workspace.RenderTemplate(app.TemplateRenderInput{ProjectID: project.ID, Name: "legacy"})
-	if err != nil {
-		t.Fatal(err)
+	if !missing {
+		t.Fatalf("expected a required schema-version error: %#v", templates[0].Errors)
 	}
-	if rendered.Title != "true" || !strings.Contains(rendered.Markdown, "{{ literal }}") {
-		t.Fatalf("legacy template was interpreted as V2: %#v", rendered)
-	}
-	if _, err := workspace.MigrateTemplates(project.ID, []string{"legacy"}, true); err == nil {
-		t.Fatal("migration should refuse a static body that would become an unknown V2 placeholder")
-	}
-	if current, _ := os.ReadFile(path); string(current) != legacy {
-		t.Fatal("failed migration modified the legacy template")
-	}
-	if err := os.WriteFile(path, []byte("---\ntitle: \"true\"\n---\n# Static body\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := workspace.MigrateTemplates(project.ID, []string{"legacy"}, true); err != nil {
-		t.Fatal(err)
-	}
-	migrated, err := workspace.Template(project.ID, "legacy")
-	if err != nil || !migrated.Valid || migrated.Title != "true" {
-		t.Fatalf("ambiguous string title did not survive migration: %#v %v", migrated, err)
+	if _, err := workspace.RenderTemplate(app.TemplateRenderInput{ProjectID: project.ID, Name: "legacy"}); err == nil {
+		t.Fatal("template without schema-version should not render")
 	}
 }
 

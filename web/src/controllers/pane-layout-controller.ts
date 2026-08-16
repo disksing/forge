@@ -87,7 +87,7 @@ export function normalizeFontScales(raw: unknown): FontScales {
 }
 
 export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): PaneSizes {
-	const source = raw && typeof raw === "object" ? raw as Partial<PaneSizes> & { detailsWidth?: unknown; sidebarSessionHeight?: unknown } : {};
+	const source = raw && typeof raw === "object" ? raw as Partial<PaneSizes> & { detailsWidth?: unknown } : {};
 	const sizes = { ...PANE_DEFAULTS };
 	if (finiteSize(source.sidebarWidth)) sizes.sidebarWidth = clamp(source.sidebarWidth, SIDEBAR_MIN_WIDTH, PANE_MAX_SIZE);
 	if (finiteSize(source.chatWidth)) sizes.chatWidth = clamp(source.chatWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
@@ -95,8 +95,7 @@ export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): P
 		const detailsWidth = clamp(source.detailsWidth, DETAILS_MIN_WIDTH, availableWorkspaceWidth - PANE_HANDLE_WIDTH - CHAT_MIN_WIDTH);
 		sizes.chatWidth = clamp(availableWorkspaceWidth - PANE_HANDLE_WIDTH - detailsWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
 	}
-	const attentionHeight = finiteSize(source.sidebarAttentionHeight) ? source.sidebarAttentionHeight : source.sidebarSessionHeight;
-	if (finiteSize(attentionHeight)) sizes.sidebarAttentionHeight = clamp(attentionHeight, 84, PANE_MAX_SIZE);
+	if (finiteSize(source.sidebarAttentionHeight)) sizes.sidebarAttentionHeight = clamp(source.sidebarAttentionHeight, 84, PANE_MAX_SIZE);
 	return sizes;
 }
 
@@ -165,7 +164,7 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		const raw = readStoredPaneSizes();
 		paneSizes = normalizePaneSizes(raw, 0);
 		applyPaneSizes();
-		let migrated = finiteSize(raw.sidebarSessionHeight) && !finiteSize(raw.sidebarAttentionHeight);
+		let migrated = false;
 		if (finiteSize(raw.detailsWidth) && !finiteSize(raw.chatWidth) && !mobileQuery.matches) {
 			paneSizes = normalizePaneSizes(raw, workspacePanelWidth());
 			applyPaneSizes();
@@ -199,7 +198,6 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		const paneName = name as PaneName;
 		const saved = readStoredPaneSizes();
 		delete saved.detailsWidth;
-		delete saved.sidebarSessionHeight;
 		for (const candidate of Object.keys(PANE_CSS_VARIABLES) as PaneName[]) {
 			if (!finiteSize(saved[candidate])) saved[candidate] = paneSizes[candidate];
 		}

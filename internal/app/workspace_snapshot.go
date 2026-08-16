@@ -64,7 +64,6 @@ type TaskTemplate struct {
 	Detail        string          `json:"detail,omitempty"`
 	Content       string          `json:"content,omitempty"`
 	Digest        string          `json:"digest,omitempty"`
-	Legacy        bool            `json:"legacy,omitempty"`
 	Valid         bool            `json:"valid"`
 	Errors        []TemplateIssue `json:"errors"`
 	Warnings      []TemplateIssue `json:"warnings"`

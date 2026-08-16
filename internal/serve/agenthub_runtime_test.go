@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/disksing/pua/internal/app"
-	"github.com/disksing/pua/internal/generation"
 )
 
 type runtimeFakeAgentHub struct {
@@ -995,37 +994,6 @@ func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 	persisted, err := loadGenerationRecord(workspace.Path, record.ID)
 	if err != nil || len(persisted.PendingMessages) != 1 {
 		t.Fatalf("failed write removed durable mailbox: %#v, %v", persisted.PendingMessages, err)
-	}
-}
-
-func TestGenerationIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
-	workspacePath := t.TempDir()
-	legacyDir := filepath.Join(workspacePath, ".pua", "gui-agent")
-	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	legacy := []generationRecord{{ID: "gen-legacy", WorkspaceID: "workspace", Title: "Legacy", Status: "idle"}}
-	data, _ := json.Marshal(legacy)
-	legacyPath := filepath.Join(legacyDir, "runs.json")
-	if err := os.WriteFile(legacyPath, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	records, err := loadGenerationRecords(workspacePath)
-	if err != nil || len(records) != 1 || records[0].ID != "gen-legacy" {
-		t.Fatalf("migrated runs=%#v err=%v", records, err)
-	}
-	if _, err := os.Stat(filepath.Join(workspacePath, ".pua", "runtime", "generation-store.json")); err != nil {
-		t.Fatalf("generation store marker missing: %v", err)
-	}
-	store, err := generation.Open(workspacePath, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current, err := store.ListCurrent(); err != nil || len(current) != 0 {
-		t.Fatalf("missing-generation legacy record entered current lifecycle state: current=%#v err=%v", current, err)
-	}
-	if _, err := os.Stat(legacyPath); err != nil {
-		t.Fatalf("legacy rollback copy was removed: %v", err)
 	}
 }
 

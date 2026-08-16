@@ -32,7 +32,6 @@ const (
 	currentFileName  = "current.json"
 	retiredDirName   = "generations"
 	legacyDirName    = "legacy"
-	legacyIndexName  = "generations.json"
 	stagingDirName   = ".generation-store-staging-v2"
 )
 
@@ -93,28 +92,6 @@ type fileRecord struct {
 	Record              json.RawMessage `json:"record"`
 }
 
-type legacyRun struct {
-	ID                        string            `json:"id"`
-	ResourceID                string            `json:"resourceId"`
-	Generation                int               `json:"generation"`
-	GenerationID              string            `json:"generationId"`
-	SourceInstanceID          string            `json:"sourceInstanceId"`
-	Status                    string            `json:"status"`
-	AgentHubSessionID         string            `json:"agentHubSessionId"`
-	AgentHubStoppedObserved   bool              `json:"agentHubStoppedObserved"`
-	CreatedAt                 string            `json:"createdAt"`
-	UpdatedAt                 string            `json:"updatedAt"`
-	ReplacementPending        bool              `json:"replacementPending"`
-	IdleSleepStopRequested    bool              `json:"idleSleepStopRequested"`
-	ArchivedTaskStopRequested bool              `json:"archivedTaskStopRequested"`
-	PendingMessages           []json.RawMessage `json:"pendingMessages"`
-}
-
-type legacyIndex struct {
-	Version     int               `json:"version"`
-	Generations []json.RawMessage `json:"generations"`
-}
-
 // Open creates a Workspace-scoped store. If instanceID is empty, a stable
 // path-derived fallback is used only for uninitialised test/legacy directories;
 // an initialized Workspace always supplies its persisted instance id.
@@ -166,9 +143,8 @@ func NormalizeResourceID(resourceID string) string {
 	return resourceID
 }
 
-// EnsureReady completes the versioned migration if it has not completed. It
-// is safe to call from startup and from test-only direct store access. Once a
-// ready marker exists, no legacy path is opened again.
+// EnsureReady initializes the store layout if it has not completed. It is
+// safe to call from startup and from test-only direct store access.
 func (s *Store) EnsureReady() error {
 	if s == nil {
 		return errors.New("generation store is nil")
@@ -186,7 +162,7 @@ func (s *Store) EnsureReady() error {
 		_ = os.RemoveAll(filepath.Join(s.runtimeRoot(), stagingDirName))
 		return nil
 	}
-	return s.migrateLocked(current)
+	return s.initializeLocked(current)
 }
 
 // List returns current, retired, and explicitly isolated legacy records. It
@@ -619,36 +595,18 @@ func (s *Store) runtimeRoot() string {
 	return filepath.Join(s.controlRoot, "runtime")
 }
 
-func (s *Store) migrateLocked(existing *marker) error {
+// initializeLocked prepares the runtime store layout for a Workspace without
+// a ready marker. The historical legacy index migration was removed after all
+// supported Workspaces completed it; legacy/ record directories are live data
+// and are left untouched.
+func (s *Store) initializeLocked(existing *marker) error {
 	if existing != nil && existing.Version != 0 && existing.Version != SchemaVersion {
 		return fmt.Errorf("unsupported generation store marker version %d; expected %d", existing.Version, SchemaVersion)
 	}
 	if err := os.MkdirAll(s.runtimeRoot(), 0o700); err != nil {
 		return err
 	}
-	if existing == nil || existing.State != "migrating" {
-		if err := atomicWriteJSON(filepath.Join(s.runtimeRoot(), markerFileName), marker{
-			Version: SchemaVersion, State: "migrating", WorkspaceInstanceID: s.instanceID,
-			StartedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		}); err != nil {
-			return err
-		}
-	}
-	legacyRecords, err := readLegacyRecords(s.controlRoot)
-	if err != nil {
-		return err
-	}
-	stagingRoot := filepath.Join(s.runtimeRoot(), stagingDirName)
-	if err := os.RemoveAll(stagingRoot); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(stagingRoot, resourcesDirName), 0o700); err != nil {
-		return err
-	}
-	if err := s.migrateRecordsLocked(legacyRecords, stagingRoot); err != nil {
-		return err
-	}
-	if err := s.promoteStaging(stagingRoot); err != nil {
+	if err := os.RemoveAll(filepath.Join(s.runtimeRoot(), stagingDirName)); err != nil {
 		return err
 	}
 	if err := atomicWriteJSON(filepath.Join(s.runtimeRoot(), markerFileName), marker{
@@ -657,287 +615,7 @@ func (s *Store) migrateLocked(existing *marker) error {
 	}); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(stagingRoot); err != nil {
-		return err
-	}
 	return syncDir(s.runtimeRoot())
-}
-
-func (s *Store) migrateRecordsLocked(records []json.RawMessage, stagingRoot string) error {
-	type candidate struct {
-		raw  json.RawMessage
-		meta legacyRun
-	}
-	byResource := make(map[string][]candidate)
-	seen := make(map[string]bool)
-	for _, raw := range records {
-		meta, err := decodeLegacyRun(raw)
-		if err != nil {
-			return err
-		}
-		resourceID := NormalizeResourceID(meta.ResourceID)
-		identity := resourceID + "\x00" + meta.GenerationID
-		if strings.TrimSpace(meta.GenerationID) == "" {
-			identity = resourceID + "\x00id:" + meta.ID
-		}
-		if strings.TrimSpace(meta.ID) == "" {
-			identity = resourceID + "\x00raw:" + shortHash(raw)
-		}
-		if seen[identity] {
-			continue
-		}
-		seen[identity] = true
-		byResource[resourceID] = append(byResource[resourceID], candidate{raw: append(json.RawMessage(nil), raw...), meta: meta})
-	}
-	for resourceID, candidates := range byResource {
-		currentIndex := -1
-		for index, item := range candidates {
-			if strings.TrimSpace(item.meta.GenerationID) == "" || !legacyCurrentCandidate(item.meta) {
-				continue
-			}
-			if currentIndex < 0 || legacyRunNewer(item.meta, candidates[currentIndex].meta) {
-				currentIndex = index
-			}
-		}
-		for index, item := range candidates {
-			record := s.recordFromLegacy(resourceID, item.meta, item.raw)
-			if strings.TrimSpace(item.meta.GenerationID) == "" {
-				record.Legacy = true
-				if err := s.writeLegacyMigrated(stagingRoot, record); err != nil {
-					return err
-				}
-				continue
-			}
-			if index == currentIndex {
-				if err := s.writeMigratedCurrent(stagingRoot, record); err != nil {
-					return err
-				}
-				continue
-			}
-			reason := "migrated_retired_generation"
-			if legacyCurrentCandidate(item.meta) {
-				reason = "migrated_duplicate_current"
-			}
-			if err := s.writeMigratedRetired(stagingRoot, record, reason); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (s *Store) recordFromLegacy(resourceID string, meta legacyRun, raw json.RawMessage) Record {
-	id := strings.TrimSpace(meta.ID)
-	if id == "" {
-		id = "legacy-" + shortHash(raw)
-	}
-	return Record{
-		WorkspaceInstanceID: s.instanceID, ResourceID: resourceID, ID: id,
-		Generation: meta.Generation, GenerationID: strings.TrimSpace(meta.GenerationID),
-		CreatedAt: meta.CreatedAt, UpdatedAt: meta.UpdatedAt,
-		Payload: append(json.RawMessage(nil), raw...),
-	}
-}
-
-func (s *Store) writeMigratedCurrent(stagingRoot string, record Record) error {
-	key, err := ResourceKey(s.instanceID, record.ResourceID)
-	if err != nil {
-		return err
-	}
-	return atomicWriteJSON(filepath.Join(resourceDirAt(stagingRoot, key), currentFileName), fileRecord{
-		Version: SchemaVersion, Kind: "current", WorkspaceInstanceID: s.instanceID,
-		ResourceID: record.ResourceID, ID: record.ID, Generation: record.Generation,
-		GenerationID: record.GenerationID, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
-		Record: append(json.RawMessage(nil), record.Payload...),
-	})
-}
-
-func (s *Store) writeMigratedRetired(stagingRoot string, record Record, reason string) error {
-	key, err := ResourceKey(s.instanceID, record.ResourceID)
-	if err != nil {
-		return err
-	}
-	return atomicWriteJSON(filepath.Join(resourceDirAt(stagingRoot, key), retiredDirName, base64.RawURLEncoding.EncodeToString([]byte(record.GenerationID))+".json"), fileRecord{
-		Version: SchemaVersion, Kind: "retired", WorkspaceInstanceID: s.instanceID,
-		ResourceID: record.ResourceID, ID: record.ID, Generation: record.Generation,
-		GenerationID: record.GenerationID, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
-		// Migration output must be deterministic so a retry after a partial
-		// promotion can compare the same immutable manifest byte-for-byte.
-		RetiredAt: record.UpdatedAt, RetireReason: strings.TrimSpace(reason),
-		Record: append(json.RawMessage(nil), record.Payload...),
-	})
-}
-
-func (s *Store) writeLegacyMigrated(stagingRoot string, record Record) error {
-	key, err := ResourceKey(s.instanceID, record.ResourceID)
-	if err != nil {
-		return err
-	}
-	name := base64.RawURLEncoding.EncodeToString([]byte(record.ID))
-	return atomicWriteJSON(filepath.Join(resourceDirAt(stagingRoot, key), legacyDirName, name+".json"), fileRecord{
-		Version: SchemaVersion, Kind: "legacy", WorkspaceInstanceID: s.instanceID,
-		ResourceID: record.ResourceID, ID: record.ID, Generation: record.Generation,
-		GenerationID: record.GenerationID, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
-		Record: append(json.RawMessage(nil), record.Payload...),
-	})
-}
-
-func (s *Store) promoteStaging(stagingRoot string) error {
-	stagingResources := filepath.Join(stagingRoot, resourcesDirName)
-	entries, err := os.ReadDir(stagingResources)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	finalResources := filepath.Join(s.runtimeRoot(), resourcesDirName)
-	if err := os.MkdirAll(finalResources, 0o700); err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		stagedDir := filepath.Join(stagingResources, entry.Name())
-		finalDir := filepath.Join(finalResources, entry.Name())
-		if err := promoteStagedResource(stagedDir, finalDir); err != nil {
-			return err
-		}
-	}
-	return syncDir(finalResources)
-}
-
-func promoteStagedResource(stagedDir, finalDir string) error {
-	if err := os.MkdirAll(finalDir, 0o700); err != nil {
-		return err
-	}
-	return filepath.WalkDir(stagedDir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if path == stagedDir {
-			return nil
-		}
-		relative, err := filepath.Rel(stagedDir, path)
-		if err != nil {
-			return err
-		}
-		destination := filepath.Join(finalDir, relative)
-		if entry.IsDir() {
-			return os.MkdirAll(destination, 0o700)
-		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("unsupported staged generation entry %s", path)
-		}
-		if existing, readErr := os.ReadFile(destination); readErr == nil {
-			incoming, incomingErr := os.ReadFile(path)
-			if incomingErr != nil {
-				return incomingErr
-			}
-			if filepath.Base(destination) != currentFileName && string(existing) != string(incoming) {
-				return fmt.Errorf("%w: staged manifest conflicts with %s", ErrImmutable, destination)
-			}
-			if filepath.Base(destination) != currentFileName {
-				return nil
-			}
-		} else if !os.IsNotExist(readErr) {
-			return readErr
-		}
-		if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-			return err
-		}
-		if err := os.Rename(path, destination); err != nil {
-			return err
-		}
-		return syncDir(filepath.Dir(destination))
-	})
-}
-
-func readLegacyRecords(controlRoot string) ([]json.RawMessage, error) {
-	paths := []string{
-		filepath.Join(controlRoot, "runtime", legacyIndexName),
-		filepath.Join(controlRoot, "gui-agent", "runs.json"),
-	}
-	result := make([]json.RawMessage, 0)
-	seenPath := false
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		seenPath = true
-		items, err := decodeLegacyIndex(data)
-		if err != nil {
-			return nil, fmt.Errorf("read legacy generation index %s: %w", path, err)
-		}
-		result = append(result, items...)
-	}
-	if !seenPath {
-		return []json.RawMessage{}, nil
-	}
-	return result, nil
-}
-
-func decodeLegacyIndex(data []byte) ([]json.RawMessage, error) {
-	var array []json.RawMessage
-	if err := json.Unmarshal(data, &array); err == nil {
-		if array == nil {
-			array = []json.RawMessage{}
-		}
-		return array, nil
-	}
-	var index legacyIndex
-	if err := json.Unmarshal(data, &index); err != nil {
-		return nil, err
-	}
-	if index.Version != 1 {
-		return nil, fmt.Errorf("unsupported legacy generation index version %d; expected 1", index.Version)
-	}
-	if index.Generations == nil {
-		index.Generations = []json.RawMessage{}
-	}
-	return index.Generations, nil
-}
-
-func decodeLegacyRun(raw json.RawMessage) (legacyRun, error) {
-	var run legacyRun
-	if err := json.Unmarshal(raw, &run); err != nil {
-		return legacyRun{}, err
-	}
-	return run, nil
-}
-
-func legacyCurrentCandidate(run legacyRun) bool {
-	if strings.TrimSpace(run.Status) == "archived" {
-		return false
-	}
-	if len(run.PendingMessages) > 0 || run.ReplacementPending || run.IdleSleepStopRequested || run.ArchivedTaskStopRequested {
-		return true
-	}
-	switch strings.TrimSpace(run.Status) {
-	case "starting", "running", "waiting_approval", "idle", "stopping", "recovering":
-		return true
-	case "stopped":
-		return !run.AgentHubStoppedObserved || strings.TrimSpace(run.AgentHubSessionID) != ""
-	default:
-		return strings.TrimSpace(run.AgentHubSessionID) != ""
-	}
-}
-
-func legacyRunNewer(left, right legacyRun) bool {
-	if left.Generation != right.Generation {
-		return left.Generation > right.Generation
-	}
-	leftTime := parseTime(left.UpdatedAt)
-	rightTime := parseTime(right.UpdatedAt)
-	if !leftTime.Equal(rightTime) {
-		return leftTime.After(rightTime)
-	}
-	return left.ID > right.ID
 }
 
 func readFileRecord(path string) (Record, bool, error) {
@@ -1097,7 +775,3 @@ func shortHash(data []byte) string {
 	return hex.EncodeToString(digest[:8])
 }
 
-func parseTime(value string) time.Time {
-	parsed, _ := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
-	return parsed
-}

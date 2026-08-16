@@ -899,9 +899,6 @@ func agentRoot(workspacePath string) string {
 	return filepath.Join(workspacepath.ControlDir(workspacePath), "runtime")
 }
 
-func agentIndexPath(workspacePath string) string {
-	return filepath.Join(agentRoot(workspacePath), "generations.json")
-}
 
 func agentCwd(workspacePath, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)

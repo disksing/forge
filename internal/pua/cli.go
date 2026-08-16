@@ -335,7 +335,7 @@ Commands:
 
   pua template <command>
     Manage project-local content templates. Subcommands: list, show, validate,
-    render, create, migrate.
+    render, create.
 
   pua agent <command>
     Query the AgentHub agent catalog through the owning pua serve process.
@@ -580,17 +580,15 @@ func printTemplateHelp() {
   pua template validate [--project=<project>] [<name>|--all] [--json]
   pua template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>
   pua template create [--project=<project>] [--title=<title>] <name>
-  pua template migrate [--project=<project>] [<name>|--all] [--write] [--json]
 
 Commands:
-  pua template list|show|validate|render|create|migrate ...
+  pua template list|show|validate|render|create ...
     Manage project-local schema V2 content templates. Templates declare typed
     fields and deterministic title/Markdown rendering. list and validate
     include invalid templates. show defaults to metadata, field requirements,
     diagnostics, and the complete Markdown body; use --raw for the original
     file, --json for structured template data, or --schema for schema metadata
     and diagnostics. render and task create --dry-run have no side effects.
-    migrate previews legacy V1 conversion unless --write is provided.
 `)
 }
 

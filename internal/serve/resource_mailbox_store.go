@@ -110,7 +110,6 @@ func (receipt *resourceMailboxReceipt) UnmarshalJSON(data []byte) error {
 		decoded.ResultSubscriptionStatus = resourceResultSubscriptionDisabled
 	}
 	message := mailboxMessageFromReceipt(resourceMailboxReceipt(decoded))
-	normalizeLegacyMailboxMessage(&message)
 	decoded.Type = message.Type
 	decoded.Causation = cloneMailboxCausation(message.Causation)
 	decoded.Notification = cloneNotificationReceipt(message.Notification)
@@ -603,7 +602,6 @@ func loadResourceMailboxStoreInternal(workspacePath, resourceID string) (resourc
 			store.Outbox.Operations = []resourceMailboxNotificationOp{}
 		}
 		for i := range store.Outbox.Operations {
-			normalizeLegacyMailboxOperation(&store.Outbox.Operations[i])
 			store.Outbox.Operations[i] = cloneMailboxOperation(store.Outbox.Operations[i])
 		}
 	}

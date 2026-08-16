@@ -91,16 +91,6 @@ type TemplateRenderResult struct {
 	Warnings      []TemplateIssue `json:"warnings,omitempty"`
 }
 
-// TemplateMigration describes a V1-to-V2 migration preview or write result.
-type TemplateMigration struct {
-	Name     string          `json:"name"`
-	Path     string          `json:"path"`
-	Changed  bool            `json:"changed"`
-	Written  bool            `json:"written"`
-	Content  string          `json:"content,omitempty"`
-	Warnings []TemplateIssue `json:"warnings,omitempty"`
-}
-
 func normalizeTemplateSource(content string) string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	content = strings.ReplaceAll(content, "\r", "\n")
@@ -119,12 +109,6 @@ func templateProblem(code, message, path string, node *yaml.Node) TemplateIssue 
 		// account for the opening --- line in the physical Markdown file.
 		issue.Line, issue.Column = node.Line+1, node.Column
 	}
-	return issue
-}
-
-func templateWarning(code, message, path string, node *yaml.Node) TemplateIssue {
-	issue := templateProblem(code, message, path, node)
-	issue.Severity = "warning"
 	return issue
 }
 
@@ -251,11 +235,11 @@ func parseTaskTemplate(name, path, content string) TaskTemplate {
 	validateUniqueKeys(root, "", &template.Errors)
 	_, versionNode := mappingValue(root, "schema-version")
 	if versionNode == nil {
-		parseLegacyTemplate(&template, root)
+		template.Errors = append(template.Errors, templateProblem("required_property", "property is required", "schema-version", nil))
 	} else {
 		parseV2Template(&template, root, versionNode)
 	}
-	if len(template.Errors) == 0 && !template.Legacy {
+	if len(template.Errors) == 0 {
 		validateTemplatePlaceholders(&template)
 	}
 	template.Valid = len(template.Errors) == 0
@@ -482,9 +466,6 @@ func renderTemplate(template TaskTemplate, input TemplateRenderInput) (TemplateR
 		return TemplateRenderResult{}, &TemplateValidationError{Template: template.Name, Issues: issues}
 	}
 	replace := func(source string) string {
-		if template.Legacy {
-			return source
-		}
 		return templateTokenPattern.ReplaceAllStringFunc(source, func(token string) string {
 			name := templateTokenPattern.FindStringSubmatch(token)[1]
 			return resolved[name]
@@ -656,97 +637,4 @@ func (w *Workspace) createTemplate(projectID, name, title string) (TaskTemplate,
 	return parseTaskTemplate(name, relPath(w.root, path), content), nil
 }
 
-func migratedTemplateContent(template TaskTemplate) string {
-	var front strings.Builder
-	front.WriteString("---\nschema-version: 2\ntitle: ")
-	front.WriteString(strconv.Quote(template.Title))
-	front.WriteString("\nfields: []\n---\n")
-	front.WriteString(normalizeTemplateSource(template.Body))
-	return normalizeTemplateSource(front.String())
-}
 
-func writeTemplateAtomic(path, content string) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".pua-template-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err := tmp.Chmod(0o644); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.WriteString(content); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
-}
-
-func (w *Workspace) MigrateTemplates(projectID string, names []string, write bool) ([]TemplateMigration, error) {
-	if err := w.require(); err != nil {
-		return nil, err
-	}
-	if !write {
-		return w.migrateTemplates(projectID, names, false)
-	}
-	var results []TemplateMigration
-	err := withWorkspaceMutationLock(w.root, func() error {
-		var err error
-		results, err = w.migrateTemplates(projectID, names, true)
-		return err
-	})
-	return results, err
-}
-
-func (w *Workspace) migrateTemplates(projectID string, names []string, write bool) ([]TemplateMigration, error) {
-	templates, err := w.Templates(projectID)
-	if err != nil {
-		return nil, err
-	}
-	wanted := map[string]bool{}
-	for _, name := range names {
-		if !safeTemplateName(name) {
-			return nil, &APIError{Operation: "migrate template", Kind: "template", Workspace: w.root, ResourceID: projectID, Err: fmt.Errorf("invalid template name: %s", name)}
-		}
-		wanted[name] = true
-	}
-	results := []TemplateMigration{}
-	found := map[string]bool{}
-	for _, template := range templates {
-		if len(wanted) > 0 && !wanted[template.Name] {
-			continue
-		}
-		found[template.Name] = true
-		if !template.Legacy {
-			results = append(results, TemplateMigration{Name: template.Name, Path: template.Path, Warnings: template.Warnings})
-			continue
-		}
-		if !template.Valid {
-			return nil, &APIError{Operation: "migrate template", Kind: "template", Workspace: w.root, ResourceID: projectID, Path: template.Path, Err: &TemplateValidationError{Template: template.Name, Issues: template.Errors}}
-		}
-		content := migratedTemplateContent(template)
-		migrated := parseTaskTemplate(template.Name, template.Path, content)
-		if !migrated.Valid {
-			return nil, &APIError{Operation: "migrate template", Kind: "template", Workspace: w.root, ResourceID: projectID, Path: template.Path, Err: &TemplateValidationError{Template: template.Name, Issues: migrated.Errors}}
-		}
-		result := TemplateMigration{Name: template.Name, Path: template.Path, Changed: true, Content: content, Warnings: template.Warnings}
-		if write {
-			path := filepath.Join(w.root, filepath.FromSlash(template.Path))
-			if err := writeTemplateAtomic(path, content); err != nil {
-				return nil, &APIError{Operation: "migrate template", Kind: "template", Workspace: w.root, ResourceID: projectID, Path: template.Path, Err: err}
-			}
-			result.Written = true
-		}
-		results = append(results, result)
-	}
-	for name := range wanted {
-		if !found[name] {
-			return nil, &APIError{Operation: "migrate template", Kind: "template", Workspace: w.root, ResourceID: projectID, Err: fmt.Errorf("template not found: %s", name)}
-		}
-	}
-	return results, nil
-}

@@ -1720,12 +1720,11 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 		run(t, "migrate")
 		assertFile(t, legacyProjectWork)
-		assertMissing(t, filepath.Join(root, "project1", "task1", "work.md"))
-		assertMissing(t, filepath.Join(root, "project1", testArchiveDir, "task2", "work.md"))
+		assertFile(t, filepath.Join(root, "project1", "task1", "work.md"))
+		assertFile(t, filepath.Join(root, "project1", testArchiveDir, "task2", "work.md"))
 		for _, path := range []string{filepath.Join(root, "project1", "task1", "task.md"), filepath.Join(root, "project1", testArchiveDir, "task2", "task.md")} {
-			got := readFile(t, path)
-			if !strings.Contains(got, "source=work.md digest=sha256:") || !strings.Contains(got, "Keep") {
-				t.Fatalf("expected legacy task history migration in %s, got:\n%s", path, got)
+			if got := readFile(t, path); strings.Contains(got, "source=work.md") {
+				t.Fatalf("migrate should no longer fold work.md into %s, got:\n%s", path, got)
 			}
 		}
 
@@ -1851,7 +1850,7 @@ Enabled: {{ enabled }}
 	})
 }
 
-func TestTemplateValidateAndMigrateCLI(t *testing.T) {
+func TestTemplateValidateCLI(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Migration project")
@@ -1860,17 +1859,11 @@ func TestTemplateValidateAndMigrateCLI(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "legacy.md"), []byte(legacy), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if output := run(t, "template", "validate", "--project=project1", "--all"); !strings.Contains(output, "legacy\tvalid") {
-			t.Fatalf("legacy template should be visible with a warning: %s", output)
+		if _, err := runErr(t, "template", "validate", "--project=project1", "--all"); err == nil {
+			t.Fatal("template without schema-version should be invalid")
 		}
-		preview := run(t, "template", "migrate", "--project=project1", "legacy")
-		if !strings.Contains(preview, "schema-version: 2") || strings.Contains(readFile(t, filepath.Join(dir, "legacy.md")), "schema-version") {
-			t.Fatalf("migration preview changed file or omitted output: %s", preview)
-		}
-		run(t, "template", "migrate", "--project=project1", "--write", "legacy")
-		migrated := readFile(t, filepath.Join(dir, "legacy.md"))
-		if !strings.Contains(migrated, "schema-version: 2") {
-			t.Fatalf("legacy template was not migrated:\n%s", migrated)
+		if _, err := runErr(t, "template", "migrate", "--project=project1", "legacy"); err == nil || !strings.Contains(err.Error(), "unknown template subcommand") {
+			t.Fatalf("expected template migrate to be removed, got %v", err)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "broken.md"), []byte("---\nschema-version: 2\ntitle: Broken\nautorun: true\nfields: []\n---\nBody\n"), 0o644); err != nil {
 			t.Fatal(err)
