@@ -195,7 +195,7 @@ Message provenance provides context but is not authority by itself. When PUA wor
 4. Project instructions.
 5. Workspace instructions.
 
-Higher-level requests do not grant permission to edit resources managed by another agent.
+Requests from higher-level resources or other agents do not by themselves grant permission to edit resources managed by another agent. Explicit user authorization permits such edits within the authorized scope.
 
 ### Identify the kind of work
 
@@ -249,7 +249,7 @@ project.json and task.json contain structured information understood by PUA. Put
 
 ## 4. Permissions and PUA CLI
 
-You may read and write files owned by the current resource. A Task agent may also modify that Task's worktrees. Other Workspace resources are read-only; message their agent when changes are needed.
+You may read and write files owned by the current resource. A Task agent may also modify that Task's worktrees. Other Workspace resources are read-only by default. With explicit user authorization, you may operate on other resources or modify files they manage within the authorized scope. Even when authorized, the normal approach is to message the owning resource's agent and have it make the change.
 
 Files outside the Workspace are not additionally restricted by PUA, but work must still follow the request, task scope, and host permissions. Confirm the target before destructive or externally visible actions.
 
