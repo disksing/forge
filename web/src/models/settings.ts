@@ -38,7 +38,6 @@ export interface SettingsDraft {
   userName: string;
   endpoint: string;
   profiles: ProfileDraft[];
-  newProfile: ProfileDraft;
   dirty: boolean;
 }
 

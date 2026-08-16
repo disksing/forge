@@ -229,37 +229,123 @@ describe("settings domain panels", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
+    // Cards start collapsed; the system card is pinned without a drag handle.
+    const toggles = () => [...target.querySelectorAll<HTMLButtonElement>(".settings-profile-card-toggle")];
+    const names = () => [...target.querySelectorAll<HTMLElement>(".settings-profile-card-toggle strong")].map((el) => el.textContent);
+    expect(names()).toEqual(["default", "custom"]);
+    expect(target.querySelectorAll(".settings-drag-handle").length).toBe(1);
+    expect(target.querySelector("#settingsNewProfileKey")).toBeNull();
+
+    // Expand both cards: system fields stay locked, the custom card shows the unavailable route.
+    toggles()[0]!.click();
+    toggles()[1]!.click();
+    await tick();
     const profileKeys = target.querySelectorAll<HTMLInputElement>('[aria-label="Profile key"]');
-    expect(profileKeys[0].disabled).toBe(true);
+    expect(profileKeys[0]!.disabled).toBe(true);
     expect(target.textContent).toContain("System");
     expect(target.querySelectorAll<HTMLSelectElement>('[aria-label="AgentHub Agent"]')[1]?.textContent).toContain("missing (Unavailable)");
 
     target.querySelector<HTMLButtonElement>('[title="Delete Profile"]')!.click();
     await tick();
-    expect([...target.querySelectorAll<HTMLInputElement>('[aria-label="Profile key"]')].map((field) => field.value)).toEqual(["default"]);
+    expect(names()).toEqual(["default"]);
     expect(target.querySelector(".settings-save-hint.visible")).toBeTruthy();
 
-    const newKey = target.querySelector<HTMLInputElement>("#settingsNewProfileKey")!;
-    input(newKey, "DEFAULT");
-    target.querySelector<HTMLButtonElement>("#settingsAddProfileButton")!.click();
-    expect(current.onToast).toHaveBeenCalledWith("default is a reserved system profile.");
-
-    input(newKey, " Review ");
-    input(target.querySelector<HTMLInputElement>("#settingsNewProfileDescription")!, " Review work ");
-    target.querySelector<HTMLButtonElement>("#settingsAddProfileButton")!.click();
+    // The add button inserts an expanded card right after the system block.
+    const addButton = [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add profile"))!;
+    addButton.click();
     await tick();
-    expect([...target.querySelectorAll<HTMLInputElement>('[aria-label="Profile key"]')].at(-1)?.value).toBe("review");
-    expect([...target.querySelectorAll<HTMLInputElement>('[aria-label="Summary"]')].at(-1)?.value).toBe("Review work");
+    expect(names()).toEqual(["default", "profile-1"]);
+    const keyFields = () => [...target.querySelectorAll<HTMLInputElement>('[aria-label="Profile key"]')];
+    expect(keyFields().at(-1)?.value).toBe("profile-1");
+
+    input(keyFields().at(-1)!, " Review ");
+    input([...target.querySelectorAll<HTMLInputElement>('[aria-label="Summary"]')].at(-1)!, " Review work ");
+    await tick();
+    expect(names()).toEqual(["default", " Review "]);
 
     const saveButton = [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Save All"))!;
     saveButton.click();
     saveButton.click();
     await tick();
     expect(current.onSaveAgentHub).toHaveBeenCalledTimes(1);
-		expect(current.onSaveAgentHub).toHaveBeenCalledWith(expect.objectContaining({ dirty: true }));
+    expect(current.onSaveAgentHub).toHaveBeenCalledWith(expect.objectContaining({ dirty: true, profiles: [expect.objectContaining({ key: "default" }), expect.objectContaining({ key: " Review " })] }));
     expect(saveButton.disabled).toBe(true);
     save.resolve();
     await vi.waitFor(() => expect(target.querySelector(".settings-save-hint.visible")).toBeNull());
+  });
+
+  it("reorders profile cards via drag and keyboard and validates keys on save", async () => {
+    const current = model({
+      profiles: [
+        { key: "default", description: "Default", agentName: "codex" },
+        { key: "fast", description: "Fast", agentName: "codex" },
+        { key: "reasoning", description: "Deep", agentName: "codex" },
+      ],
+    });
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "profiles", model: current, initialDraft: createSettingsDraft(current) } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const names = () => [...target.querySelectorAll<HTMLElement>(".settings-profile-card-toggle strong")].map((el) => el.textContent);
+    const handles = () => [...target.querySelectorAll<HTMLButtonElement>(".settings-drag-handle")];
+    const cards = () => [...target.querySelectorAll<HTMLElement>(".settings-profile-card")];
+    expect(names()).toEqual(["default", "fast", "reasoning"]);
+
+    // Keyboard reorder: move "reasoning" above "fast".
+    handles()[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    await tick();
+    expect(names()).toEqual(["default", "reasoning", "fast"]);
+    expect(target.querySelector(".settings-save-hint.visible")).toBeTruthy();
+
+    // The first custom card cannot move into the pinned system block.
+    handles()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    await tick();
+    expect(names()).toEqual(["default", "reasoning", "fast"]);
+
+    // Drag reorder: drop "fast" (index 2) onto "reasoning" (index 1).
+    handles()[1]!.dispatchEvent(new Event("dragstart", { bubbles: true, cancelable: true }));
+    await tick();
+    cards()[1]!.dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+    cards()[1]!.dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+    await tick();
+    expect(names()).toEqual(["default", "fast", "reasoning"]);
+
+    // The system card is not a drop target: dragging "fast" onto it is a no-op.
+    handles()[0]!.dispatchEvent(new Event("dragstart", { bubbles: true, cancelable: true }));
+    await tick();
+    cards()[0]!.dispatchEvent(new Event("dragover", { bubbles: true, cancelable: true }));
+    cards()[0]!.dispatchEvent(new Event("drop", { bubbles: true, cancelable: true }));
+    await tick();
+    expect(names()).toEqual(["default", "fast", "reasoning"]);
+    handles()[0]!.dispatchEvent(new Event("dragend", { bubbles: true }));
+    await tick();
+
+    // Duplicate keys block saving; a reserved key collides with the system row.
+    const toggles = [...target.querySelectorAll<HTMLButtonElement>(".settings-profile-card-toggle")];
+    toggles[1]!.click();
+    toggles[2]!.click();
+    await tick();
+    const keyInputs = () => [...target.querySelectorAll<HTMLInputElement>('[aria-label="Profile key"]')];
+    input(keyInputs()[0]!, "DEFAULT");
+    await tick();
+    const saveButton = [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Save All"))!;
+    saveButton.click();
+    await tick();
+    expect(current.onToast).toHaveBeenCalledWith("Profile default already exists.");
+    expect(current.onSaveAgentHub).not.toHaveBeenCalled();
+
+    input(keyInputs()[0]!, "reasoning");
+    await tick();
+    saveButton.click();
+    await tick();
+    expect(current.onToast).toHaveBeenCalledWith("Profile reasoning already exists.");
+    expect(current.onSaveAgentHub).not.toHaveBeenCalled();
+
+    input(keyInputs()[0]!, "fast");
+    await tick();
+    saveButton.click();
+    await vi.waitFor(() => expect(current.onSaveAgentHub).toHaveBeenCalledTimes(1));
   });
 
   it("projects notification permission and sound errors and forwards both toggles", async () => {
