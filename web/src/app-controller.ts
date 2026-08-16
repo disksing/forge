@@ -312,7 +312,7 @@ const {
 } = createShellProjection({
 	tree: () => controllerState.tree,
 	findResource: (id) => findResource(id),
-	agentName: (agentId) => (controllerState.config?.agents || []).find((agent) => agent.id === agentId)?.name || agentId || "PUA GUI",
+	agentName: (agentId) => (controllerState.config?.agents || []).find((agent) => agent.id === agentId)?.name || agentId || "PUA",
 });
 let uploadDialogIdentity = 0;
 const settingsController = createSettingsController({

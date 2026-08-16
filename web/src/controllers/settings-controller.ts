@@ -260,7 +260,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		} else dependencies.renderWorkspace();
 		await refreshPreservingAgentDraft();
 		render();
-		dependencies.toast("Workspace removed from PUA GUI.");
+		dependencies.toast("Workspace removed from PUA.");
 	}
 
 	async function updateWorkspaceIcon(id: string, iconId: string): Promise<void> {
