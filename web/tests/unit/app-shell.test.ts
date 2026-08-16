@@ -217,6 +217,19 @@ describe("AppShell", () => {
     await vi.waitFor(() => expect(onToast).toHaveBeenCalledWith("workspace unavailable"));
   });
 
+  it("opens the workspace page from the switcher name zone", async () => {
+    const onSelectResource = vi.fn(async () => undefined);
+    const channel = createModelChannel(model({ onSelectResource }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AppShell, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelector<HTMLButtonElement>("#workspaceOpen")!.click();
+    await vi.waitFor(() => expect(onSelectResource).toHaveBeenCalledWith("workspace"));
+    expect(target.querySelector("#workspaceMenu")).toBeNull();
+  });
+
   it("owns History API projection and forwards popstate paths to the navigation controller", async () => {
     window.history.replaceState({}, "", "/");
     const onHistoryNavigation = vi.fn(async () => undefined);

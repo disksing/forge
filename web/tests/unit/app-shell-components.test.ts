@@ -78,7 +78,7 @@ describe("AppShell responsibility components", () => {
         { id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg" },
         { id: "workspace-b", name: "Workspace B", path: "/tmp/b", iconSrc: "/favicon.svg" },
       ],
-      onSwitch, onAdd: vi.fn(), onToast,
+      onSwitch, onOpen: vi.fn(async () => undefined), onAdd: vi.fn(), onToast,
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -104,7 +104,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(WorkspaceSwitcher, { target, props: {
       identity: "workspace-a", mobileSidebarOpen: false, activeWorkspaceId: "workspace-a",
       workspaces: [{ id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg" }],
-      onSwitch: vi.fn(async () => undefined), onAdd: vi.fn(), onToast: vi.fn(),
+      onSwitch: vi.fn(async () => undefined), onOpen: vi.fn(async () => undefined), onAdd: vi.fn(), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -113,6 +113,31 @@ describe("AppShell responsibility components", () => {
     expect(button.querySelector('.workspace-switcher-icon-idle i[data-lucide="chevrons-up-down"]')).not.toBeNull();
     expect(button.querySelector('.workspace-switcher-icon-busy i[data-lucide="loader-circle"]')).not.toBeNull();
     expect(button.classList.contains("busy")).toBe(false);
+  });
+
+  it("WorkspaceSwitcher opens the workspace from the name zone and keeps the menu on the chevron", async () => {
+    const onOpen = vi.fn(async () => undefined);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(WorkspaceSwitcher, { target, props: {
+      identity: "workspace-a", mobileSidebarOpen: false, activeWorkspaceId: "workspace-a",
+      workspaces: [{ id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg" }],
+      onSwitch: vi.fn(async () => undefined), onOpen, onAdd: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const open = target.querySelector<HTMLButtonElement>("#workspaceOpen")!;
+    expect(open.textContent).toContain("Workspace A");
+    open.click();
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+    // Pointer clicks drop focus so the head does not stay highlighted.
+    expect(document.activeElement).not.toBe(open);
+    // Opening the workspace does not open the switch menu.
+    expect(target.querySelector("#workspaceMenu")).toBeNull();
+
+    target.querySelector<HTMLButtonElement>("#workspaceSwitcher")!.click();
+    await tick();
+    expect(target.querySelector("#workspaceMenu")).not.toBeNull();
   });
 
   it("ProjectTree owns keyed rows, project toggles, selection, and typed drag transactions", async () => {
@@ -124,7 +149,7 @@ describe("AppShell responsibility components", () => {
     const projectA = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
-      identity: "workspace-a", loading: false, error: "", workspaceName: "Workspace A", projects: [projectA, resource("project-b")],
+      identity: "workspace-a", loading: false, error: "", projects: [projectA, resource("project-b")],
       onCreate: vi.fn(), onToggle, onSelect, onReorder, onDragState, onToggleAttention, onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
@@ -149,23 +174,22 @@ describe("AppShell responsibility components", () => {
     expect(onDragState).toHaveBeenLastCalledWith(null);
   });
 
-  it("ProjectTree shows the workspace name as a title that opens the workspace page", async () => {
-    const onSelect = vi.fn(async () => undefined);
+  it("ProjectTree shows a static Projects section label", async () => {
+    const onCreate = vi.fn();
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
-      identity: "workspace-a", loading: false, error: "", workspaceName: "Workspace A", projects: [resource("project-a")],
-      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect,
+      identity: "workspace-a", loading: false, error: "", projects: [resource("project-a")],
+      onCreate, onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
 
-    const title = target.querySelector<HTMLButtonElement>("#workspaceTitle")!;
-    expect(title.textContent).toBe("Workspace A");
-    title.click();
-    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("workspace"));
-    // Pointer clicks drop focus so the title does not stay highlighted.
-    expect(document.activeElement).not.toBe(title);
+    const label = target.querySelector<HTMLElement>(".section-title .section-label")!;
+    expect(label.textContent).toBe("Projects");
+    expect(target.querySelector("#workspaceTitle")).toBeNull();
+    target.querySelector<HTMLButtonElement>("#newProjectButton")!.click();
+    expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
   it("ProjectTree chevron keeps a stable icon and reflects expansion with its class", async () => {
@@ -173,7 +197,7 @@ describe("AppShell responsibility components", () => {
     const collapsedProject = { ...resource("project-b"), expanded: false, children: [resource("task-b", "task")] };
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
-      identity: "workspace-a", loading: false, error: "", workspaceName: "Workspace A", projects: [expandedProject, collapsedProject],
+      identity: "workspace-a", loading: false, error: "", projects: [expandedProject, collapsedProject],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
@@ -196,7 +220,7 @@ describe("AppShell responsibility components", () => {
     const project = { ...resource("project-a"), children: [resource("task-a", "task")] };
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
-      identity: "workspace-a", loading: false, error: "", workspaceName: "Workspace A", projects: [project],
+      identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle, onSelect,
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
@@ -220,7 +244,7 @@ describe("AppShell responsibility components", () => {
     const project = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
-      identity: "workspace-a", loading: false, error: "", workspaceName: "Workspace A", projects: [project],
+      identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect,
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
@@ -249,7 +273,7 @@ describe("AppShell responsibility components", () => {
     const onToggleAttention = vi.fn(async () => undefined);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
-      identity: "workspace-a", loading: false, error: "", workspaceName: "Workspace A", projects: [resource("project-a")],
+      identity: "workspace-a", loading: false, error: "", projects: [resource("project-a")],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention, onToast: vi.fn(),
     } });
