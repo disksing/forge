@@ -16,6 +16,9 @@
   let nameEditing = $state(false);
   let nameDraft = $state("");
   let nameInput = $state<HTMLInputElement | null>(null);
+  let descEditing = $state(false);
+  let descDraft = $state("");
+  let descInput = $state<HTMLInputElement | null>(null);
   $effect(() => {
     const wake = model.detail?.scheduler?.wakeIntervalMinutes;
     if (typeof wake === "number") interval = wake;
@@ -23,9 +26,13 @@
   $effect(() => {
     if (nameEditing && nameInput) nameInput.focus();
   });
+  $effect(() => {
+    if (descEditing && descInput) descInput.focus();
+  });
 
   const schedulerConfig = $derived(model.detail?.scheduler);
   const taskDefault = $derived<ResourceAgentBindingModel>(model.detail?.taskDefault?.name ? { kind: model.detail.taskDefault.kind, name: model.detail.taskDefault.name } : { kind: "profile", name: "" });
+  const description = $derived(model.detail?.description || "");
 
   async function run(key: string, action: () => Promise<void>): Promise<void> {
     if (pending) return;
@@ -86,6 +93,40 @@
     }
   }
 
+  function startDescEdit(): void {
+    if (pending) return;
+    descDraft = description;
+    descEditing = true;
+  }
+
+  function cancelDescEdit(): void {
+    descEditing = false;
+    descDraft = "";
+  }
+
+  function saveDesc(): void {
+    const value = descDraft.trim();
+    if (value === description.trim()) {
+      cancelDescEdit();
+      return;
+    }
+    void run("description", async () => {
+      await model.onSaveDescription(value);
+      descEditing = false;
+      descDraft = "";
+    });
+  }
+
+  function descKeydown(event: KeyboardEvent): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      saveDesc();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      cancelDescEdit();
+    }
+  }
+
   function saveSchedulerInterval(): void {
     const config = schedulerConfig;
     if (!config || !Number.isInteger(interval) || interval < 1 || interval > 10080) return;
@@ -102,89 +143,179 @@
 
 <div class="resource-settings" data-component-owner="resource-settings-panel">
   {#if model.resourceType === "workspace"}
-    <section class="resource-settings-card">
-      <div><strong>Workspace Agent</strong><span>Runs the Workspace Agent itself. Matches the selector in the chat composer.</span></div>
-      <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Workspace Agent binding" onSelect={saveOwnBinding} />
-    </section>
-    <section class="resource-settings-card">
-      <div><strong>New Project default</strong><span>Applied once when a Project is created in this Workspace.</span></div>
-      <AgentBindingSelector value={model.workspaceDefaults.project} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="New Project default binding" onSelect={(value) => saveWorkspaceDefault("project", value)} />
-    </section>
-    <section class="resource-settings-card">
-      <div><strong>New Task default</strong><span>Applied once when a Task is created, unless its Project overrides it.</span></div>
-      <AgentBindingSelector value={model.workspaceDefaults.task} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="New Task default binding" onSelect={(value) => saveWorkspaceDefault("task", value)} />
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>Agent Bindings</strong>
+        <span>Which agent profile runs this Workspace and resources created under it.</span>
+      </div>
+      <div class="resource-settings-list">
+        <div class="resource-settings-row">
+          <div class="resource-settings-row-label"><strong>Workspace Agent</strong><span>Runs the Workspace Agent itself. Matches the selector in the chat composer.</span></div>
+          <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Workspace Agent binding" onSelect={saveOwnBinding} />
+        </div>
+        <div class="resource-settings-row">
+          <div class="resource-settings-row-label"><strong>New Project default</strong><span>Applied once when a Project is created in this Workspace.</span></div>
+          <AgentBindingSelector value={model.workspaceDefaults.project} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="New Project default binding" onSelect={(value) => saveWorkspaceDefault("project", value)} />
+        </div>
+        <div class="resource-settings-row">
+          <div class="resource-settings-row-label"><strong>New Task default</strong><span>Applied once when a Task is created, unless its Project overrides it.</span></div>
+          <AgentBindingSelector value={model.workspaceDefaults.task} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="New Task default binding" onSelect={(value) => saveWorkspaceDefault("task", value)} />
+        </div>
+      </div>
     </section>
   {:else if model.resourceType === "scheduler"}
-    <section class="resource-settings-card">
-      <div><strong>Scheduler Agent</strong><span>Runs Scheduler wake-up Turns. Matches the selector in the chat composer.</span></div>
-      <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Scheduler Agent binding" onSelect={saveOwnBinding} />
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>Agent</strong>
+      </div>
+      <div class="resource-settings-list">
+        <div class="resource-settings-row">
+          <div class="resource-settings-row-label"><strong>Scheduler Agent</strong><span>Runs Scheduler wake-up Turns. Matches the selector in the chat composer.</span></div>
+          <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Scheduler Agent binding" onSelect={saveOwnBinding} />
+        </div>
+      </div>
     </section>
     {#if schedulerConfig}
-      <section class="resource-settings-card">
-        <div><strong>Wake interval</strong><span>Minutes after the previous Server-triggered Scheduler Turn completes. Empty schedule lists do not wake.</span></div>
-        <div class="resource-settings-interval">
-          <label><input type="number" min="1" max="10080" step="1" bind:value={interval} aria-label="Scheduler wake interval in minutes" /><span>minutes</span></label>
-          <button type="button" class="secondary-button" disabled={Boolean(pending) || interval === schedulerConfig.wakeIntervalMinutes} onclick={saveSchedulerInterval}><Icon name="save" /><span>Save</span></button>
+      <section class="resource-settings-section">
+        <div class="resource-settings-section-head">
+          <strong>Schedule</strong>
+        </div>
+        <div class="resource-settings-list">
+          <div class="resource-settings-row">
+            <div class="resource-settings-row-label"><strong>Wake interval</strong><span>Minutes after the previous Server-triggered Scheduler Turn completes. Empty schedule lists do not wake.</span></div>
+            <div class="resource-settings-interval">
+              <label><input type="number" min="1" max="10080" step="1" bind:value={interval} aria-label="Scheduler wake interval in minutes" /><span>minutes</span></label>
+              <button type="button" class="secondary-button" disabled={Boolean(pending) || interval === schedulerConfig.wakeIntervalMinutes} onclick={saveSchedulerInterval}><Icon name="save" /><span>Save</span></button>
+            </div>
+          </div>
         </div>
       </section>
     {/if}
   {:else if model.resourceType === "project"}
-    <section class="resource-settings-card">
-      <div>
-        {#if nameEditing}
-          <strong>Project name</strong>
-          <input class="resource-settings-name-input" type="text" bind:this={nameInput} bind:value={nameDraft} aria-label="Project name" disabled={Boolean(pending)} onkeydown={nameKeydown} />
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>General</strong>
+      </div>
+      <div class="resource-settings-list">
+        <div class="resource-settings-row resource-settings-name-row">
+          {#if nameEditing}
+            <div class="resource-settings-row-label">
+              <strong>Name</strong>
+              <input class="resource-settings-name-input" type="text" bind:this={nameInput} bind:value={nameDraft} aria-label="Project name" disabled={Boolean(pending)} onkeydown={nameKeydown} />
+            </div>
+            <button type="button" class="secondary-button" disabled={Boolean(pending) || !nameDraft.trim()} onclick={saveName}><Icon name="save" /><span>Save</span></button>
+          {:else}
+            <div class="resource-settings-row-label"><strong>Name</strong><span>Shown in the sidebar and header.</span></div>
+            <div class="resource-settings-row-value">
+              <span class="resource-settings-value-text">{model.resourceTitle}</span>
+              <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startNameEdit}><Icon name="pencil" /><span>Edit</span></button>
+            </div>
+          {/if}
+        </div>
+        <div class="resource-settings-row resource-settings-desc-row">
+          {#if descEditing}
+            <div class="resource-settings-row-label">
+              <strong>Description</strong>
+              <input class="resource-settings-desc-input" type="text" bind:this={descInput} bind:value={descDraft} aria-label="Project description" disabled={Boolean(pending)} onkeydown={descKeydown} />
+            </div>
+            <button type="button" class="secondary-button" disabled={Boolean(pending)} onclick={saveDesc}><Icon name="save" /><span>Save</span></button>
+          {:else}
+            <div class="resource-settings-row-label"><strong>Description</strong><span>Short summary of this Project, from project.json.</span></div>
+            <div class="resource-settings-row-value">
+              {#if description.trim()}
+                <span class="resource-settings-value-text">{description}</span>
+              {:else}
+                <span class="resource-settings-value-text resource-settings-value-empty">No description</span>
+              {/if}
+              <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startDescEdit}><Icon name="pencil" /><span>Edit</span></button>
+            </div>
+          {/if}
+        </div>
+      </div>
+    </section>
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>Agent Bindings</strong>
+        <span>Which agent profile runs this Project and Tasks created under it.</span>
+      </div>
+      <div class="resource-settings-list">
+        <div class="resource-settings-row">
+          <div class="resource-settings-row-label"><strong>Project Agent</strong><span>Runs the Project Agent itself. Matches the selector in the chat composer.</span></div>
+          <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Project Agent binding" onSelect={saveOwnBinding} />
+        </div>
+        <div class="resource-settings-row">
+          <div class="resource-settings-row-label"><strong>New Task default</strong><span>Applied once when a Task is created in this Project. Inherit uses the Workspace default.</span></div>
+          <AgentBindingSelector value={taskDefault} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} allowInherit={true} inheritLabel="Inherit (Workspace default)" ariaLabel="New Task default binding" onSelect={saveTaskDefault} />
+        </div>
+      </div>
+    </section>
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>Task Templates</strong>
+        <span>Templates from templates/*.md, offered when creating a Task in this Project.</span>
+      </div>
+      <div class="resource-settings-list resource-settings-template-list">
+        {#if model.detail?.templates?.length}
+          {#each model.detail.templates as template (template.name)}
+            <button type="button" class:invalid={!template.valid} class="resource-settings-row template-row" onclick={() => template.path && onOpenTemplate?.(template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}</small></span><Icon name="chevron-right" /></button>
+          {/each}
         {:else}
-          <strong>{model.resourceTitle}</strong>
-          <span>Project display name, shown in the sidebar and header.</span>
+          <div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>
         {/if}
       </div>
-      {#if nameEditing}
-        <button type="button" class="secondary-button" disabled={Boolean(pending) || !nameDraft.trim()} onclick={saveName}><Icon name="save" /><span>Save</span></button>
-      {:else}
-        <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startNameEdit}><Icon name="pencil" /><span>Edit</span></button>
-      {/if}
     </section>
-    <section class="resource-settings-card">
-      <div><strong>Project Agent</strong><span>Runs the Project Agent itself. Matches the selector in the chat composer.</span></div>
-      <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Project Agent binding" onSelect={saveOwnBinding} />
-    </section>
-    <section class="resource-settings-card">
-      <div><strong>New Task default</strong><span>Applied once when a Task is created in this Project. Inherit uses the Workspace default.</span></div>
-      <AgentBindingSelector value={taskDefault} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} allowInherit={true} inheritLabel="Inherit (Workspace default)" ariaLabel="New Task default binding" onSelect={saveTaskDefault} />
-    </section>
-    <section class="resource-settings-card resource-settings-templates">
-      <div><strong>Task Templates</strong><span>Templates from templates/*.md, offered when creating a Task in this Project.</span></div>
-    </section>
-    <div class="template-list resource-settings-template-list">
-      {#if model.detail?.templates?.length}
-        {#each model.detail.templates as template (template.name)}
-          <button type="button" class:invalid={!template.valid} class="template-row" onclick={() => template.path && onOpenTemplate?.(template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}</small></span><Icon name="chevron-right" /></button>
-        {/each}
-      {:else}
-        <div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>
-      {/if}
-    </div>
   {:else if model.resourceType === "task"}
-    <section class="resource-settings-card">
-      <div>
-        {#if nameEditing}
-          <strong>Task name</strong>
-          <input class="resource-settings-name-input" type="text" bind:this={nameInput} bind:value={nameDraft} aria-label="Task name" disabled={Boolean(pending)} onkeydown={nameKeydown} />
-        {:else}
-          <strong>{model.resourceTitle}</strong>
-          <span>Task display name, shown in the sidebar and header.</span>
-        {/if}
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>General</strong>
       </div>
-      {#if nameEditing}
-        <button type="button" class="secondary-button" disabled={Boolean(pending) || !nameDraft.trim()} onclick={saveName}><Icon name="save" /><span>Save</span></button>
-      {:else}
-        <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startNameEdit}><Icon name="pencil" /><span>Edit</span></button>
-      {/if}
+      <div class="resource-settings-list">
+        <div class="resource-settings-row resource-settings-name-row">
+          {#if nameEditing}
+            <div class="resource-settings-row-label">
+              <strong>Name</strong>
+              <input class="resource-settings-name-input" type="text" bind:this={nameInput} bind:value={nameDraft} aria-label="Task name" disabled={Boolean(pending)} onkeydown={nameKeydown} />
+            </div>
+            <button type="button" class="secondary-button" disabled={Boolean(pending) || !nameDraft.trim()} onclick={saveName}><Icon name="save" /><span>Save</span></button>
+          {:else}
+            <div class="resource-settings-row-label"><strong>Name</strong><span>Shown in the sidebar and header.</span></div>
+            <div class="resource-settings-row-value">
+              <span class="resource-settings-value-text">{model.resourceTitle}</span>
+              <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startNameEdit}><Icon name="pencil" /><span>Edit</span></button>
+            </div>
+          {/if}
+        </div>
+        <div class="resource-settings-row resource-settings-desc-row">
+          {#if descEditing}
+            <div class="resource-settings-row-label">
+              <strong>Description</strong>
+              <input class="resource-settings-desc-input" type="text" bind:this={descInput} bind:value={descDraft} aria-label="Task description" disabled={Boolean(pending)} onkeydown={descKeydown} />
+            </div>
+            <button type="button" class="secondary-button" disabled={Boolean(pending)} onclick={saveDesc}><Icon name="save" /><span>Save</span></button>
+          {:else}
+            <div class="resource-settings-row-label"><strong>Description</strong><span>Short summary of this Task, from task.json.</span></div>
+            <div class="resource-settings-row-value">
+              {#if description.trim()}
+                <span class="resource-settings-value-text">{description}</span>
+              {:else}
+                <span class="resource-settings-value-text resource-settings-value-empty">No description</span>
+              {/if}
+              <button type="button" class="secondary-button" disabled={Boolean(pending) || Boolean(model.detail?.archived)} onclick={startDescEdit}><Icon name="pencil" /><span>Edit</span></button>
+            </div>
+          {/if}
+        </div>
+      </div>
     </section>
-    <section class="resource-settings-card">
-      <div><strong>Task Agent</strong><span>Runs the Task Agent itself. Matches the selector in the chat composer.</span></div>
-      <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Task Agent binding" onSelect={saveOwnBinding} />
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>Agent</strong>
+      </div>
+      <div class="resource-settings-list">
+        <div class="resource-settings-row">
+          <div class="resource-settings-row-label"><strong>Task Agent</strong><span>Runs the Task Agent itself. Matches the selector in the chat composer.</span></div>
+          <AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="Task Agent binding" onSelect={saveOwnBinding} />
+        </div>
+      </div>
     </section>
   {/if}
 </div>

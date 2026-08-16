@@ -105,6 +105,7 @@ export interface DetailPanelModel {
   onDeleteArtifact: (path: string) => Promise<void>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
   onRenameResource: (title: string) => Promise<void>;
+  onSaveDescription: (description: string) => Promise<void>;
   onSaveWorkspaceDefaults: (defaults: { project: ResourceAgentBindingModel; task: ResourceAgentBindingModel }) => Promise<void>;
   onSaveTaskDefault: (projectId: string, binding: ResourceAgentBindingModel | null) => Promise<void>;
   onRefreshScheduler?: () => Promise<void>;
