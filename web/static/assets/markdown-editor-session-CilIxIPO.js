@@ -1,4 +1,4 @@
-//#region node_modules/svelte/src/internal/shared/utils.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/shared/utils.js
 var e = Array.isArray, t = Array.prototype.indexOf, n = Array.prototype.includes, r = Array.from, i = Object.defineProperty, a = Object.getOwnPropertyDescriptor, o = Object.getOwnPropertyDescriptors, s = Object.prototype, c = Array.prototype, l = Object.getPrototypeOf, u = Object.isExtensible, d = () => {};
 function f(e) {
 	return typeof e?.then == "function";
@@ -24,7 +24,7 @@ function ge(e) {
 	throw Error("https://svelte.dev/e/lifecycle_outside_component");
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/errors.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/errors.js
 function _e() {
 	throw Error("https://svelte.dev/e/async_derived_orphan");
 }
@@ -59,7 +59,7 @@ function De() {
 	throw Error("https://svelte.dev/e/svelte_boundary_reset_onerror");
 }
 //#endregion
-//#region node_modules/svelte/src/constants.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/constants.js
 var Oe = {}, w = Symbol("uninitialized"), ke = "http://www.w3.org/1999/xhtml", Ae = "http://www.w3.org/2000/svg", je = "http://www.w3.org/1998/Math/MathML";
 function Me() {
 	console.warn("https://svelte.dev/e/derived_inert");
@@ -74,7 +74,7 @@ function Fe() {
 	console.warn("https://svelte.dev/e/svelte_boundary_reset_noop");
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/hydration.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/hydration.js
 var T = !1;
 function Ie(e) {
 	T = e;
@@ -117,7 +117,7 @@ function Ve(e) {
 	return e.data;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/equality.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/equality.js
 function He(e) {
 	return e === this.v;
 }
@@ -128,7 +128,7 @@ function We(e) {
 	return !Ue(e, this.v);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/context.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/context.js
 var O = null;
 function Ge(e) {
 	O = e;
@@ -157,7 +157,7 @@ function Je() {
 	return !0;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/task.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/task.js
 var Ye = [];
 function Xe() {
 	var e = Ye;
@@ -199,7 +199,7 @@ function $e(e, t) {
 	}
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/status.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/status.js
 var et = ~(g | _ | h);
 function A(e, t) {
 	e.f = e.f & et | t;
@@ -208,7 +208,7 @@ function tt(e) {
 	e.f & 512 || e.deps === null ? A(e, h) : A(e, _);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/utils.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/utils.js
 function nt(e) {
 	if (e !== null) for (let t of e) !(t.f & 2) || !(t.f & 65536) || (t.f ^= re, nt(t.deps));
 }
@@ -216,7 +216,7 @@ function rt(e, t, n) {
 	e.f & 2048 ? t.add(e) : e.f & 4096 && n.add(e), nt(e.deps), A(e, h);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/store.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/store.js
 var it = !1;
 function at(e) {
 	var t = it;
@@ -227,7 +227,7 @@ function at(e) {
 	}
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/misc.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/misc.js
 function ot(e) {
 	T && /* @__PURE__ */ z(e) !== null && un(e);
 }
@@ -240,7 +240,7 @@ function ct() {
 	}, { capture: !0 }));
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/bindings/shared.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/shared.js
 function lt(e) {
 	var t = U, n = K;
 	G(null), q(null);
@@ -258,7 +258,7 @@ function ut(e, t, n, r = n) {
 	} : () => r(!0), ct();
 }
 //#endregion
-//#region node_modules/svelte/src/reactivity/create-subscriber.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/reactivity/create-subscriber.js
 function dt(e) {
 	let t = 0, n = P(0), r;
 	return () => {
@@ -270,7 +270,7 @@ function dt(e) {
 	};
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/blocks/boundary.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/boundary.js
 var ft = S | ee;
 function pt(e, t, n, r) {
 	new mt(e, t, n, r);
@@ -447,7 +447,7 @@ var mt = class {
 	}
 };
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/async.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/async.js
 function ht(e, t, n, r) {
 	let i = Je() ? yt : Ct;
 	var a = e.filter((e) => !e.settled), o = t.map(i);
@@ -596,7 +596,7 @@ function Ot(e) {
 	if (e.effects !== null) for (let t of e.effects) t.teardown && t.fn !== null && $n(t);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/batch.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/batch.js
 var kt = null, j = null, At = null, M = null, jt = null, Mt = !1, Nt = !1, Pt = null, Ft = null, It = 0, Lt = 1, Rt = class e {
 	id = Lt++;
 	#e = !1;
@@ -891,7 +891,7 @@ function Wt(e) {
 	for (var t = e.first; t !== null;) Wt(t), t = t.next;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/sources.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/sources.js
 var Gt = /* @__PURE__ */ new Set(), Kt = /* @__PURE__ */ new Map(), qt = !1;
 function P(e, t) {
 	return {
@@ -1138,7 +1138,7 @@ function pn(e) {
 	for (; t !== null && t.nodeType === 3;) t.remove(), e.nodeValue += t.nodeValue, t = e.nextSibling;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/effects.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/effects.js
 function mn(e) {
 	K === null && (U === null && xe(e), be()), zn && ye(e);
 }
@@ -1326,7 +1326,7 @@ function In(e, t) {
 	}
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/legacy.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/legacy.js
 var Ln = null, Rn = !1, zn = !1;
 function Bn(e) {
 	zn = e;
@@ -1515,7 +1515,7 @@ function sr(e) {
 	return or.includes(e);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/events.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/events.js
 var cr = Symbol("events"), lr = /* @__PURE__ */ new Set(), ur = /* @__PURE__ */ new Set();
 function dr(e, t, n, r = {}) {
 	function i(e) {
@@ -1588,7 +1588,7 @@ function gr(e) {
 	}
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/reconciler.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/reconciler.js
 var _r = globalThis?.window?.trustedTypes && /* @__PURE__ */ globalThis.window.trustedTypes.createPolicy("svelte-trusted-html", { createHTML: (e) => e });
 function vr(e) {
 	return _r?.createHTML(e) ?? e;
@@ -1598,7 +1598,7 @@ function yr(e) {
 	return t.innerHTML = vr(e.replaceAll("<!>", "<!---->")), t.content;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/template.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/template.js
 function $(e, t) {
 	var n = K;
 	n.nodes === null && (n.nodes = {
@@ -1706,7 +1706,7 @@ function Ar(e, t) {
 	return n ? (kr.delete(e), n(t)) : Promise.resolve();
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/blocks/branches.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/branches.js
 var jr = class {
 	anchor;
 	#e = /* @__PURE__ */ new Map();
@@ -1807,7 +1807,7 @@ function Fr(e, t, n, r, i) {
 	});
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/blocks/if.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/if.js
 function Ir(e, t, n = !1) {
 	var r;
 	T && (r = E, Le());
@@ -1831,7 +1831,7 @@ function Ir(e, t, n = !1) {
 	}, a);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/blocks/key.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/key.js
 var Lr = Symbol("NaN");
 function Rr(e, t, n) {
 	T && Le();
@@ -1842,7 +1842,7 @@ function Rr(e, t, n) {
 	});
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/blocks/each.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/each.js
 function zr(e, t) {
 	return t;
 }
@@ -2036,7 +2036,7 @@ function Yr(e, t, n = !1, r = !1, i = !1, a = !1) {
 	});
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/blocks/snippet.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/snippet.js
 function Xr(e, t, ...n) {
 	var r = new jr(e);
 	En(() => {
@@ -2045,7 +2045,7 @@ function Xr(e, t, ...n) {
 	}, S);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/blocks/svelte-component.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/svelte-component.js
 function Zr(e, t, n) {
 	var r;
 	T && (r = E, Le());
@@ -2061,7 +2061,7 @@ function Zr(e, t, n) {
 	}, S);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/actions.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/actions.js
 function Qr(e, t, n) {
 	Sn(() => {
 		var r = rr(() => t(e, n?.()) || {});
@@ -2076,7 +2076,7 @@ function Qr(e, t, n) {
 	});
 }
 //#endregion
-//#region node_modules/clsx/dist/clsx.mjs
+//#region ../../../../../repos/forge/web/node_modules/clsx/dist/clsx.mjs
 function $r(e) {
 	var t, n, r = "";
 	if (typeof e == "string" || typeof e == "number") r += e;
@@ -2093,7 +2093,7 @@ function ei() {
 	return r;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/shared/attributes.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/shared/attributes.js
 function ti(e) {
 	return typeof e == "object" ? ei(e) : e ?? "";
 }
@@ -2152,7 +2152,7 @@ function oi(e, t) {
 	return e == null ? null : String(e);
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/class.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/class.js
 function si(e, t, n, r, i, a) {
 	var o = e[ue];
 	if (T || o !== n || o === void 0) {
@@ -2165,7 +2165,7 @@ function si(e, t, n, r, i, a) {
 	return a;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/style.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/style.js
 function ci(e, t = {}, n, r) {
 	for (var i in n) {
 		var a = n[i];
@@ -2181,7 +2181,7 @@ function li(e, t, n, r) {
 	return r;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/bindings/select.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/select.js
 function ui(t, n, r = !1) {
 	if (t.multiple) {
 		if (n == null) return;
@@ -2235,7 +2235,7 @@ function pi(e) {
 	return "__value" in e ? e.__value : e.value;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/attributes.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/attributes.js
 var mi = Symbol("is custom element"), hi = Symbol("is html"), gi = he ? "link" : "LINK", _i = he ? "progress" : "PROGRESS";
 function vi(e) {
 	if (T) {
@@ -2284,7 +2284,7 @@ function wi(e) {
 	return n;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/bindings/input.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/input.js
 function Ti(e, t, n = t) {
 	var r = /* @__PURE__ */ new WeakSet();
 	ut(e, "input", async (i) => {
@@ -2320,7 +2320,7 @@ function Oi(e) {
 	return e === "" ? null : +e;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/dom/elements/bindings/this.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/this.js
 function ki(e, t) {
 	return e === t || e?.[C] === t;
 }
@@ -2345,7 +2345,7 @@ function Ai(e = {}, t, n, r) {
 	}), e;
 }
 //#endregion
-//#region node_modules/svelte/src/internal/client/reactivity/props.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/props.js
 function ji(e, t, n, r) {
 	var i = !0, o = !!(n & 8), s = !!(n & 16), c = r, l = !0, u = void 0, d = () => s && i ? (u ??= /* @__PURE__ */ yt(r), Q(u)) : (l && (l = !1, c = s ? rr(r) : r), c);
 	let f;
@@ -2390,7 +2390,7 @@ function Ni(e) {
 	O === null && ge("onDestroy"), Mi(() => () => rr(e));
 }
 //#endregion
-//#region node_modules/svelte/src/internal/disclose-version.js
+//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/disclose-version.js
 typeof window < "u" && ((window.__svelte ??= {}).v ??= /* @__PURE__ */ new Set()).add("5");
 //#endregion
 //#region src/components/Icon.svelte
@@ -2403,4 +2403,22 @@ function Fi(e, t) {
 	}), wr(e, r);
 }
 //#endregion
-export { Cr as A, sn as B, Rr as C, Tr as D, Er as E, fr as F, F as G, ln as H, Q as I, qe as J, St as K, er as L, Sr as M, mr as N, Ar as O, pr as P, Tn as R, zr as S, Fr as T, Qt as U, cn as V, I as W, ze as X, Ke as Y, Re as Z, Qr as _, Ai as a, Yr as b, vi as c, yi as d, fi as f, si as g, li as h, ji as i, br as j, wr as k, xi as l, ui as m, Ni as n, Ei as o, di as p, ot as q, Mi as r, Ti as s, Fi as t, bi as u, Zr as v, Ir as w, Ur as x, Xr as y, yn as z };
+//#region src/components/markdown-editor-session.ts
+var Ii = /* @__PURE__ */ new Map(), Li = "forge:file-preview-handoff";
+function Ri() {
+	try {
+		let e = localStorage.getItem(Li);
+		if (!e) return null;
+		let t = JSON.parse(e);
+		return !t || typeof t != "object" || t.version !== 1 || typeof t.path != "string" ? null : t;
+	} catch {
+		return null;
+	}
+}
+function zi() {
+	try {
+		localStorage.removeItem(Li);
+	} catch {}
+}
+//#endregion
+export { Ke as $, Er as A, Q as B, Xr as C, Rr as D, zr as E, br as F, cn as G, Tn as H, Sr as I, I as J, ln as K, mr as L, Ar as M, wr as N, Ir as O, Cr as P, qe as Q, pr as R, Zr as S, Ur as T, yn as U, er as V, sn as W, St as X, F as Y, ot as Z, di as _, Fi as a, si as b, ji as c, Ti as d, ze as et, vi as f, fi as g, yi as h, Ri as i, Tr as j, Fr as k, Ai as l, bi as m, zi as n, Ni as o, xi as p, Qt as q, Ii as r, Mi as s, Li as t, Re as tt, Ei as u, ui as v, Yr as w, Qr as x, li as y, fr as z };
