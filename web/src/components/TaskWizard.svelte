@@ -61,7 +61,13 @@
   }
 
   function templateDirty(): boolean {
-    return Object.values(draft.templateFields).some((value) => Boolean(value)) || Boolean(draft.title.trim()) || Boolean(draft.detail.trim());
+    if (Boolean(draft.title.trim()) || Boolean(draft.detail.trim())) return true;
+    // Untouched template defaults do not count as edits, so picking a
+    // template and immediately switching to another one stays silent.
+    return (selectedTemplate?.fields || []).some((field) => {
+      const initial = initialFieldValue(field);
+      return (draft.templateFields[field.name] ?? initial) !== initial;
+    });
   }
 
   async function changeTemplate(next: string): Promise<void> {
@@ -242,8 +248,8 @@
   <div class="wizard-footer">
     <span class="wizard-step-pos">Step {step + 1} of {stepLabels.length}</span>
     <span class="wizard-footer-spacer"></span>
-    <button type="button" class="secondary" disabled={model.submitting || step === 0} onclick={back}>Back</button>
-    <button type="button" class="secondary" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
-    <button type="submit" disabled={!canProceed()}>{model.submitting ? "Creating..." : step === lastStep ? (draft.startAfterCreate ? "Create & start" : "Create task") : "Next"}</button>
+    {#if step > 0}<button type="button" class="secondary-button" disabled={model.submitting} onclick={back}>Back</button>{/if}
+    <button type="button" class="secondary-button" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
+    <button type="submit" class="wizard-primary" disabled={!canProceed()}>{model.submitting ? "Creating..." : step === lastStep ? (draft.startAfterCreate ? "Create & start" : "Create task") : "Next"}</button>
   </div>
 </form>
