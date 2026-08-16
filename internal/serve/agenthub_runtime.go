@@ -573,6 +573,9 @@ func (m *agentManager) recoverAgentHubGenerationLocked(ctx context.Context, cfg 
 	m.registerRuntime(rt)
 	rt.applyAgentHubSessionState(m, session)
 	updated := rt.snapshotGeneration()
+	if updated.CompletionMarker != "" && updated.CompletionMarker != updated.TaskStateCompletionMarker {
+		m.scheduleTaskTurnCompletion(rt, updated)
+	}
 	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
 		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
 			rt.addPUANotice(m, "warning", "resource/idle-sleep", err.Error())

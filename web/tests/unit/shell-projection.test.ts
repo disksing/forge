@@ -6,7 +6,7 @@ import type { WorkspaceTree } from "../../src/models/workspace";
 describe("shell projection", () => {
   const tree: WorkspaceTree = {
     projects: [{ id: "project1", type: "project", children: [
-      { id: "task1", type: "task", runtime: { generationId: "gen-task1", status: "running", lastOutputAt: "2026-08-11T02:00:00Z" } },
+      { id: "task1", type: "task", state: "in_progress", runtime: { generationId: "gen-task1", status: "running", lastOutputAt: "2026-08-11T02:00:00Z" } },
       { id: "task2", type: "task" },
     ] }],
   };
@@ -18,8 +18,17 @@ describe("shell projection", () => {
     expect(projection.moveIdInList(["a", "b"], "a", "missing", false)).toEqual(["a", "b"]);
   });
 
+  it("projects Task workflow state independently from runtime state", () => {
+    const task = { ...tree.projects[0].children![0], state: "blocked" as const, stateNote: "Need deployment approval", runtime: { generationId: "gen-task1", status: "idle" } };
+    const state = projection.taskWorkflowState(task);
+    expect(state.session).toMatchObject({ kind: "task-blocked", iconName: "circle-alert" });
+    expect(state.label).toBe("Blocked: Need deployment approval");
+  });
+
   it("projects resource generation status without losing recent output", () => {
     const task = tree.projects[0].children![0];
+    task.runtime = { generationId: "gen-task1", status: "running", lastOutputAt: "2026-08-11T02:00:00Z" };
+    task.state = "in_progress";
     const state = projection.taskOperationalState(task);
     expect(state.session).toMatchObject({ kind: "resource-running", recentOutput: true });
     expect(state.statusPresentation.layoutClassName).toBe("has-task-status");

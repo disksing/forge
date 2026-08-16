@@ -136,6 +136,8 @@ func taskAgentsPromptZH(resource Resource) string {
 
 - 当前资源 ID：%s
 - 总是读取父 Project 的 AGENTS.md（../AGENTS.md）和 Workspace 根目录的 AGENTS.md（../../AGENTS.md）。
+- Server 会在每个 Turn 开始时把任务状态设为 in_progress。结束 Turn 前，必须继续推进任务，或从 waiting、blocked、paused、completed 中选择一个状态，运行 pua task state set <状态> --note "..." 更新。
+- waiting 表示无需用户干预、等待外部条件后可继续；blocked 表示需要用户跟进；paused 表示按要求暂停、需用户恢复；completed 表示任务完成。waiting、blocked、paused 必须提供简短的单行 note。
 `, meta.ID)
 }
 

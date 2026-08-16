@@ -192,6 +192,29 @@ describe("AppShell responsibility components", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
+  it("ProjectTree replaces the Task file icon with exactly one workflow state icon", async () => {
+    const task = resource("task-a", "task");
+    task.statusLabel = "Blocked: Need approval";
+    task.status = {
+      hasTaskState: true, className: "task-state-blocked", layoutClassName: "has-task-status", slotClassName: "task-status-single",
+      statuses: [{ key: "task-blocked", className: "task-state-blocked", iconName: "circle-alert", recentOutput: false }],
+    };
+    const project = { ...resource("project-a"), expanded: true, children: [task] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleAttention: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const taskRow = target.querySelector<HTMLElement>(".task-item")!;
+    expect(taskRow.title).toBe("Blocked: Need approval");
+    expect(taskRow.querySelectorAll('[data-lucide="circle-alert"]')).toHaveLength(1);
+    expect(taskRow.querySelector('[data-lucide="file-text"]')).toBeNull();
+    expect(target.querySelector(".project-tree > .tree-item [data-component-owner='status-presentation']")).toBeNull();
+  });
+
   it("ProjectTree chevron keeps a stable icon and reflects expansion with its class", async () => {
     const expandedProject = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
     const collapsedProject = { ...resource("project-b"), expanded: false, children: [resource("task-b", "task")] };

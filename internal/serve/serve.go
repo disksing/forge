@@ -99,15 +99,18 @@ type fileTreeEntry struct {
 }
 
 type resourceSnapshot struct {
-	ID           string                     `json:"id"`
-	Type         string                     `json:"type"`
-	Title        string                     `json:"title"`
-	Path         string                     `json:"path"`
-	Archived     bool                       `json:"archived"`
-	AgentBinding app.AgentBinding           `json:"agentBinding"`
-	Runtime      *resourceRuntimeSnapshot   `json:"runtime,omitempty"`
-	Attention    *resourceAttentionSnapshot `json:"attention,omitempty"`
-	Children     []resourceSnapshot         `json:"children,omitempty"`
+	ID             string                     `json:"id"`
+	Type           string                     `json:"type"`
+	Title          string                     `json:"title"`
+	Path           string                     `json:"path"`
+	Archived       bool                       `json:"archived"`
+	AgentBinding   app.AgentBinding           `json:"agentBinding"`
+	State          app.TaskState              `json:"state,omitempty"`
+	StateNote      string                     `json:"stateNote,omitempty"`
+	StateUpdatedAt string                     `json:"stateUpdatedAt,omitempty"`
+	Runtime        *resourceRuntimeSnapshot   `json:"runtime,omitempty"`
+	Attention      *resourceAttentionSnapshot `json:"attention,omitempty"`
+	Children       []resourceSnapshot         `json:"children,omitempty"`
 }
 
 type filePreview struct {
@@ -417,6 +420,10 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(parts) == 4 && parts[3] == "status" {
 			s.agents.handleResourceStatus(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "task-state" {
+			s.agents.handleTaskState(w, r, id, parts[2])
 			return
 		}
 		if len(parts) == 5 && parts[3] == "attention" && parts[4] == "dismiss" {

@@ -41,6 +41,7 @@ const (
 	resourceMessageTypeTurnResult       = "turn_result"
 	resourceMessageTypeDeliveryTerminal = "delivery_terminal_notice"
 	resourceMessageTypeSchedulerTick    = "scheduler_tick"
+	resourceMessageTypeTaskContinuation = "task_state_continuation"
 
 	resourceNotificationWaiting   = "waiting"
 	resourceNotificationAccepted  = "accepted"
@@ -98,6 +99,7 @@ type resourceMailboxMessage struct {
 	InterruptAt               string                       `json:"interruptAt,omitempty"`
 	PromotedAt                string                       `json:"promotedAt,omitempty"`
 	AttemptCount              int                          `json:"attemptCount,omitempty"`
+	TaskStartFailureCount     int                          `json:"taskStartFailureCount,omitempty"`
 	LastAttemptAt             string                       `json:"lastAttemptAt,omitempty"`
 	LastError                 string                       `json:"lastError,omitempty"`
 	LastErrorCode             string                       `json:"lastErrorCode,omitempty"`
@@ -198,7 +200,7 @@ type resourceSessionStatus struct {
 
 type resourceStatusResponse struct {
 	ResourceID      string                    `json:"resourceId"`
-	State           string                    `json:"state"`
+	SessionState    string                    `json:"sessionState"`
 	Exists          bool                      `json:"exists"`
 	Archived        bool                      `json:"archived"`
 	AcceptsMessages bool                      `json:"acceptsMessages"`
@@ -853,7 +855,7 @@ func waitingMailboxMessages(mailbox resourceMailbox, resourceID string) []resour
 	return messages
 }
 
-func publicResourceState(archived bool, unavailableReason string, generation *resourceGenerationStatus, session *resourceSessionStatus, runtimeError string) string {
+func publicSessionState(archived bool, unavailableReason string, generation *resourceGenerationStatus, session *resourceSessionStatus, runtimeError string) string {
 	if archived {
 		return "archived"
 	}
@@ -919,7 +921,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorksp
 		return resourceStatusResponse{}, loadErr
 	}
 	if !found {
-		status.State = publicResourceState(archived, unavailableReason, nil, nil, "")
+		status.SessionState = publicSessionState(archived, unavailableReason, nil, nil, "")
 		return status, nil
 	}
 	status.Generation = &resourceGenerationStatus{
@@ -934,7 +936,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorksp
 		AgentHubSessionID:  record.AgentHubSessionID,
 	}
 	if strings.TrimSpace(record.AgentHubSessionID) == "" || cfgErr != nil {
-		status.State = publicResourceState(archived, unavailableReason, status.Generation, nil, "")
+		status.SessionState = publicSessionState(archived, unavailableReason, status.Generation, nil, "")
 		return status, nil
 	}
 	session, sessionErr := client.GetSession(ctx, record.AgentHubSessionID)
@@ -942,7 +944,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorksp
 		if status.LastError == "" {
 			status.LastError = sessionErr.Error()
 		}
-		status.State = publicResourceState(archived, unavailableReason, status.Generation, nil, sessionErr.Error())
+		status.SessionState = publicSessionState(archived, unavailableReason, status.Generation, nil, sessionErr.Error())
 		return status, nil
 	}
 	status.Session = &resourceSessionStatus{
@@ -951,7 +953,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorksp
 	}
 	status.Generation.Resumable = session.State == "stopped" && !record.SessionResumeUnavailable && !record.ReplacementPending && !record.ArchivedTaskStopRequested
 	status.CanSteerWaiting = !archived && !record.ReplacementPending && (session.State == "running" || session.State == "waiting_approval") && session.InputCapabilities.Steer
-	status.State = publicResourceState(archived, unavailableReason, status.Generation, status.Session, "")
+	status.SessionState = publicSessionState(archived, unavailableReason, status.Generation, status.Session, "")
 	return status, nil
 }
 
@@ -1196,6 +1198,15 @@ func (m *agentManager) acceptResourceMessageDurable(ctx context.Context, workspa
 	if archived {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "resource_archived", Message: fmt.Sprintf("resource %s is archived and no longer accepts messages", resourceID)}
 	}
+	if strings.Contains(resourceID, ".task") {
+		puaWorkspace, openErr := app.OpenWorkspace(workspace.Path)
+		if openErr != nil {
+			return resourceMailboxMessage{}, openErr
+		}
+		if _, stateErr := puaWorkspace.SetTaskState(resourceID, app.TaskStateInProgress, ""); stateErr != nil {
+			return resourceMailboxMessage{}, stateErr
+		}
+	}
 	message, err := acceptMailboxMessage(workspace.Path, resourceID, request)
 	if err != nil {
 		return resourceMailboxMessage{}, err
@@ -1365,6 +1376,13 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 			record, rt, client, err = m.ensureMailboxGeneration(ctx, workspace, resourceID)
 			if err != nil {
 				recordMailboxFailure(workspace.Path, message.ID, err)
+				exhausted, stateErr := m.recordTaskStartFailure(workspace, message, err)
+				if stateErr != nil {
+					return stateErr
+				}
+				if exhausted {
+					return nil
+				}
 				return err
 			}
 		}
@@ -1597,6 +1615,9 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 			return nil
 		}
 		deliveryPlan := lifecyclePlan
+		if err := m.prepareTaskWorkChain(workspace, message, rt); err != nil {
+			return err
+		}
 		message, err = updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
 			current.Status = resourceMessageDelivering
 			current.GenerationID = record.GenerationID
@@ -1801,6 +1822,71 @@ func (m *agentManager) handleResourceStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, status)
+}
+
+type taskStateResponse struct {
+	ResourceID     string        `json:"resourceId"`
+	State          app.TaskState `json:"state,omitempty"`
+	Note           string        `json:"note,omitempty"`
+	StateUpdatedAt string        `json:"stateUpdatedAt,omitempty"`
+}
+
+func taskStateFromDetail(detail app.ResourceDetailView) (taskStateResponse, error) {
+	if detail.Type != "task" {
+		return taskStateResponse{}, &resourceAPIError{Code: "invalid_request", Message: "task state is supported only for Task resources"}
+	}
+	return taskStateResponse{ResourceID: detail.ID, State: detail.State, Note: detail.StateNote, StateUpdatedAt: detail.StateUpdatedAt}, nil
+}
+
+func (m *agentManager) handleTaskState(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+	workspace, err := m.server.workspace(workspaceID)
+	if err != nil {
+		writeError(w, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}, http.StatusNotFound)
+		return
+	}
+	resourceID = normalizedResourceID(resourceID)
+	if r.Method != http.MethodGet && r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var response taskStateResponse
+	err = m.withResourceController(r.Context(), workspace, resourceID, func() error {
+		puaWorkspace, openErr := app.OpenWorkspace(workspace.Path)
+		if openErr != nil {
+			return openErr
+		}
+		if r.Method == http.MethodGet {
+			detail, detailErr := puaWorkspace.Resource(resourceID)
+			if detailErr != nil {
+				return &resourceAPIError{Code: "resource_not_found", Message: detailErr.Error()}
+			}
+			response, detailErr = taskStateFromDetail(detail)
+			return detailErr
+		}
+		var body struct {
+			State app.TaskState `json:"state"`
+			Note  string        `json:"note"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if decodeErr := decoder.Decode(&body); decodeErr != nil {
+			return &resourceAPIError{Code: "invalid_request", Message: decodeErr.Error()}
+		}
+		if !app.IsAgentTaskState(body.State) {
+			return &resourceAPIError{Code: "invalid_request", Message: "Agent may set task state only to waiting, blocked, paused, or completed"}
+		}
+		task, setErr := puaWorkspace.SetTaskState(resourceID, body.State, body.Note)
+		if setErr != nil {
+			return &resourceAPIError{Code: "invalid_request", Message: setErr.Error()}
+		}
+		response = taskStateResponse{ResourceID: task.ID, State: task.State, Note: task.StateNote, StateUpdatedAt: task.StateUpdatedAt}
+		return nil
+	})
+	if err != nil {
+		writeError(w, err, resourceErrorStatus(err))
+		return
+	}
+	writeJSON(w, response)
 }
 
 func (m *agentManager) handleResourceMessages(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {

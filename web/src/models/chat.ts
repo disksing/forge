@@ -53,7 +53,7 @@ export interface WaitingMessage {
 
 export interface ResourceMessageStatus {
   resourceId: string;
-  state: "idle" | "working" | "attention_required" | "unavailable" | "archived";
+  sessionState: "idle" | "working" | "attention_required" | "unavailable" | "archived";
   canSteerWaiting: boolean;
   exists?: boolean;
   archived?: boolean;

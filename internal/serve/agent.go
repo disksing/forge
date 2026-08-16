@@ -114,6 +114,11 @@ type generationRecord struct {
 	CompletionTurnID        string `json:"completionTurnId,omitempty"`
 	CompletionAt            string `json:"completionAt,omitempty"`
 	CompletionPending       bool   `json:"completionPending,omitempty"`
+	// Task workflow continuation fields make terminal handling idempotent across
+	// duplicate AgentHub observations and PUA Server restarts.
+	TaskStateChainID           string `json:"taskStateChainId,omitempty"`
+	TaskStateContinuationCount int    `json:"taskStateContinuationCount,omitempty"`
+	TaskStateCompletionMarker  string `json:"taskStateCompletionMarker,omitempty"`
 	// Retired is a storage projection flag, not a public runtime field.
 	// Retired records are immutable history and must never enter the
 	// lifecycle reconciler.
@@ -612,7 +617,8 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 	if sessionID == "" {
 		return
 	}
-	_, _ = rt.mutateGeneration(func(record *generationRecord) {
+	previous := rt.snapshotGeneration().CompletionMarker
+	updated, _ := rt.mutateGeneration(func(record *generationRecord) {
 		if strings.TrimSpace(record.AgentHubSessionID) != sessionID {
 			return
 		}
@@ -673,6 +679,9 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 		}
 		record.CompletionPending = false
 	})
+	if updated.CompletionMarker != "" && updated.CompletionMarker != previous && rt.manager != nil {
+		rt.manager.scheduleTaskTurnCompletion(rt, updated)
+	}
 }
 
 func (rt *agentRuntime) completionHistoryPending(session agentHubSession) bool {
@@ -896,7 +905,6 @@ func ensureAgentDirs(workspacePath string) error {
 func agentRoot(workspacePath string) string {
 	return filepath.Join(workspacepath.ControlDir(workspacePath), "runtime")
 }
-
 
 func agentCwd(workspacePath, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)

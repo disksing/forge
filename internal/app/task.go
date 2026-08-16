@@ -53,8 +53,10 @@ func newTask(id, parent, title, description string) Task {
 			UpdatedAt:     now,
 			AgentBinding:  defaultAgentBinding(),
 		},
-		Parent:      parent,
-		Description: description,
+		Parent:         parent,
+		Description:    description,
+		State:          TaskStateNotStarted,
+		StateUpdatedAt: now,
 	}
 	return task
 }
@@ -566,5 +568,7 @@ You are working in an AgentWorkspace Task directory.
 
 - Resource ID: %s
 - Always read the parent Project instructions in ../AGENTS.md and the Workspace instructions in ../../AGENTS.md.
+- The Server sets the Task state to in_progress at the start of every Turn. Before ending a Turn, continue the work or choose waiting, blocked, paused, or completed and run pua task state set <state> --note "...".
+- waiting needs no user intervention and may resume after an external condition; blocked needs user follow-up; paused intentionally waits for user resumption; completed means done. waiting, blocked, and paused require a short single-line note.
 `, meta.ID)
 }

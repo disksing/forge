@@ -133,13 +133,31 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     return { session: status, statusPresentation, className: statusPresentation.className, label };
   }
 
+  function taskWorkflowState(item: ResourceRecord): TaskOperationalState {
+    const note = String(item.stateNote || "").trim();
+    let status: TaskStatusState;
+    switch (item.state) {
+      case "not_started": status = { kind: "task-not-started", className: "task-state-not-started", iconName: "circle", label: "Not started", recentOutput: false }; break;
+      case "in_progress": status = { kind: "task-in-progress", className: "task-state-in-progress", iconName: "loader-circle", label: "In progress", recentOutput: false }; break;
+      case "waiting": status = { kind: "task-waiting", className: "task-state-waiting", iconName: "clock-3", label: "Waiting", recentOutput: false }; break;
+      case "blocked": status = { kind: "task-blocked", className: "task-state-blocked", iconName: "circle-alert", label: "Blocked", recentOutput: false }; break;
+      case "paused": status = { kind: "task-paused", className: "task-state-paused", iconName: "pause-circle", label: "Paused", recentOutput: false }; break;
+      case "completed": status = { kind: "task-completed", className: "task-state-completed", iconName: "check-circle", label: "Completed", recentOutput: false }; break;
+      case "error": status = { kind: "task-error", className: "task-state-error", iconName: "octagon-x", label: "Error", recentOutput: false }; break;
+      default: status = { kind: "task-unknown", className: "task-state-unknown", iconName: "help-circle", label: "State unknown", recentOutput: false };
+    }
+    const label = note ? `${status.label}: ${note}` : status.label;
+    const statusPresentation = operationalStatusPresentation([status]);
+    return { session: status, statusPresentation, className: statusPresentation.className, label };
+  }
+
   function noTaskOperationalState(): TaskOperationalState {
     return { session: null, className: "", label: "", statusPresentation: operationalStatusPresentation([]) };
   }
 
   function projectTaskSummary(project: ResourceRecord): ProjectTaskSummary {
     const tasks = (project.children || []).filter((task) => task.archived !== true);
-    const running = tasks.filter((task) => RUNNING_RESOURCE_STATES.has(task.runtime?.status || "")).length;
+    const running = tasks.filter((task) => task.state === "in_progress").length;
     const taskLabel = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
     const runningLabel = `${running} working`;
     return { taskCount: tasks.length, runningCount: running, taskLabel, runningLabel, text: `${taskLabel} · ${runningLabel}`, ariaLabel: `Open tasks: ${taskLabel}; ${runningLabel}` };
@@ -153,17 +171,12 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     const tree = dependencies.tree();
     if (!tree) return "";
     const parts: string[] = [];
-    if (tree.scheduler) {
-      const schedulerState = taskOperationalState(tree.scheduler);
-      parts.push(`scheduler:resource=${taskStatusKey(schedulerState.session)}:${schedulerState.label}`);
-    }
     for (const project of tree.projects) {
-      const state = taskOperationalState(project);
       const summary = projectTaskSummary(project);
-      parts.push(`${project.id}:resource=${taskStatusKey(state.session)}:${state.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
+      parts.push(`${project.id}:tasks=${summary.taskCount}:${summary.runningCount}`);
       for (const task of project.children || []) {
-        const taskState = taskOperationalState(task);
-        parts.push(`${task.id}:resource=${taskStatusKey(taskState.session)}:${taskState.label}`);
+        const taskState = taskWorkflowState(task);
+        parts.push(`${task.id}:state=${taskStatusKey(taskState.session)}:${taskState.label}`);
       }
     }
     return parts.join("|");
@@ -203,6 +216,7 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     resourceStatusState,
     statusModel,
     taskOperationalState,
+    taskWorkflowState,
     taskOperationalStateKey,
   };
 }

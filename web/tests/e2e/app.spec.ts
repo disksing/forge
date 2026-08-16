@@ -45,6 +45,7 @@ const project = {
       title: "Infrastructure task",
       path: "project1-migration/task1-infrastructure",
       archived: false,
+      state: "not_started",
     },
     {
       id: "project1.task2",
@@ -52,6 +53,7 @@ const project = {
       title: "Follow-up task",
       path: "project1-migration/task2-follow-up",
       archived: false,
+      state: "not_started",
     },
   ],
 };
@@ -244,6 +246,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         attention: attentionStates[project.id],
         children: tasks.map((resource) => resource.id === "project1.task1" ? {
           ...resource,
+          state: turnRunning ? "in_progress" : resource.state,
           attention: attentionStates[resource.id],
           ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : initialIdleStatus, agentName: "test-agent", updatedAt: now, resumable: initialIdleStatus === "idle-suspended", turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning } } : {}),
         } : { ...resource, attention: attentionStates[resource.id] }),
@@ -341,7 +344,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       const resourceId = decodeURIComponent(statusMatch[1]);
       const visible = waitingMessages.filter((message) => message.resourceId === resourceId);
       return json(route, {
-        resourceId, state: "working", exists: true, archived: false, acceptsMessages: true,
+        resourceId, sessionState: "working", exists: true, archived: false, acceptsMessages: true,
         canSteerWaiting: true, waitingMessages: visible, messages: { waiting: visible.length },
         ...(resourceId === "project1.task1" ? {
           generation: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle" },
@@ -486,6 +489,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         title: String(body.title || "Created task"),
         path: "project1-migration/task3-created-from-baseline",
         archived: false,
+        state: "not_started",
       };
       return json(route, createdTask, 201);
     }
@@ -555,7 +559,7 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     const treeMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/tree$/);
     if (treeMatch) return json(route, trees[treeMatch[1] as keyof typeof trees]);
     const statusMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)\/status$/);
-    if (statusMatch) return json(route, { resourceId: decodeURIComponent(statusMatch[2]), state: "idle", exists: true, archived: false, acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], messages: { waiting: 0 } });
+    if (statusMatch) return json(route, { resourceId: decodeURIComponent(statusMatch[2]), sessionState: "idle", exists: true, archived: false, acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], messages: { waiting: 0 } });
     const historyMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)\/history\/turns$/);
     if (historyMatch) return json(route, { resourceId: decodeURIComponent(historyMatch[2]), segments: [], page: { limit: 20, hasMore: false } });
     const detailMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)$/);
@@ -820,12 +824,13 @@ test("follows and dismisses a resource from the tree and attention list", async 
   expect(harness.attentionBodies.map((entry) => entry.method)).toEqual(["PUT", "POST"]);
 });
 
-test("uses the ordinary file icon for an idle task in the tree and Activity", async ({ page }) => {
+test("uses Task workflow state in the tree while leaving Activity unchanged", async ({ page }) => {
   await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
 
   const taskRow = page.locator("#projectTree .task-item", { hasText: "Infrastructure task" });
-  await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(1);
+  await expect(taskRow.locator('[data-lucide="circle"]')).toHaveCount(1);
+  await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(0);
   await expect(taskRow.locator('[data-lucide="message-square"]')).toHaveCount(0);
   await taskRow.hover();
   await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
@@ -836,12 +841,13 @@ test("uses the ordinary file icon for an idle task in the tree and Activity", as
   await expect(activityRow.locator('.activity-status [data-lucide="message-square"]')).toHaveCount(0);
 });
 
-test("uses the ordinary file icon for a sleeping task in the tree and Activity", async ({ page }) => {
+test("keeps Task workflow state independent from a sleeping Session", async ({ page }) => {
   await installMockApi(page, "project1.task1", false, false, false, [], "idle-suspended");
   await page.goto("/w/ws-test/r/project1.task1");
 
   const taskRow = page.locator("#projectTree .task-item", { hasText: "Infrastructure task" });
-  await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(1);
+  await expect(taskRow.locator('[data-lucide="circle"]')).toHaveCount(1);
+  await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(0);
   await expect(taskRow.locator('[data-lucide="pause-circle"]')).toHaveCount(0);
   await taskRow.hover();
   await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();

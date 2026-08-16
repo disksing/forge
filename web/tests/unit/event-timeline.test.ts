@@ -42,9 +42,9 @@ function project(events: AgentEvent[]): TimelineItem[] {
   return events.map((event) => ({ kind: "message", key: event.id, role: "assistant", text: String(event.data?.text || "") }));
 }
 
-function status(resourceId: string, generationId = `gen-${resourceId}`, generation = 1, state: ResourceMessageStatus["state"] = "idle", generationStatus = "idle", sessionState = "idle"): ResourceMessageStatus {
+function status(resourceId: string, generationId = `gen-${resourceId}`, generation = 1, publicSessionState: ResourceMessageStatus["sessionState"] = "idle", generationStatus = "idle", sessionState = "idle"): ResourceMessageStatus {
   return {
-    resourceId, state, acceptsMessages: true, canSteerWaiting: false, waitingMessages: [],
+    resourceId, sessionState: publicSessionState, acceptsMessages: true, canSteerWaiting: false, waitingMessages: [],
     generation: { generation, generationId, status: generationStatus },
     session: { id: `session-${resourceId}`, state: sessionState, currentTurnId: sessionState === "running" ? "turn-1" : undefined },
   };
@@ -265,7 +265,7 @@ describe("EventTimeline", () => {
     const fixture = history("task-a");
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
     const active = model("task-a");
-    active.status!.state = "working";
+    active.status!.sessionState = "working";
     active.status!.session = { ...active.status!.session, state: "running", currentTurnId: "turn-1" };
     const channel = createModelChannel(active);
     const target = document.body.appendChild(document.createElement("div"));
@@ -278,7 +278,7 @@ describe("EventTimeline", () => {
     expect(target.querySelector(".turn-working-indicator [data-lucide='loader-circle']")).not.toBeNull();
 
     const awaitingApproval = model("task-a");
-    awaitingApproval.status!.state = "attention_required";
+    awaitingApproval.status!.sessionState = "attention_required";
     awaitingApproval.status!.session = { ...awaitingApproval.status!.session, state: "waiting_approval", currentTurnId: "turn-1" };
     channel.publish(awaitingApproval);
     await tick();

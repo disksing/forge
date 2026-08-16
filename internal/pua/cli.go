@@ -259,6 +259,8 @@ func runTask(args []string) error {
 		return applicationShowResource(taskID)
 	case "status":
 		return runTaskStatus(args[1:])
+	case "state":
+		return runTaskState(args[1:])
 	case "archive":
 		taskID, err := resolveTaskArg(args[1:], "archive")
 		if err != nil {
@@ -479,7 +481,7 @@ Commands:
     containing the current working directory.
 
   pua project status [--project=<project>] [--server=<url>]
-    Query the owning pua serve process for the project's public resource
+    Query the owning pua serve process for the project's public session
     state and generation status, message counts, waiting messages, steer
     capability, and recent delivery error. <project> follows the same rules as
     pua project show.
@@ -500,6 +502,8 @@ func printTaskHelp() {
   pua task show [--project=<project>] [--task=<task>]
   pua task archive [--project=<project>] [--task=<task>]
   pua task status [--project=<project>] [--task=<task>] [--server=<url>]
+  pua task state [--project=<project>] [--task=<task>] [--server=<url>]
+  pua task state set <waiting|blocked|paused|completed> [--note <text>] [--project=<project>] [--task=<task>] [--server=<url>]
   pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
 
 Commands:
@@ -533,9 +537,14 @@ Commands:
     as pua task show.
 
   pua task status [--project=<project>] [--task=<task>] [--server=<url>]
-    Query the owning pua serve process for the task's public resource state
+    Query the owning pua serve process for the task's public session state
     and generation status, message counts, waiting messages, steer capability,
     and recent delivery error. Task selection follows pua task show.
+
+  pua task state [--project=<project>] [--task=<task>] [--server=<url>]
+    Read the Task workflow state. Use pua task state set to finish an Agent
+    Turn with waiting, blocked, paused, or completed; waiting, blocked, and
+    paused require --note.
 
   pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
     Read one bounded newest-first page of the task's long-lived conversation
@@ -601,7 +610,7 @@ func printWorkspaceHelp() {
 
 Commands:
   pua workspace status [--server=<url>]
-    Query the owning pua serve process for the Workspace's public resource
+    Query the owning pua serve process for the Workspace's public session
     state and generation status, message counts, waiting messages, steer
     capability, and recent delivery error.
 

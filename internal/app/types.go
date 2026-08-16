@@ -88,11 +88,44 @@ type Project struct {
 
 type Task struct {
 	ResourceMeta
-	Parent      string              `json:"parent"`
-	Description string              `json:"description,omitempty"`
-	Template    *TaskTemplateSource `json:"template,omitempty"`
+	Parent         string              `json:"parent"`
+	Description    string              `json:"description,omitempty"`
+	Template       *TaskTemplateSource `json:"template,omitempty"`
+	State          TaskState           `json:"state,omitempty"`
+	StateNote      string              `json:"stateNote,omitempty"`
+	StateUpdatedAt string              `json:"stateUpdatedAt,omitempty"`
 	// Path is populated on create responses but is not persisted in task.json.
 	Path string `json:"path,omitempty"`
+}
+
+type TaskState string
+
+const (
+	TaskStateNotStarted TaskState = "not_started"
+	TaskStateInProgress TaskState = "in_progress"
+	TaskStateWaiting    TaskState = "waiting"
+	TaskStateBlocked    TaskState = "blocked"
+	TaskStatePaused     TaskState = "paused"
+	TaskStateCompleted  TaskState = "completed"
+	TaskStateError      TaskState = "error"
+)
+
+func IsTaskState(value TaskState) bool {
+	switch value {
+	case TaskStateNotStarted, TaskStateInProgress, TaskStateWaiting, TaskStateBlocked, TaskStatePaused, TaskStateCompleted, TaskStateError:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsAgentTaskState(value TaskState) bool {
+	switch value {
+	case TaskStateWaiting, TaskStateBlocked, TaskStatePaused, TaskStateCompleted:
+		return true
+	default:
+		return false
+	}
 }
 
 type TaskTemplateSource struct {

@@ -101,6 +101,38 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 	}
 }
 
+func TestTaskWorkflowStateLifecycle(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("States", "states")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Stateful Task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.State != app.TaskStateNotStarted || task.StateUpdatedAt == "" {
+		t.Fatalf("new task state = %#v", task)
+	}
+	if _, err := workspace.SetTaskState(task.ID, app.TaskStateWaiting, ""); err == nil {
+		t.Fatal("waiting without a note succeeded")
+	}
+	if _, err := workspace.SetTaskState(task.ID, app.TaskStateWaiting, "line one\nline two"); err == nil {
+		t.Fatal("multiline state note succeeded")
+	}
+	updated, err := workspace.SetTaskState(task.ID, app.TaskStateBlocked, "Need user approval")
+	if err != nil || updated.State != app.TaskStateBlocked || updated.StateNote != "Need user approval" || updated.StateUpdatedAt == "" {
+		t.Fatalf("updated task state = %#v, %v", updated, err)
+	}
+	tree, err := workspace.Tree()
+	if err != nil || tree.Projects[0].Children[0].State != app.TaskStateBlocked || tree.Projects[0].Children[0].StateNote != "Need user approval" {
+		t.Fatalf("tree task state = %#v, %v", tree.Projects, err)
+	}
+}
+
 func TestProjectArchiveCascadesChildrenAndRepairsWorktreeReferences(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

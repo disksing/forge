@@ -52,6 +52,18 @@ func validateResource(resource Resource) error {
 		if !projectTaskName(typed.Parent).MatchString(meta.ID) {
 			return fmt.Errorf("task id %q must match %s.taskN", meta.ID, typed.Parent)
 		}
+		if typed.State != "" && !IsTaskState(typed.State) {
+			return fmt.Errorf("invalid task state %q", typed.State)
+		}
+		if (typed.State == TaskStateWaiting || typed.State == TaskStateBlocked || typed.State == TaskStatePaused) && strings.TrimSpace(typed.StateNote) == "" {
+			return fmt.Errorf("task state %q requires stateNote", typed.State)
+		}
+		if strings.ContainsAny(typed.StateNote, "\r\n") {
+			return fmt.Errorf("task stateNote must be a single line")
+		}
+		if typed.State != "" && strings.TrimSpace(typed.StateUpdatedAt) == "" {
+			return fmt.Errorf("stateUpdatedAt is required when task state is set")
+		}
 	default:
 		return fmt.Errorf("unsupported resource type %T", resource)
 	}

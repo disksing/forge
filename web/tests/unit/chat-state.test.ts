@@ -26,7 +26,7 @@ function turn(gen: number, id: string, first: number, last: number, closed = tru
 }
 
 function status(gen = 3): ResourceMessageStatus {
-  return { resourceId: "task-a", state: "idle", acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], generation: { generation: gen, generationId: `gen-${gen}`, status: "idle" }, session: { id: `session-${gen}`, state: "idle" } };
+  return { resourceId: "task-a", sessionState: "idle", acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], generation: { generation: gen, generationId: `gen-${gen}`, status: "idle" }, session: { id: `session-${gen}`, state: "idle" } };
 }
 
 function detail(summary: ResourceHistoryTurnSummary) {
@@ -365,7 +365,7 @@ describe("resource conversation controller", () => {
     failed.failPermanently();
     value.activate("workspace-a", "task-a", {
       ...status(),
-      state: "working",
+      sessionState: "working",
       generation: { ...status().generation!, status: "running", resumable: false },
       session: { ...status().session, state: "running", currentTurnId: "turn-resumed" },
     });
