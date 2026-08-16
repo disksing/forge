@@ -29,6 +29,7 @@ func TestGenerationCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
 
 	rt := newAgentHubRuntime(manager, workspace, generationRecord{
 		ID:                  "gen-completion",
+		GenerationID:        "gen-run-completion",
 		WorkspaceID:         workspace.ID,
 		AgentHubSessionID:   sessionID,
 		CompletionSessionID: sessionID,
@@ -66,6 +67,8 @@ func TestGenerationCompletionMarkerUsesCanonicalDurableEventOnce(t *testing.T) {
 	fake.mu.Unlock()
 	baselineRuntime := newAgentHubRuntime(manager, workspace, generationRecord{
 		ID:                "gen-baseline",
+		GenerationID:      "gen-run-baseline",
+		ResourceID:        "project1.task1",
 		WorkspaceID:       workspace.ID,
 		AgentHubSessionID: baselineID,
 		Status:            "idle",
@@ -94,7 +97,7 @@ func TestGenerationCompletionProjectionPreservesCancellationAndReplyPresence(t *
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	session := agentHubSession{ID: "ses-cancelled", State: "ready", LastEventID: 3}
 	runtime := newAgentHubRuntime(manager, workspace, generationRecord{
-		ID: "gen-cancelled", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
+		ID: "gen-cancelled", GenerationID: "gen-run-cancelled", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
 		CompletionSessionID: session.ID, CompletionCursor: 1, Status: "running",
 	}, nil)
 	runtime.recordTurnCompletionHistory(session, []agentHubEvent{
@@ -107,7 +110,7 @@ func TestGenerationCompletionProjectionPreservesCancellationAndReplyPresence(t *
 	}
 
 	runtime = newAgentHubRuntime(manager, workspace, generationRecord{
-		ID: "gen-cancelled-with-reply", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
+		ID: "gen-cancelled-with-reply", GenerationID: "gen-run-cancelled-with-reply", ResourceID: "project1.task1", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
 		CompletionSessionID: session.ID, CompletionCursor: 1, Status: "running",
 	}, nil)
 	runtime.recordTurnCompletionHistory(session, []agentHubEvent{

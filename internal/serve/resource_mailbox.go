@@ -513,7 +513,7 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 			seen[legacy.ID] = true
 			mailboxChanged = true
 		}
-		if len(records[recordIndex].PendingMessages) > 0 && !records[recordIndex].Retired && !records[recordIndex].Legacy {
+		if len(records[recordIndex].PendingMessages) > 0 && !records[recordIndex].Retired {
 			records[recordIndex].PendingMessages = nil
 			updatedRecords = append(updatedRecords, records[recordIndex])
 		}
@@ -1075,7 +1075,7 @@ func currentGenerationRecordByID(workspacePath, generationID string) (generation
 	}
 	generationID = strings.TrimSpace(generationID)
 	for _, record := range records {
-		if record.GenerationID == generationID && !record.Retired && !record.Legacy {
+		if record.GenerationID == generationID && !record.Retired {
 			return record, true, nil
 		}
 	}
