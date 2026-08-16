@@ -119,6 +119,51 @@
   width: 92px;
 }
 
+.resource-settings-policy-toggle {
+  cursor: pointer;
+}
+
+.resource-settings-policy-toggle input {
+  flex: 0 0 auto;
+  height: 18px;
+  width: 18px;
+}
+
+.resource-settings-policy-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.resource-settings-policy-controls label {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.resource-settings-policy-controls input {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-subtle, #ccd4df);
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+  padding: 8px 9px;
+  width: 82px;
+}
+
+@media (max-width: 720px) {
+  .resource-settings-policy-budgets {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .resource-settings-policy-controls {
+    justify-content: flex-start;
+  }
+}
+
 .resource-settings-name-input,
 .resource-settings-desc-input {
   background: var(--surface, #fff);

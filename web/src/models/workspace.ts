@@ -71,9 +71,16 @@ export interface ResourceAgentDefaultsRecord {
   task: { kind: "profile" | "agent"; name: string };
 }
 
+export interface GenerationPolicyRecord {
+  enabled: boolean;
+  maxTurns: number;
+  maxAccumulatedTurnMinutes: number;
+}
+
 export interface WorkspaceTree {
-  agentBinding?: { kind: "profile" | "agent"; name: string };
-  resourceDefaults?: ResourceAgentDefaultsRecord;
+	agentBinding?: { kind: "profile" | "agent"; name: string };
+	resourceDefaults?: ResourceAgentDefaultsRecord;
+	generationPolicy?: GenerationPolicyRecord;
   scheduler?: ResourceRecord;
   projects: ResourceRecord[];
   attentionList?: ResourceRecord[];

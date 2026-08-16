@@ -55,6 +55,19 @@ func TestWorkspaceDefaultsAndProjectTaskDefaultHTTPAPI(t *testing.T) {
 		t.Fatalf("unknown Profile default = %d %s", unknownProfile.Code, unknownProfile.Body.String())
 	}
 
+	policyResponse := request(http.MethodPut, "/api/workspaces/workspace-defaults/generation-policy", `{"enabled":false,"maxTurns":25,"maxAccumulatedTurnMinutes":150}`)
+	var policyBody struct {
+		GenerationPolicy app.GenerationPolicy `json:"generationPolicy"`
+	}
+	policyErr := json.Unmarshal(policyResponse.Body.Bytes(), &policyBody)
+	if policyResponse.Code != http.StatusOK || policyErr != nil || policyBody.GenerationPolicy != (app.GenerationPolicy{Enabled: false, MaxTurns: 25, MaxAccumulatedTurnMinutes: 150}) {
+		t.Fatalf("update Generation policy = %d %s", policyResponse.Code, policyResponse.Body.String())
+	}
+	invalidPolicy := request(http.MethodPut, "/api/workspaces/workspace-defaults/generation-policy", `{"enabled":true,"maxTurns":0,"maxAccumulatedTurnMinutes":0}`)
+	if invalidPolicy.Code != http.StatusBadRequest {
+		t.Fatalf("invalid Generation policy = %d %s", invalidPolicy.Code, invalidPolicy.Body.String())
+	}
+
 	taskDefaultResponse := request(http.MethodPut, "/api/workspaces/workspace-defaults/resources/project1/task-default", `{"kind":"profile","name":"review"}`)
 	var taskDefaultBody struct {
 		TaskDefault app.AgentBinding `json:"taskDefault"`
@@ -87,7 +100,7 @@ func TestWorkspaceDefaultsAndProjectTaskDefaultHTTPAPI(t *testing.T) {
 	}
 
 	treeResponse := request(http.MethodGet, "/api/workspaces/workspace-defaults/tree", "")
-	if treeResponse.Code != http.StatusOK || !strings.Contains(treeResponse.Body.String(), `"resourceDefaults"`) || !strings.Contains(treeResponse.Body.String(), `"review"`) {
+	if treeResponse.Code != http.StatusOK || !strings.Contains(treeResponse.Body.String(), `"resourceDefaults"`) || !strings.Contains(treeResponse.Body.String(), `"generationPolicy"`) || !strings.Contains(treeResponse.Body.String(), `"review"`) {
 		t.Fatalf("tree did not project Workspace defaults: %d %s", treeResponse.Code, treeResponse.Body.String())
 	}
 

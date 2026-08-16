@@ -591,10 +591,11 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 	seedPollerGeneration(t, fake, workspace, generationRecord{
 		ID: "gen-idle", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_idle",
 		SourceExternalID: workspace.ID + "/run-idle", Status: "idle",
-		CompletionSessionID: "ses_idle",
-		IdleSinceAt:         "2026-08-01T00:00:10Z",
-		IdleDeadlineAt:      "2026-08-01T00:30:10Z",
-		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:10Z",
+		CompletionSessionID:  "ses_idle",
+		GenerationUsageReady: true,
+		IdleSinceAt:          "2026-08-01T00:00:10Z",
+		IdleDeadlineAt:       "2026-08-01T00:30:10Z",
+		CreatedAt:            "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:10Z",
 		LastOutputAt: "2026-08-01T00:00:10Z",
 	}, agentHubSession{ID: "ses_idle", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 	puaWorkspace, err := app.OpenWorkspace(workspace.Path)

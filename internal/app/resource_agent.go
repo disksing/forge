@@ -40,6 +40,52 @@ func normalizeResourceDefaults(value ResourceAgentDefaults) ResourceAgentDefault
 	}
 }
 
+func defaultGenerationPolicy() GenerationPolicy {
+	return GenerationPolicy{
+		Enabled:                   true,
+		MaxTurns:                  DefaultGenerationMaxTurns,
+		MaxAccumulatedTurnMinutes: DefaultGenerationMaxAccumulatedTurnMinutes,
+	}
+}
+
+func resolveGenerationPolicy(value GenerationPolicyConfig) (GenerationPolicy, error) {
+	policy := defaultGenerationPolicy()
+	if value.Enabled != nil {
+		policy.Enabled = *value.Enabled
+	}
+	if value.MaxTurns != nil {
+		policy.MaxTurns = *value.MaxTurns
+	}
+	if value.MaxAccumulatedTurnMinutes != nil {
+		policy.MaxAccumulatedTurnMinutes = *value.MaxAccumulatedTurnMinutes
+	}
+	return normalizeGenerationPolicy(policy)
+}
+
+func normalizeGenerationPolicy(policy GenerationPolicy) (GenerationPolicy, error) {
+	if policy.MaxTurns < 0 || policy.MaxTurns > 100000 {
+		return GenerationPolicy{}, errors.New("generation max turns must be between 0 and 100000")
+	}
+	if policy.MaxAccumulatedTurnMinutes < 0 || policy.MaxAccumulatedTurnMinutes > 525600 {
+		return GenerationPolicy{}, errors.New("generation accumulated turn minutes must be between 0 and 525600")
+	}
+	if policy.Enabled && policy.MaxTurns == 0 && policy.MaxAccumulatedTurnMinutes == 0 {
+		return GenerationPolicy{}, errors.New("an enabled generation policy requires at least one non-zero budget")
+	}
+	return policy, nil
+}
+
+func generationPolicyConfig(policy GenerationPolicy) GenerationPolicyConfig {
+	enabled := policy.Enabled
+	maxTurns := policy.MaxTurns
+	maxMinutes := policy.MaxAccumulatedTurnMinutes
+	return GenerationPolicyConfig{
+		Enabled:                   &enabled,
+		MaxTurns:                  &maxTurns,
+		MaxAccumulatedTurnMinutes: &maxMinutes,
+	}
+}
+
 // NormalizeAgentBinding validates one explicit resource binding. An empty
 // legacy binding is normalized to the default Profile during migration.
 func NormalizeAgentBinding(value AgentBinding) (AgentBinding, error) {
@@ -93,6 +139,14 @@ func (w *Workspace) EnsureResourceRuntime() (WorkspaceRuntimeConfig, error) {
 			cfg.ResourceDefaults = normalizedDefaults
 			changed = true
 		}
+		generationPolicy, err := resolveGenerationPolicy(cfg.GenerationPolicy)
+		if err != nil {
+			return err
+		}
+		if cfg.GenerationPolicy.Enabled == nil || cfg.GenerationPolicy.MaxTurns == nil || cfg.GenerationPolicy.MaxAccumulatedTurnMinutes == nil {
+			cfg.GenerationPolicy = generationPolicyConfig(generationPolicy)
+			changed = true
+		}
 		if strings.TrimSpace(cfg.InstanceID) == "" {
 			cfg.InstanceID, err = newWorkspaceInstanceID()
 			if err != nil {
@@ -123,7 +177,7 @@ func (w *Workspace) EnsureResourceRuntime() (WorkspaceRuntimeConfig, error) {
 		if err := os.MkdirAll(filepath.Join(workspacepath.ControlDir(w.root), "runtime"), 0o700); err != nil {
 			return err
 		}
-		result = WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: cfg.AgentBinding, ResourceDefaults: cfg.ResourceDefaults}
+		result = WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: cfg.AgentBinding, ResourceDefaults: cfg.ResourceDefaults, GenerationPolicy: generationPolicy}
 		return nil
 	})
 	if err != nil {
@@ -180,7 +234,36 @@ func (w *Workspace) RuntimeConfig() (WorkspaceRuntimeConfig, error) {
 	if strings.TrimSpace(cfg.InstanceID) == "" {
 		return WorkspaceRuntimeConfig{}, fmt.Errorf("Workspace resource runtime is not initialized")
 	}
-	return WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: binding, ResourceDefaults: normalizeResourceDefaults(cfg.ResourceDefaults)}, nil
+	policy, err := resolveGenerationPolicy(cfg.GenerationPolicy)
+	if err != nil {
+		return WorkspaceRuntimeConfig{}, err
+	}
+	return WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: binding, ResourceDefaults: normalizeResourceDefaults(cfg.ResourceDefaults), GenerationPolicy: policy}, nil
+}
+
+// SetGenerationPolicy replaces the Workspace-wide automatic generation
+// rotation policy. It applies uniformly to Workspace, Project, Task, and
+// Scheduler resources.
+func (w *Workspace) SetGenerationPolicy(policy GenerationPolicy) (GenerationPolicy, error) {
+	if err := w.require(); err != nil {
+		return GenerationPolicy{}, err
+	}
+	policy, err := normalizeGenerationPolicy(policy)
+	if err != nil {
+		return GenerationPolicy{}, &APIError{Operation: "set generation policy", Kind: "generation_policy", Workspace: w.root, Err: err}
+	}
+	err = withWorkspaceMutationLock(w.root, func() error {
+		cfg, err := readWorkspaceConfig(w.root)
+		if err != nil {
+			return err
+		}
+		cfg.GenerationPolicy = generationPolicyConfig(policy)
+		return writeWorkspaceConfig(w.root, cfg)
+	})
+	if err != nil {
+		return GenerationPolicy{}, &APIError{Operation: "set generation policy", Kind: "generation_policy", Workspace: w.root, Err: err}
+	}
+	return policy, nil
 }
 
 func (w *Workspace) ResourceAgentBinding(id string) (AgentBinding, error) {

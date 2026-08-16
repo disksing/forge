@@ -1,6 +1,6 @@
 import type { TaskTemplate } from "./create";
 import type { AgentOption } from "./common";
-import type { SchedulerConfigRecord } from "./workspace";
+import type { GenerationPolicyRecord, SchedulerConfigRecord } from "./workspace";
 
 export interface ResourceAgentBindingModel {
   kind: "profile" | "agent";
@@ -93,6 +93,7 @@ export interface DetailPanelModel {
   wiki: { exists?: boolean; error?: string; entries?: FileTreeModel[] } | null;
   workspaceAgents: WorkspaceAgentsModel | null;
   workspaceDefaults: { project: ResourceAgentBindingModel; task: ResourceAgentBindingModel };
+  generationPolicy: GenerationPolicyRecord;
   agentBinding: ResourceAgentBindingModel;
   agentProfiles: ResourceAgentProfileModel[];
   agents: AgentOption[];
@@ -107,6 +108,7 @@ export interface DetailPanelModel {
   onRenameResource: (title: string) => Promise<void>;
   onSaveDescription: (description: string) => Promise<void>;
   onSaveWorkspaceDefaults: (defaults: { project: ResourceAgentBindingModel; task: ResourceAgentBindingModel }) => Promise<void>;
+  onSaveGenerationPolicy: (policy: GenerationPolicyRecord) => Promise<void>;
   onSaveTaskDefault: (projectId: string, binding: ResourceAgentBindingModel | null) => Promise<void>;
   onRefreshScheduler?: () => Promise<void>;
   onToast: (message: string) => void;

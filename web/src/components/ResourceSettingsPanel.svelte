@@ -13,6 +13,9 @@
 
   let pending = $state("");
   let interval = $state(30);
+  let generationPolicyEnabled = $state(true);
+  let generationMaxTurns = $state(20);
+  let generationMaxMinutes = $state(120);
   let nameEditing = $state(false);
   let nameDraft = $state("");
   let nameInput = $state<HTMLInputElement | null>(null);
@@ -22,6 +25,11 @@
   $effect(() => {
     const wake = model.detail?.scheduler?.wakeIntervalMinutes;
     if (typeof wake === "number") interval = wake;
+  });
+  $effect(() => {
+    generationPolicyEnabled = model.generationPolicy.enabled;
+    generationMaxTurns = model.generationPolicy.maxTurns;
+    generationMaxMinutes = model.generationPolicy.maxAccumulatedTurnMinutes;
   });
   $effect(() => {
     if (nameEditing && nameInput) nameInput.focus();
@@ -53,6 +61,16 @@
   function saveWorkspaceDefault(kind: "project" | "task", binding: ResourceAgentBindingModel): void {
     const defaults = { ...model.workspaceDefaults, [kind]: binding };
     void run(`default:${kind}`, () => model.onSaveWorkspaceDefaults(defaults));
+  }
+
+  function saveGenerationPolicy(): void {
+    if (!Number.isInteger(generationMaxTurns) || generationMaxTurns < 1 || generationMaxTurns > 100000) return;
+    if (!Number.isInteger(generationMaxMinutes) || generationMaxMinutes < 1 || generationMaxMinutes > 525600) return;
+    void run("generationPolicy", () => model.onSaveGenerationPolicy({
+      enabled: generationPolicyEnabled,
+      maxTurns: generationMaxTurns,
+      maxAccumulatedTurnMinutes: generationMaxMinutes,
+    }));
   }
 
   function saveTaskDefault(binding: ResourceAgentBindingModel): void {
@@ -143,6 +161,26 @@
 
 <div class="resource-settings" data-component-owner="resource-settings-panel">
   {#if model.resourceType === "workspace"}
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>Generation lifecycle</strong>
+        <span>Start a fresh Generation after either completed-Turn budget is reached. Active Turns and approvals are never interrupted.</span>
+      </div>
+      <div class="resource-settings-list">
+        <label class="resource-settings-row resource-settings-policy-toggle">
+          <span class="resource-settings-row-label"><strong>Automatic rotation</strong><span>Stop, archive, and retire the current Generation at its next safe terminal boundary.</span></span>
+          <input type="checkbox" bind:checked={generationPolicyEnabled} disabled={Boolean(pending)} aria-label="Enable automatic Generation rotation" />
+        </label>
+        <div class="resource-settings-row resource-settings-policy-budgets">
+          <div class="resource-settings-row-label"><strong>Budgets</strong><span>Rotate after either limit: completed Turns or accumulated active Turn time. Idle time is excluded.</span></div>
+          <div class="resource-settings-policy-controls">
+            <label><input type="number" min="1" max="100000" step="1" bind:value={generationMaxTurns} disabled={Boolean(pending)} aria-label="Maximum Turns per Generation" /><span>Turns</span></label>
+            <label><input type="number" min="1" max="525600" step="1" bind:value={generationMaxMinutes} disabled={Boolean(pending)} aria-label="Maximum accumulated Turn minutes per Generation" /><span>minutes</span></label>
+            <button type="button" class="secondary-button" disabled={Boolean(pending) || !Number.isInteger(generationMaxTurns) || generationMaxTurns < 1 || !Number.isInteger(generationMaxMinutes) || generationMaxMinutes < 1 || (generationPolicyEnabled === model.generationPolicy.enabled && generationMaxTurns === model.generationPolicy.maxTurns && generationMaxMinutes === model.generationPolicy.maxAccumulatedTurnMinutes)} onclick={saveGenerationPolicy}><Icon name="save" /><span>Save</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
     <section class="resource-settings-section">
       <div class="resource-settings-section-head">
         <strong>Agent Bindings</strong>

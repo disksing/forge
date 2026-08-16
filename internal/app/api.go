@@ -173,7 +173,10 @@ func initializeWorkspaceLocked(root, language string) error {
 	if err != nil {
 		return err
 	}
-	config := Config{Version: 1, Language: language, InstanceID: instanceID, AgentBinding: defaultAgentBinding()}
+	config := Config{
+		Version: 1, Language: language, InstanceID: instanceID, AgentBinding: defaultAgentBinding(),
+		GenerationPolicy: generationPolicyConfig(defaultGenerationPolicy()),
+	}
 	if err := readJSON(workspaceConfigPath(root), &config); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -184,6 +187,11 @@ func initializeWorkspaceLocked(root, language string) error {
 	if strings.TrimSpace(config.AgentBinding.Name) == "" {
 		config.AgentBinding = defaultAgentBinding()
 	}
+	generationPolicy, err := resolveGenerationPolicy(config.GenerationPolicy)
+	if err != nil {
+		return err
+	}
+	config.GenerationPolicy = generationPolicyConfig(generationPolicy)
 	if err := writeWorkspaceConfig(root, config); err != nil {
 		return err
 	}
@@ -267,6 +275,11 @@ func (w *Workspace) migrate(language string) error {
 	if strings.TrimSpace(config.AgentBinding.Name) == "" {
 		config.AgentBinding = defaultAgentBinding()
 	}
+	generationPolicy, err := resolveGenerationPolicy(config.GenerationPolicy)
+	if err != nil {
+		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
+	}
+	config.GenerationPolicy = generationPolicyConfig(generationPolicy)
 	if err := writeWorkspaceConfig(w.root, config); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}

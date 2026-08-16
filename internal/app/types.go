@@ -7,12 +7,36 @@ import (
 )
 
 type Config struct {
-	Version          int                   `json:"version"`
-	Language         string                `json:"language"`
-	Name             string                `json:"name,omitempty"`
-	InstanceID       string                `json:"instanceId,omitempty"`
-	AgentBinding     AgentBinding          `json:"agentBinding,omitempty"`
-	ResourceDefaults ResourceAgentDefaults `json:"resourceDefaults,omitempty"`
+	Version          int                    `json:"version"`
+	Language         string                 `json:"language"`
+	Name             string                 `json:"name,omitempty"`
+	InstanceID       string                 `json:"instanceId,omitempty"`
+	AgentBinding     AgentBinding           `json:"agentBinding,omitempty"`
+	ResourceDefaults ResourceAgentDefaults  `json:"resourceDefaults,omitempty"`
+	GenerationPolicy GenerationPolicyConfig `json:"generationPolicy,omitempty"`
+}
+
+const (
+	DefaultGenerationMaxTurns                  = 20
+	DefaultGenerationMaxAccumulatedTurnMinutes = 120
+)
+
+// GenerationPolicyConfig is the optional on-disk representation. Pointers
+// distinguish an omitted field in an older workspace.json from an explicit
+// zero, which disables one budget dimension.
+type GenerationPolicyConfig struct {
+	Enabled                   *bool `json:"enabled,omitempty"`
+	MaxTurns                  *int  `json:"maxTurns,omitempty"`
+	MaxAccumulatedTurnMinutes *int  `json:"maxAccumulatedTurnMinutes,omitempty"`
+}
+
+// GenerationPolicy is the fully resolved Workspace policy exposed to the
+// Server and UI. Existing Workspaces with no persisted policy use the
+// conservative enabled defaults.
+type GenerationPolicy struct {
+	Enabled                   bool `json:"enabled"`
+	MaxTurns                  int  `json:"maxTurns"`
+	MaxAccumulatedTurnMinutes int  `json:"maxAccumulatedTurnMinutes"`
 }
 
 type AgentBinding struct {
@@ -65,6 +89,7 @@ type WorkspaceRuntimeConfig struct {
 	InstanceID       string                `json:"instanceId"`
 	AgentBinding     AgentBinding          `json:"agentBinding"`
 	ResourceDefaults ResourceAgentDefaults `json:"resourceDefaults"`
+	GenerationPolicy GenerationPolicy      `json:"generationPolicy"`
 }
 
 type ResourceMeta struct {

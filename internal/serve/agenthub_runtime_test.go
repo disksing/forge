@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,6 +136,24 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	if len(parts) == 4 && parts[3] == "events" {
 		f.serveEvents(w, r, id)
+		return
+	}
+	if len(parts) == 4 && parts[3] == "turns" && r.Method == http.MethodGet {
+		f.mu.Lock()
+		turnMap := f.turns[id]
+		session := f.sessions[id]
+		turns := make([]agentHubTurn, 0, len(turnMap))
+		for _, turn := range turnMap {
+			turns = append(turns, turn)
+		}
+		f.mu.Unlock()
+		sort.Slice(turns, func(i, j int) bool { return turns[i].FirstEventID < turns[j].FirstEventID })
+		writeRuntimeFakeJSON(w, map[string]any{
+			"turns":         turns,
+			"page":          map[string]any{"nextBefore": 0, "hasMoreBefore": false},
+			"latestCursor":  session.LastEventID,
+			"latestEventId": session.LastEventID,
+		})
 		return
 	}
 	if len(parts) == 5 && parts[3] == "turns" && r.Method == http.MethodGet {

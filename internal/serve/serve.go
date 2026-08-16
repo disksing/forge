@@ -77,6 +77,7 @@ type workspaceTree struct {
 	Root             string                    `json:"root"`
 	AgentBinding     app.AgentBinding          `json:"agentBinding"`
 	ResourceDefaults app.ResourceAgentDefaults `json:"resourceDefaults"`
+	GenerationPolicy app.GenerationPolicy      `json:"generationPolicy"`
 	Scheduler        resourceSnapshot          `json:"scheduler"`
 	Projects         []resourceSnapshot        `json:"projects"`
 	AttentionList    []resourceSnapshot        `json:"attentionList"`
@@ -370,6 +371,13 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		s.updateWorkspaceDefaults(w, r, id)
 		return
+	case "generation-policy":
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.updateWorkspaceGenerationPolicy(w, r, id)
+		return
 	case "tree":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -624,6 +632,32 @@ func (s *server) updateWorkspaceDefaults(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, map[string]any{"resourceDefaults": updated})
+}
+
+func (s *server) updateWorkspaceGenerationPolicy(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	var policy app.GenerationPolicy
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&policy); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	workspace, err := s.workspace(workspaceID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	updated, err := puaWorkspace.SetGenerationPolicy(policy)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"generationPolicy": updated})
 }
 
 func (s *server) updateResourceTitle(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
@@ -1593,11 +1627,16 @@ func (s *server) treeAt(ctx context.Context, path string, userNames ...string) (
 	if runtimeErr == nil {
 		tree.AgentBinding = runtimeConfig.AgentBinding
 		tree.ResourceDefaults = runtimeConfig.ResourceDefaults
+		tree.GenerationPolicy = runtimeConfig.GenerationPolicy
 	} else {
 		tree.AgentBinding = app.AgentBinding{Kind: "profile", Name: "default"}
 		tree.ResourceDefaults = app.ResourceAgentDefaults{
 			Project: app.AgentBinding{Kind: "profile", Name: "default"},
 			Task:    app.AgentBinding{Kind: "profile", Name: "default"},
+		}
+		tree.GenerationPolicy = app.GenerationPolicy{
+			Enabled: true, MaxTurns: app.DefaultGenerationMaxTurns,
+			MaxAccumulatedTurnMinutes: app.DefaultGenerationMaxAccumulatedTurnMinutes,
 		}
 	}
 	if err := s.enrichTreeResourceRuntime(path, &tree); err != nil {

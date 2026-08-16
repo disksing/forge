@@ -31,6 +31,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     wiki: null,
     workspaceAgents: null,
     workspaceDefaults: { project: { kind: "profile", name: "default" }, task: { kind: "profile", name: "default" } },
+    generationPolicy: { enabled: true, maxTurns: 20, maxAccumulatedTurnMinutes: 120 },
     agentBinding: { kind: "profile", name: "default" },
     agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
     agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }],
@@ -43,6 +44,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     onRenameResource: vi.fn(async () => undefined),
     onSaveDescription: vi.fn(async () => undefined),
     onSaveWorkspaceDefaults: vi.fn(async () => undefined),
+    onSaveGenerationPolicy: vi.fn(async () => undefined),
     onSaveTaskDefault: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
     ...overrides,
@@ -463,6 +465,34 @@ describe("DetailPanel", () => {
     await tick();
     target.querySelector<HTMLButtonElement>('[data-binding="agent:fake-agent"]')!.click();
     await vi.waitFor(() => expect(saveDefaults).toHaveBeenCalledWith({ project: { kind: "agent", name: "fake-agent" }, task: { kind: "profile", name: "default" } }));
+  });
+
+  it("saves the Workspace Generation policy from the settings tab", async () => {
+    const savePolicy = vi.fn(async () => undefined);
+    const { target } = mountModel(resourceModel({
+      identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
+      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n", contentHash: "hash-a" },
+      onSaveGenerationPolicy: savePolicy,
+    }));
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Settings"))!.click();
+    await tick();
+
+    const enabled = target.querySelector<HTMLInputElement>('[aria-label="Enable automatic Generation rotation"]')!;
+    const maxTurns = target.querySelector<HTMLInputElement>('[aria-label="Maximum Turns per Generation"]')!;
+    const maxMinutes = target.querySelector<HTMLInputElement>('[aria-label="Maximum accumulated Turn minutes per Generation"]')!;
+    expect(enabled.checked).toBe(true);
+    expect(maxTurns.value).toBe("20");
+    expect(maxMinutes.value).toBe("120");
+
+    enabled.click();
+    maxTurns.value = "25";
+    maxTurns.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    maxMinutes.value = "150";
+    maxMinutes.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+    target.querySelector<HTMLButtonElement>(".resource-settings-policy-controls button")!.click();
+    await vi.waitFor(() => expect(savePolicy).toHaveBeenCalledWith({ enabled: false, maxTurns: 25, maxAccumulatedTurnMinutes: 150 }));
   });
 
   it("shows the inheritable Task default on the project settings tab", async () => {

@@ -96,6 +96,11 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			failures = append(failures, fmt.Sprintf("%s: inspect resources: %v", workspace.ID, openErr))
 			continue
 		}
+		runtimeConfig, runtimeErr := puaWorkspace.RuntimeConfig()
+		if runtimeErr != nil {
+			failures = append(failures, fmt.Sprintf("%s: read Workspace runtime: %v", workspace.ID, runtimeErr))
+			continue
+		}
 		records, loadErr := loadCurrentGenerationRecords(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))
@@ -137,7 +142,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 					}
 				}
 			}
-			m.reconcileAgentHubGeneration(ctx, cfg, workspace, record, byExternalID, byID, client)
+			m.reconcileAgentHubGeneration(ctx, cfg, workspace, record, byExternalID, byID, client, runtimeConfig.GenerationPolicy)
 		}
 	}
 	profileConfig := agentHubServeConfig{
@@ -348,14 +353,14 @@ func agentHubSessionExactlyMatchesGeneration(cfg config, record generationRecord
 // drives the archived-after-stopped reconciliation, while a session that is
 // truly gone conservatively moves live generations to recovering and keeps
 // terminal generations untouched.
-func (m *agentManager) reconcileAgentHubGeneration(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
+func (m *agentManager) reconcileAgentHubGeneration(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient, policy app.GenerationPolicy) {
 	_ = m.withResourceController(ctx, workspace, record.ResourceID, func() error {
-		m.reconcileAgentHubGenerationLocked(ctx, cfg, workspace, record, byExternalID, byID, client)
+		m.reconcileAgentHubGenerationLocked(ctx, cfg, workspace, record, byExternalID, byID, client, policy)
 		return nil
 	})
 }
 
-func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
+func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient, policy app.GenerationPolicy) {
 	session, found := byExternalID[sourceLookupKey(generationSourceInstanceID(cfg, record), record.SourceExternalID)]
 	if !found {
 		session, found = byID[strings.TrimSpace(record.AgentHubSessionID)]
@@ -536,6 +541,11 @@ func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cf
 	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
 		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
 			rt.addPUANotice(m, "warning", "resource/idle-sleep", err.Error())
+		}
+	}
+	if updated.GenerationID != "" && (session.State == "ready" || session.State == "stopped") {
+		if err := m.reconcileGenerationPolicyLocked(ctx, workspace, updated.GenerationID, session, rt, client, policy); err != nil {
+			rt.addPUANotice(m, "warning", "generation/policy", err.Error())
 		}
 	}
 }

@@ -100,6 +100,14 @@ type generationRecord struct {
 	CurrentTurnID string `json:"currentTurnId,omitempty"`
 	LastTurnID    string `json:"lastTurnId,omitempty"`
 	TurnStartedAt string `json:"turnStartedAt,omitempty"`
+	// GenerationCompletedTurns and GenerationTurnDurationMS are derived from
+	// AgentHub's materialized closed Turns for this exact Session. The event
+	// cursor prevents a two-second poll from repeatedly fetching unchanged Turn
+	// pages while still allowing older current generations to initialize once.
+	GenerationCompletedTurns int   `json:"generationCompletedTurns,omitempty"`
+	GenerationTurnDurationMS int64 `json:"generationTurnDurationMs,omitempty"`
+	GenerationUsageEventID   int64 `json:"generationUsageEventId,omitempty"`
+	GenerationUsageReady     bool  `json:"generationUsageReady,omitempty"`
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a

@@ -78,6 +78,41 @@ func TestResourceAgentBindingsAreExplicitAndStable(t *testing.T) {
 	}
 }
 
+func TestGenerationPolicyDefaultsAndPersistsWorkspaceOverride(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := workspace.RuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDefault := app.GenerationPolicy{
+		Enabled: true, MaxTurns: app.DefaultGenerationMaxTurns,
+		MaxAccumulatedTurnMinutes: app.DefaultGenerationMaxAccumulatedTurnMinutes,
+	}
+	if runtime.GenerationPolicy != wantDefault {
+		t.Fatalf("default generation policy = %#v, want %#v", runtime.GenerationPolicy, wantDefault)
+	}
+
+	wantDisabled := app.GenerationPolicy{Enabled: false, MaxTurns: 30, MaxAccumulatedTurnMinutes: 180}
+	if saved, err := workspace.SetGenerationPolicy(wantDisabled); err != nil || saved != wantDisabled {
+		t.Fatalf("save generation policy = %#v, %v", saved, err)
+	}
+	reopened, err := app.OpenWorkspace(workspace.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err = reopened.RuntimeConfig()
+	if err != nil || runtime.GenerationPolicy != wantDisabled {
+		t.Fatalf("reopened generation policy = %#v, %v", runtime.GenerationPolicy, err)
+	}
+
+	if _, err := workspace.SetGenerationPolicy(app.GenerationPolicy{Enabled: true}); err == nil {
+		t.Fatal("enabled generation policy accepted two disabled budget dimensions")
+	}
+}
+
 func TestResourceDefaultsAcceptDirectAgentBindings(t *testing.T) {
 	workspace, err := app.Initialize(t.TempDir(), "en")
 	if err != nil {

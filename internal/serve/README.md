@@ -50,6 +50,7 @@ GET  /api/workspaces/{workspaceId}/resources/{resourceId}/stream
 POST /api/workspaces/{workspaceId}/resources/{resourceId}/approval
 POST /api/workspaces/{workspaceId}/resources/{resourceId}/turn/end
 POST /api/workspaces/{workspaceId}/resources/{resourceId}/generation/end
+PUT  /api/workspaces/{workspaceId}/generation-policy
 POST /api/workspaces/{workspaceId}/resources/{resourceId}/uploads
 GET  /api/workspaces/{workspaceId}/resources/{resourceId}/attention
 PUT  /api/workspaces/{workspaceId}/resources/{resourceId}/attention
@@ -65,6 +66,8 @@ DELETE /api/workspaces/{workspaceId}/users/{name}
 `GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含当前用户的 `attention.followed` 与 `attention.readTurnNumber`，runtime 快照包含资源级的 `turnNumber`、`activeTurn` 和 `turnStartedAt`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准。Turn 结束后，只有已关注且资源最新 Turn 编号大于当前用户已读游标的资源继续保留。`POST .../attention/dismiss` 与 Web 自动已读都只单调推进当前用户的游标。个人 UI/关注状态保存在 `<control-dir>/users/{name}/ui-state.json`；公共 Turn 编号高水位保存在 `<control-dir>/resource-state.json`。用户级请求通过 `X-PUA-User` 指定用户，未提供时兼容使用默认 `User`。
 
 用户名只允许 ASCII 字母、数字、下划线和减号，最长 80 个字符。`POST .../users` 显式注册用户，`PUT .../users/{name}` 接收 `{ "preference": "..." }`，删除用户会级联删除该用户目录，但不会改写历史消息中的 sender。用户只是 Workspace 范围的身份标记，不构成认证或权限边界。
+
+`PUT .../generation-policy` 更新 `workspace.json` 中统一覆盖 Workspace、Project、Task 和 Scheduler 的自动轮换预算。缺少该配置的现有 Workspace 与新 Workspace 均默认启用 20 个已结束 Turn 或累计 120 分钟 Turn wall-clock 的 OR 阈值；Turn 之间的 idle 不计时。设置页可以整体关闭策略并保留预算值。
 
 发送正文示例：
 
@@ -100,7 +103,7 @@ PUA 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconcile
 
 资源 generation 的创建、AgentHub 绑定和生命周期由资源级 API 与 reconciler 负责；不再存在独立的 PUA Session store 或写入 API。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，Web 界面不再提供 Session 新建、切换、恢复或关闭控件。内部 lifecycle controller 仍保留 AgentHub Session 的 Stop/Resume effect；这不是用户级 Session API，也不建立旁路恢复状态机。
 
-ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/approval、待处理 mailbox 投递或生命周期收敛时由 PUA 自动休眠。空闲边界持久化在 generation 记录中，reconciler 会重新核对精确 AgentHub Session，在资源/Turn 互斥边界内执行 Stop；确认 durable `stopped` 后仍保留同一 current generation/Session，公共 runtime 标记为 `idle-suspended`。可恢复的 suspended/stopped current generation 仍允许浏览器保持只读事件流，避免同一 Session Resume 后丢失实时更新；永久关闭的浏览器 EventSource 会在后续状态变化时重新建立。之后的 user、agent、system 或 Scheduler 消息保留在 mailbox，按同一 planner 规划幂等 Resume，确认原 Session ready 后再投递；PUA 或 AgentHub 重启后观察到的 `requested`/`daemon_recovery`/idle stopped 统一走这条按需路径。没有消息时保持 stopped，不批量启动 provider。只有 binding/profile 变化、资源归档、Session archived/missing、身份/source 不匹配或 AgentHub 明确报告 provider/native resume 不可恢复，才进入 Stop/Archive/retire 并按需创建新 generation；临时 Resume 失败保留 mailbox 与 receipt，等待下一次 receipt/replan。普通轮询和 Server 重启不会重置计时。
+ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/approval、待处理 mailbox 投递或生命周期收敛时由 PUA 自动休眠。空闲边界持久化在 generation 记录中，reconciler 会重新核对精确 AgentHub Session，在资源/Turn 互斥边界内执行 Stop；确认 durable `stopped` 后仍保留同一 current generation/Session，公共 runtime 标记为 `idle-suspended`。可恢复的 suspended/stopped current generation 仍允许浏览器保持只读事件流，避免同一 Session Resume 后丢失实时更新；永久关闭的浏览器 EventSource 会在后续状态变化时重新建立。之后的 user、agent、system 或 Scheduler 消息保留在 mailbox，按同一 planner 规划幂等 Resume，确认原 Session ready 后再投递；PUA 或 AgentHub 重启后观察到的 `requested`/`daemon_recovery`/idle stopped 统一走这条按需路径。没有消息时保持 stopped，不批量启动 provider。binding/profile 变化、资源归档、Session archived/missing、身份/source 不匹配、AgentHub 明确报告 provider/native resume 不可恢复，或 Workspace Generation 预算达到阈值时，才进入 Stop/Archive/retire 并按需创建新 generation；临时 Resume 失败保留 mailbox 与 receipt，等待下一次 receipt/replan。Generation 预算从 AgentHub 的规范 closed Turn 投影重建并以事件游标增量刷新，只计算 `completed`、`failed`、`cancelled` 终态；达到阈值后持久化 `turn_limit` replacement intent，活动 Turn 与 approval 仍等待自然终态。普通轮询和 Server 重启不会重置空闲或预算状态。
 
 资源历史接口以版本化 base64url opaque reference/cursor 绑定 Workspace instance、资源和 generation。列表跨 generation 反向分页，保留创建时标题、绑定与解析结果；缺失、损坏或暂时不可读的 AgentHub 历史形成显式 gap，单个 gap 不阻断更旧历史。浏览器先加载 Turn 摘要，由视口按需请求详情；只有当前 generation 的开放 Turn 通过资源级 `events` 补齐原始事件并接入 SSE，terminal 后替换为紧凑 Turn。跨 generation 的复合 key、滚动锚点、未读与草稿由 PUA 管理。
 

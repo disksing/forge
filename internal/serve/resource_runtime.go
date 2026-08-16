@@ -683,7 +683,10 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.setRecoveryError(m, fmt.Errorf("persist retired generation: %w", err))
 		return
 	}
-	retireReason := "generation_replaced"
+	retireReason := strings.TrimSpace(record.RetireReason)
+	if retireReason == "" {
+		retireReason = "generation_replaced"
+	}
 	if manualStop {
 		retireReason = "manual_generation_stop"
 	} else if automaticSleep {

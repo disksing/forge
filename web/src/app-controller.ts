@@ -946,6 +946,7 @@ function detailPanelModel(): DetailPanelModel {
 			project: controllerState.tree?.resourceDefaults?.project || { kind: "profile", name: "default" },
 			task: controllerState.tree?.resourceDefaults?.task || { kind: "profile", name: "default" }
 		},
+		generationPolicy: controllerState.tree?.generationPolicy || { enabled: true, maxTurns: 20, maxAccumulatedTurnMinutes: 120 },
 		agentBinding: controllerState.selectedId === "workspace"
 			? controllerState.tree?.agentBinding || { kind: "profile", name: "default" }
 			: findResource(controllerState.selectedId)?.agentBinding || { kind: "profile", name: "default" },
@@ -995,6 +996,14 @@ function detailPanelModel(): DetailPanelModel {
 			await loadTree({ updateURL: false });
 			publishViewModels();
 			toast("Workspace default bindings saved.");
+		},
+		onSaveGenerationPolicy: async (policy) => {
+			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/generation-policy`, {
+				method: "PUT", body: JSON.stringify(policy)
+			});
+			await loadTree({ updateURL: false });
+			publishViewModels();
+			toast("Generation policy saved.");
 		},
 		onSaveTaskDefault: async (projectId, binding) => {
 			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(projectId)}/task-default`, {

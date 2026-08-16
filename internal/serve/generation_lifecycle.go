@@ -825,6 +825,9 @@ func legacyLifecycleReason(record generationRecord, resourceArchived bool) strin
 		if record.ManualStopRequested {
 			return "manual_generation_stop"
 		}
+		if reason := strings.TrimSpace(record.RetireReason); reason != "" {
+			return reason
+		}
 		return "binding_changed"
 	}
 	if record.SessionResumeUnavailable {
