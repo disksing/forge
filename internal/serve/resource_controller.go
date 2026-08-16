@@ -127,7 +127,11 @@ func (m *agentManager) enqueueResourceController(workspace serveWorkspace, resou
 	if err != nil {
 		return err
 	}
-	controller.enqueue(context.Background(), fn)
+	done := controller.enqueue(context.Background(), fn)
+	// Keep fire-and-forget controller work observable by orderly shutdown and
+	// tests. The waiter does not occupy the resource controller, so jobs remain
+	// free to enqueue follow-up work for the same resource.
+	m.runBackground(func() { <-done })
 	return nil
 }
 

@@ -54,6 +54,27 @@ func TestTaskContinuationMessageIDIsStablePerAttempt(t *testing.T) {
 	}
 }
 
+func TestTaskTurnCompletionOutsideInProgressIsHandledSynchronously(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	record := generationRecord{
+		ID: "task-state-idle-gen", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-task-state-idle", Status: "idle", Title: "Task state idle",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		CompletionMarker: "session:2", CompletionTurnID: "turn-2",
+	}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
+
+	manager.scheduleTaskTurnCompletion(rt, record)
+
+	updated := rt.snapshotGeneration()
+	if updated.TaskStateCompletionMarker != record.CompletionMarker {
+		t.Fatalf("completion marker was not handled synchronously: %#v", updated)
+	}
+}
+
 func TestTaskStartFailureExhaustionIsDurable(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
