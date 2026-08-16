@@ -41,6 +41,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     onDeleteArtifact: vi.fn(async () => undefined),
     onSaveAgentBinding: vi.fn(async () => undefined),
     onRenameResource: vi.fn(async () => undefined),
+    onSaveDescription: vi.fn(async () => undefined),
     onSaveWorkspaceDefaults: vi.fn(async () => undefined),
     onSaveTaskDefault: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
@@ -533,19 +534,19 @@ describe("DetailPanel", () => {
     const { target } = mountModel(projectModel({ onRenameResource: rename }));
     await openSettingsTab(target);
 
-    const card = target.querySelector<HTMLElement>(".resource-settings-card")!;
-    expect(card.querySelector("strong")?.textContent).toBe("Project Alpha");
-    const edit = Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!;
+    const row = target.querySelector<HTMLElement>(".resource-settings-name-row")!;
+    expect(row.querySelector(".resource-settings-value-text")?.textContent).toBe("Project Alpha");
+    const edit = Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!;
     edit.click();
     await tick();
 
-    const input = card.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
+    const input = row.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
     expect(input.value).toBe("Project Alpha");
     input.value = "Project Beta";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await tick();
-    const save = Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
-    expect(card.querySelector("strong")?.textContent).toBe("Project name");
+    const save = Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    expect(row.querySelector("strong")?.textContent).toBe("Name");
     save.click();
     await vi.waitFor(() => expect(rename).toHaveBeenCalledWith("Project Beta"));
   });
@@ -555,17 +556,17 @@ describe("DetailPanel", () => {
     const { target } = mountModel(projectModel({ onRenameResource: rename }));
     await openSettingsTab(target);
 
-    const card = target.querySelector<HTMLElement>(".resource-settings-card")!;
-    Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
+    const row = target.querySelector<HTMLElement>(".resource-settings-name-row")!;
+    Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
     await tick();
-    const input = card.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
+    const input = row.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
     input.value = "Discarded";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await tick();
 
-    expect(card.querySelector(".resource-settings-name-input")).toBeNull();
-    expect(card.querySelector("strong")?.textContent).toBe("Project Alpha");
+    expect(row.querySelector(".resource-settings-name-input")).toBeNull();
+    expect(row.querySelector(".resource-settings-value-text")?.textContent).toBe("Project Alpha");
     expect(rename).not.toHaveBeenCalled();
   });
 
@@ -574,15 +575,58 @@ describe("DetailPanel", () => {
     const { target } = mountModel(resourceModel({ onRenameResource: rename }));
     await openSettingsTab(target);
 
-    const card = target.querySelector<HTMLElement>(".resource-settings-card")!;
-    expect(card.querySelector("strong")?.textContent).toBe("Stable detail");
-    Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
+    const row = target.querySelector<HTMLElement>(".resource-settings-name-row")!;
+    expect(row.querySelector(".resource-settings-value-text")?.textContent).toBe("Stable detail");
+    Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
     await tick();
-    const input = card.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
+    const input = row.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
     input.value = "Renamed task";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await vi.waitFor(() => expect(rename).toHaveBeenCalledWith("Renamed task"));
+  });
+
+  it("edits a Task description inline from the settings tab", async () => {
+    const saveDescription = vi.fn(async () => undefined);
+    const base = resourceModel({ onSaveDescription: saveDescription });
+    const { target } = mountModel(resourceModel({ ...base, detail: { ...base.detail!, description: "Original summary" } }));
+    await openSettingsTab(target);
+
+    const row = target.querySelector<HTMLElement>(".resource-settings-desc-row")!;
+    expect(row.querySelector(".resource-settings-value-text")?.textContent).toBe("Original summary");
+    Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
+    await tick();
+    const input = row.querySelector<HTMLInputElement>(".resource-settings-desc-input")!;
+    expect(input.value).toBe("Original summary");
+    input.value = "Updated summary";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => expect(saveDescription).toHaveBeenCalledWith("Updated summary"));
+  });
+
+  it("clears a Project description with an empty value", async () => {
+    const saveDescription = vi.fn(async () => undefined);
+    const base = projectModel({ onSaveDescription: saveDescription });
+    const { target } = mountModel(projectModel({ ...base, detail: { ...base.detail!, description: "Original summary" } }));
+    await openSettingsTab(target);
+
+    const row = target.querySelector<HTMLElement>(".resource-settings-desc-row")!;
+    Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
+    await tick();
+    const input = row.querySelector<HTMLInputElement>(".resource-settings-desc-input")!;
+    input.value = "   ";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    Array.from(row.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!.click();
+    await vi.waitFor(() => expect(saveDescription).toHaveBeenCalledWith(""));
+  });
+
+  it("shows an empty placeholder when a Project has no description", async () => {
+    const { target } = mountModel(projectModel());
+    await openSettingsTab(target);
+
+    const row = target.querySelector<HTMLElement>(".resource-settings-desc-row")!;
+    expect(row.querySelector(".resource-settings-value-empty")?.textContent).toBe("No description");
   });
 
   it("moves the Project template list into settings without a Template tab", async () => {

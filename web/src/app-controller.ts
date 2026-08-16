@@ -944,6 +944,16 @@ function detailPanelModel(): DetailPanelModel {
 			publishViewModels();
 			toast("Resource name saved.");
 		},
+		onSaveDescription: async (description) => {
+			const resourceId = controllerState.selectedId || "";
+			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/description`, {
+				method: "PUT", body: JSON.stringify({ description })
+			});
+			await loadTree({ updateURL: false });
+			await loadDetail(resourceId, { force: true });
+			publishViewModels();
+			toast("Resource description saved.");
+		},
 		onSaveWorkspaceDefaults: async (defaults) => {
 			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/defaults`, {
 				method: "PUT", body: JSON.stringify(defaults)

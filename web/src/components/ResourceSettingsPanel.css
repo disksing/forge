@@ -1,30 +1,83 @@
 .resource-settings {
   display: grid;
-  gap: 14px;
+  gap: 20px;
   padding: 16px;
 }
 
-.resource-settings-card {
-  align-items: center;
+.resource-settings-section {
+  display: grid;
+  gap: 6px;
+}
+
+.resource-settings-section-head {
+  display: grid;
+  gap: 1px;
+  padding: 0 4px;
+}
+
+.resource-settings-section-head strong {
+  font-size: 13px;
+}
+
+.resource-settings-section-head span {
+  color: var(--faint, #8a97a5);
+  font-size: 12px;
+}
+
+.resource-settings-list {
   background: var(--surface-raised, #fff);
   border: 1px solid var(--border-subtle, #dfe4eb);
   border-radius: 10px;
+  overflow: hidden;
+}
+
+.resource-settings-row {
+  align-items: center;
   display: flex;
   gap: 14px;
   justify-content: space-between;
-  padding: 14px;
+  padding: 12px 14px;
 }
 
-.resource-settings-card > div:first-child {
+.resource-settings-row + .resource-settings-row {
+  border-top: 1px solid var(--line-soft, #e8eaee);
+}
+
+.resource-settings-row-label {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
-.resource-settings-card span {
-  color: var(--text-muted);
+.resource-settings-row-label strong {
+  font-size: 13px;
+}
+
+.resource-settings-row-label span {
+  color: var(--text-muted, #5c6b7a);
   font-size: 12px;
+}
+
+.resource-settings-row-value {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  max-width: 55%;
+  min-width: 0;
+}
+
+.resource-settings-value-text {
+  color: var(--faint, #8a97a5);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-settings-value-empty {
+  font-style: italic;
 }
 
 .resource-settings-interval {
@@ -49,7 +102,8 @@
   width: 92px;
 }
 
-.resource-settings-name-input {
+.resource-settings-name-input,
+.resource-settings-desc-input {
   background: var(--surface, #fff);
   border: 1px solid var(--border-subtle, #ccd4df);
   border-radius: 7px;
@@ -60,6 +114,30 @@
   width: 100%;
 }
 
+/* Template rows merge into the grouped list: the container owns the border
+   and radius, rows are separated by hairlines like other settings rows. */
 .resource-settings-template-list {
-  padding: 0 2px;
+  display: grid;
+}
+
+.resource-settings-template-list .template-row {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.resource-settings-template-list .template-row + .template-row {
+  border-top: 1px solid var(--line-soft, #e8eaee);
+}
+
+.resource-settings-template-list .template-row:hover {
+  background: var(--bg, #f4f5f7);
+}
+
+.resource-settings-template-list .template-row.invalid {
+  color: var(--red, #e74c3c);
+}
+
+.resource-settings-template-list .empty-list-row {
+  padding: 12px 14px;
 }

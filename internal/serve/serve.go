@@ -430,6 +430,14 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			s.updateResourceTitle(w, r, id, parts[2])
 			return
 		}
+		if len(parts) == 4 && parts[3] == "description" {
+			if r.Method != http.MethodPut {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			s.updateResourceDescription(w, r, id, parts[2])
+			return
+		}
 		if len(parts) == 4 && parts[3] == "task-default" {
 			if r.Method != http.MethodPut {
 				w.WriteHeader(http.StatusMethodNotAllowed)
@@ -608,6 +616,34 @@ func (s *server) updateResourceTitle(w http.ResponseWriter, r *http.Request, wor
 		return
 	}
 	writeJSON(w, map[string]any{"title": updated})
+}
+
+func (s *server) updateResourceDescription(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+	var body struct {
+		Description string `json:"description"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	workspace, err := s.workspace(workspaceID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	updated, err := puaWorkspace.SetResourceDescription(resourceID, body.Description)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"description": updated})
 }
 
 func (s *server) updateProjectTaskDefault(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
