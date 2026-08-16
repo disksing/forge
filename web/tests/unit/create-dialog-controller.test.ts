@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { CreateDialogModel, CreateDraft, TaskPreview, TaskTemplate } from "../../src/components/models";
-import { createCreateDialogController } from "../../src/controllers/create-dialog-controller";
+import { createCreateDialogController, DEFAULT_TASK_START_PROMPT } from "../../src/controllers/create-dialog-controller";
 
 const template: TaskTemplate = {
 	name: "feature",
@@ -21,6 +21,7 @@ function harness(responder: (path: string, init?: RequestInit) => unknown | Prom
 	const requests: RequestRecord[] = [];
 	const reloadTree = vi.fn().mockResolvedValue(undefined);
 	const selectResource = vi.fn().mockResolvedValue(undefined);
+	const toast = vi.fn();
 	const controller = createCreateDialogController({
 		workspaceId: () => "workspace-a",
 		templates: () => [template],
@@ -29,18 +30,23 @@ function harness(responder: (path: string, init?: RequestInit) => unknown | Prom
 			return await responder(path, init) as T;
 		},
 		publish: (model) => { published = model; },
-		toast: vi.fn(),
+		toast,
 		reloadTree,
 		selectResource,
 		onOpen: vi.fn(),
 		onIconsChanged: vi.fn(),
 		confirmTemplateSwitch: async () => true,
+		agents: () => [{ id: "agent-b", label: "Agent B", summary: "" }],
+		agentProfiles: () => [{ key: "default", agentName: "agent-a" }, { key: "review", agentName: "agent-b" }],
+		defaultTaskBinding: () => ({ kind: "profile", name: "default" }),
+		currentUserName: () => "Test User",
 	});
 	return {
 		controller,
 		requests,
 		reloadTree,
 		selectResource,
+		toast,
 		current: () => {
 			if (!published) throw new Error("dialog was not published");
 			return published;
@@ -94,21 +100,80 @@ describe("CreateDialogController", () => {
 		expect(test.selectResource).toHaveBeenCalledWith("project1.task1");
 	});
 
-	it("submits edited preview Markdown with its generated title", async () => {
-		const preview: TaskPreview = { title: "Generated title", markdown: "# Generated title\n", template: { digest: "sha256:template" } };
-		const test = harness((path) => path.endsWith("/preview") ? preview : { id: "project1.task1" });
+	it("publishes the agent options and resolved default binding for the start step", () => {
+		const test = harness();
 		test.controller.open("task", "project1");
-		const rendered = { ...test.current().draft, templateName: "feature", templateFields: { summary: "Generated title" } };
-		await test.current().onPreview(rendered);
-		await test.current().onSubmit({ ...rendered, editedMarkdown: "# Hand edited\n" });
 
-		expect(body(test.requests.at(-1)!)).toEqual({
-			project: "project1",
-			title: "Generated title",
-			taskMarkdown: "# Hand edited\n",
-			slug: "",
+		expect(test.current().agents.map((agent) => agent.id)).toEqual(["agent-b"]);
+		expect(test.current().agentProfiles.map((profile) => profile.key)).toEqual(["default", "review"]);
+		expect(test.current().defaultTaskBinding).toEqual({ kind: "profile", name: "default" });
+		expect(test.current().draft.startAfterCreate).toBe(false);
+		expect(test.current().draft.startPrompt).toBe(DEFAULT_TASK_START_PROMPT);
+	});
+
+	it("creates and starts a task with the default binding, sending only the prompt", async () => {
+		const test = harness(() => ({ id: "project1.task9" }));
+		test.controller.open("task", "project1");
+		const next: CreateDraft = {
+			...test.current().draft,
+			title: "Start me",
+			detail: "Body",
+			startAfterCreate: true,
+			startBinding: { kind: "profile", name: "default" },
+			startPrompt: "Please begin.",
+		};
+
+		await test.current().onSubmit(next);
+
+		expect(test.requests.map((record) => record.path)).toEqual([
+			"/api/workspaces/workspace-a/tasks",
+			"/api/workspaces/workspace-a/resources/project1.task9/messages",
+		]);
+		expect(body(test.requests[1])).toEqual({ text: "Please begin.", role: "user", sender: { name: "Test User" } });
+		expect(test.toast).toHaveBeenCalledWith("Task created and started.");
+		expect(test.selectResource).toHaveBeenCalledWith("project1.task9");
+	});
+
+	it("switches the binding before the prompt when the start agent differs from the default", async () => {
+		const test = harness(() => ({ id: "project1.task9" }));
+		test.controller.open("task", "project1");
+		const next: CreateDraft = {
+			...test.current().draft,
+			title: "Start elsewhere",
+			startAfterCreate: true,
+			startBinding: { kind: "agent", name: "agent-b" },
+			startPrompt: "Please begin.",
+		};
+
+		await test.current().onSubmit(next);
+
+		expect(test.requests.map((record) => record.path)).toEqual([
+			"/api/workspaces/workspace-a/tasks",
+			"/api/workspaces/workspace-a/resources/project1.task9/agent-binding",
+			"/api/workspaces/workspace-a/resources/project1.task9/messages",
+		]);
+		expect(test.requests[1].init?.method).toBe("PUT");
+		expect(body(test.requests[1])).toEqual({ kind: "agent", name: "agent-b" });
+	});
+
+	it("still selects the created task when auto-start fails", async () => {
+		const test = harness((path) => {
+			if (path.endsWith("/messages")) throw new Error("mailbox offline");
+			return { id: "project1.task9" };
 		});
-		expect(test.selectResource).toHaveBeenCalledWith("project1.task1");
+		test.controller.open("task", "project1");
+		const next: CreateDraft = {
+			...test.current().draft,
+			title: "Start fails",
+			startAfterCreate: true,
+			startBinding: { kind: "profile", name: "default" },
+			startPrompt: "Please begin.",
+		};
+
+		await test.current().onSubmit(next);
+
+		expect(test.toast).toHaveBeenCalledWith("Task created, but auto-start failed: mailbox offline");
+		expect(test.selectResource).toHaveBeenCalledWith("project1.task9");
 	});
 
 	it("deduplicates Task submission while the first request is pending", async () => {

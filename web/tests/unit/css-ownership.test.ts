@@ -15,8 +15,7 @@ const components = [
   "ConfirmDialog",
   "CreateDialog",
   "ProjectCreateForm",
-  "TaskCreateForm",
-  "TaskPreview",
+  "TaskWizard",
   "TemplateFieldGroup",
   "TemplatePicker",
   "DetailPanel",
@@ -62,8 +61,7 @@ const owners: Record<(typeof components)[number], string> = {
   ConfirmDialog: "confirm-dialog",
   CreateDialog: "create-dialog",
   ProjectCreateForm: "project-create-form",
-  TaskCreateForm: "task-create-form",
-  TaskPreview: "task-preview",
+  TaskWizard: "task-wizard",
   TemplateFieldGroup: "template-field-group",
   TemplatePicker: "template-picker",
   DetailPanel: "detail-panel",
@@ -187,7 +185,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
+    for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskWizard", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

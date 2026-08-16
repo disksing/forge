@@ -199,7 +199,15 @@ const createDialogController = createCreateDialogController({
 		controllerState.modalEnter = "create";
 	},
 	onIconsChanged: refreshIcons,
-	confirmTemplateSwitch: () => confirmDialog({ title: "Switch template", message: "Discard edited template fields and switch templates?", confirmLabel: "Discard", danger: true })
+	confirmTemplateSwitch: () => confirmDialog({ title: "Switch template", message: "Discard edited template fields and switch templates?", confirmLabel: "Discard", danger: true }),
+	agents: () => svelteAgentOptions(),
+	agentProfiles: () => (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description, agentName: profile.agentName })),
+	defaultTaskBinding: (projectId) => {
+		const projectDefault = controllerState.details[projectId]?.taskDefault;
+		if (projectDefault?.name) return projectDefault;
+		return controllerState.tree?.resourceDefaults?.task || { kind: "profile" as const, name: "default" };
+	},
+	currentUserName
 });
 const elementById = <ElementType extends HTMLElement = HTMLElement>(id: string): ElementType | null => document.getElementById(id) as ElementType | null;
 const AUTO_REFRESH_INTERVAL_MS = 5e3;

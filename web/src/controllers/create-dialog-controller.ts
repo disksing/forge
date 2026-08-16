@@ -1,4 +1,6 @@
-import type { CreateDialogModel, CreateDraft, TaskPreview, TaskTemplate } from "../components/models";
+import type { AgentOption } from "../models/common";
+import type { CreateDialogModel, CreateDraft, TaskPreview, TaskTemplate } from "../models/create";
+import type { ResourceAgentBindingModel, ResourceAgentProfileModel } from "../models/detail";
 import { errorMessage } from "../runtime/errors";
 
 interface CreateDialogState extends CreateDraft {
@@ -24,16 +26,32 @@ export interface CreateDialogDependencies {
 	onOpen(): void;
 	onIconsChanged(): void;
 	confirmTemplateSwitch(): Promise<boolean>;
+	agents(): AgentOption[];
+	agentProfiles(): ResourceAgentProfileModel[];
+	// The binding a task created in this project would resolve to: the project
+	// task default when set, otherwise the workspace task default.
+	defaultTaskBinding(projectId: string): ResourceAgentBindingModel;
+	currentUserName(): string;
 }
 
 interface CreatedResource {
 	id?: unknown;
 }
 
+export const DEFAULT_TASK_START_PROMPT = "请阅读 task.md 和 AGENTS.md，了解任务背景后开始工作。";
+
 function createdResourceId(result: CreatedResource): string {
 	const id = String(result?.id || "").trim();
 	if (!id) throw new Error("The created resource did not return an id.");
 	return id;
+}
+
+function normalizeBindingName(value: string): string {
+	return value.trim().toLowerCase();
+}
+
+function sameBinding(left: ResourceAgentBindingModel, right: ResourceAgentBindingModel): boolean {
+	return left.kind === right.kind && normalizeBindingName(left.name) === normalizeBindingName(right.name);
 }
 
 function emptyState(identity: number): CreateDialogState {
@@ -45,15 +63,14 @@ function emptyState(identity: number): CreateDialogState {
 		templateName: "",
 		templateFields: {},
 		templateDirty: false,
-		titleOverride: false,
 		templateDigest: "",
 		preview: null,
 		previewing: false,
 		previewError: "",
 		previewKey: "",
-		activeTab: "edit",
-		editedMarkdown: null,
-		showOptions: false,
+		startAfterCreate: false,
+		startBinding: { kind: "profile", name: "" },
+		startPrompt: DEFAULT_TASK_START_PROMPT,
 		title: "",
 		description: "",
 		detail: "",
@@ -65,7 +82,8 @@ function emptyState(identity: number): CreateDialogState {
 export function createTaskRequest(dialog: CreateDialogState) {
 	return {
 		project: dialog.projectId,
-		title: dialog.templateName ? dialog.titleOverride ? dialog.title : "" : dialog.title,
+		// Templates that generate the task title ignore any manual title.
+		title: dialog.templateName ? "" : dialog.title,
 		...(dialog.templateName ? {
 			templateName: dialog.templateName,
 			templateFields: dialog.templateFields,
@@ -89,20 +107,20 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 			templateName: dialog.templateName,
 			templateFields: { ...dialog.templateFields },
 			title: dialog.title,
-			titleOverride: dialog.titleOverride,
 			description: dialog.description,
 			detail: dialog.detail,
 			slug: dialog.slug,
-			activeTab: dialog.activeTab,
-			editedMarkdown: dialog.editedMarkdown,
-			showOptions: dialog.showOptions
+			startAfterCreate: dialog.startAfterCreate,
+			startBinding: { ...dialog.startBinding },
+			startPrompt: dialog.startPrompt
 		};
 	}
 
 	function stateFromDraft(next: CreateDraft): Partial<CreateDialogState> {
 		return {
 			...next,
-			templateFields: { ...next.templateFields }
+			templateFields: { ...next.templateFields },
+			startBinding: { ...next.startBinding }
 		};
 	}
 
@@ -140,6 +158,9 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 			previewError: dialog.previewError,
 			templateDigest: dialog.templateDigest,
 			submitting: dialog.submitting,
+			agents: dependencies.agents(),
+			agentProfiles: dependencies.agentProfiles(),
+			defaultTaskBinding: dialog.type === "task" ? dependencies.defaultTaskBinding(dialog.projectId) : { kind: "profile", name: "" },
 			onClose: close,
 			onPreview: refreshPreview,
 			onSubmit: submit,
@@ -179,7 +200,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 			state.previewing = false;
 		}
 		const selectedTemplate = dependencies.templates(state.projectId).find((item) => item.name === state.templateName);
-		if (selectedTemplate && !selectedTemplate.taskTitle && (!state.titleOverride || !state.title.trim())) {
+		if (selectedTemplate && !selectedTemplate.taskTitle && !state.title.trim()) {
 			state.previewError = "This template does not generate a title. Enter a task title to render the preview.";
 			render();
 			return;
@@ -217,6 +238,25 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 		}
 	}
 
+	// Auto-start a freshly created task: rebind the agent when the user picked
+	// something other than the resolved default, then send the start prompt as
+	// the first message so the task begins running.
+	async function startCreatedTask(workspaceId: string, resourceId: string): Promise<void> {
+		const fallback = dependencies.defaultTaskBinding(state.projectId);
+		const selected = state.startBinding.name ? state.startBinding : fallback;
+		if (selected.name && !sameBinding(selected, fallback)) {
+			await dependencies.request(`/api/workspaces/${workspaceId}/resources/${encodeURIComponent(resourceId)}/agent-binding`, {
+				method: "PUT",
+				body: JSON.stringify({ kind: selected.kind, name: selected.name })
+			});
+		}
+		const text = state.startPrompt.trim() || DEFAULT_TASK_START_PROMPT;
+		await dependencies.request(`/api/workspaces/${workspaceId}/resources/${encodeURIComponent(resourceId)}/messages`, {
+			method: "POST",
+			body: JSON.stringify({ text, role: "user", sender: { name: dependencies.currentUserName() } })
+		});
+	}
+
 	async function submit(next: CreateDraft): Promise<void> {
 		if (!state.open || state.submitting) return;
 		syncDraft(next);
@@ -234,22 +274,22 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 				resourceId = createdResourceId(created);
 				dependencies.toast("Project created.");
 			} else {
-				let requestBody: object;
-				const editedMarkdown = state.templateName && state.editedMarkdown != null && state.editedMarkdown !== state.preview?.markdown ? state.editedMarkdown : null;
-				if (editedMarkdown != null) {
-					const editedTitle = String(state.titleOverride ? state.title : state.preview?.title || "").trim();
-					if (!editedTitle) throw new Error("Task title is required when creating from edited preview content.");
-					requestBody = { project: state.projectId, title: editedTitle, taskMarkdown: editedMarkdown, slug: state.slug };
-				} else {
-					if (state.templateName && !state.templateDigest) {
-						await refreshPreview(draft());
-						if (!state.templateDigest) throw new Error(state.previewError || "Could not render the selected template.");
-					}
-					requestBody = createTaskRequest(state);
+				if (state.templateName && !state.templateDigest) {
+					await refreshPreview(draft());
+					if (!state.templateDigest) throw new Error(state.previewError || "Could not render the selected template.");
 				}
-				const created = await dependencies.request<CreatedResource>(`/api/workspaces/${workspaceId}/tasks`, { method: "POST", body: JSON.stringify(requestBody) });
+				const created = await dependencies.request<CreatedResource>(`/api/workspaces/${workspaceId}/tasks`, { method: "POST", body: JSON.stringify(createTaskRequest(state)) });
 				resourceId = createdResourceId(created);
-				dependencies.toast("Task created.");
+				if (state.startAfterCreate) {
+					try {
+						await startCreatedTask(workspaceId, resourceId);
+						dependencies.toast("Task created and started.");
+					} catch (error) {
+						dependencies.toast(`Task created, but auto-start failed: ${errorMessage(error)}`);
+					}
+				} else {
+					dependencies.toast("Task created.");
+				}
 			}
 			if (workspaceId !== dependencies.workspaceId() || state.identity !== dialogIdentity) return;
 			state.open = false;

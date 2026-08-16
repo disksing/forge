@@ -2,8 +2,7 @@ import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProjectCreateForm from "../../src/components/ProjectCreateForm.svelte";
-import TaskCreateForm from "../../src/components/TaskCreateForm.svelte";
-import TaskPreview from "../../src/components/TaskPreview.svelte";
+import TaskWizard from "../../src/components/TaskWizard.svelte";
 import TemplateFieldGroup from "../../src/components/TemplateFieldGroup.svelte";
 import TemplatePicker from "../../src/components/TemplatePicker.svelte";
 import type { CreateDialogModel, CreateDraft, TaskTemplate, TemplateField } from "../../src/components/models";
@@ -31,8 +30,9 @@ const featureTemplate: TaskTemplate = {
 
 function draft(overrides: Partial<CreateDraft> = {}): CreateDraft {
   return {
-    type: "task", projectId: "project1", templateName: "", templateFields: {}, title: "", titleOverride: false,
-    description: "", detail: "", slug: "", activeTab: "edit", editedMarkdown: null, showOptions: false,
+    type: "task", projectId: "project1", templateName: "", templateFields: {}, title: "",
+    description: "", detail: "", slug: "",
+    startAfterCreate: false, startBinding: { kind: "profile", name: "" }, startPrompt: "Default prompt.",
     ...overrides,
   };
 }
@@ -41,7 +41,9 @@ function model(currentDraft: CreateDraft, overrides: Partial<CreateDialogModel> 
   return {
     open: true, identity: "dialog-1:task:project1", workspaceId: "workspace-a", draft: currentDraft,
     templates: [featureTemplate], preview: null, previewKey: "", previewing: false,
-    previewError: "", templateDigest: "", submitting: false, onClose: vi.fn(), onPreview: vi.fn(), onSubmit: vi.fn(),
+    previewError: "", templateDigest: "", submitting: false,
+    agents: [], agentProfiles: [], defaultTaskBinding: { kind: "profile", name: "default" },
+    onClose: vi.fn(), onPreview: vi.fn(), onSubmit: vi.fn(),
     previewRequestKey: (next) => JSON.stringify(next), onConfirmTemplateSwitch: async () => true, onIconsChanged: vi.fn(),
     ...overrides,
   };
@@ -49,6 +51,18 @@ function model(currentDraft: CreateDraft, overrides: Partial<CreateDialogModel> 
 
 function target(): HTMLElement {
   return document.body.appendChild(document.createElement("div"));
+}
+
+function mountWizard(current: CreateDraft, currentModel: CreateDialogModel) {
+  const host = target();
+  const component = mount(TaskWizard, { target: host, props: { draft: current, model: currentModel } });
+  cleanups.push(() => unmount(component));
+  return host;
+}
+
+async function advance(host: HTMLElement): Promise<void> {
+  host.querySelector<HTMLButtonElement>('.wizard-footer button[type="submit"]')!.click();
+  await tick();
 }
 
 describe("CreateDialog child components", () => {
@@ -107,45 +121,13 @@ describe("CreateDialog child components", () => {
     expect(host.querySelector("textarea")).toBeTruthy();
   });
 
-  it("protects preview edits and resets them to the latest rendered Markdown", async () => {
-    const current = draft({ templateName: "feature-a" });
-    const host = target();
-    const component = mount(TaskPreview, { target: host, props: {
-      draft: current,
-      selectedTemplate: featureTemplate,
-      preview: { title: "Rendered title", markdown: "# Rendered\n", slug: "rendered" },
-      previewing: false,
-      previewError: "",
-      stale: false,
-      templateDigest: "sha256:test",
-      submitting: false,
-      onRefresh: vi.fn(),
-    } });
-    cleanups.push(() => unmount(component));
-    await tick();
-
-    expect(current.editedMarkdown).toBe("# Rendered\n");
-    const editor = host.querySelector<HTMLTextAreaElement>('textarea[name="previewMarkdown"]')!;
-    editor.value = "# Local edit\n";
-    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    await tick();
-    expect(host.querySelector("[data-preview-edited-note]")).toBeTruthy();
-    host.querySelector<HTMLButtonElement>("[data-preview-edited-note] button")!.click();
-    await tick();
-    expect(current.editedMarkdown).toBe("# Rendered\n");
-    expect(host.querySelector("[data-preview-edit-hint]")).toBeTruthy();
-  });
-
   it("coordinates template defaults, switch confirmation, and debounced preview", async () => {
     vi.useFakeTimers();
     const current = draft({ templateName: "feature-a", templateFields: { summary: "Local value" } });
     const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const onPreview = vi.fn().mockResolvedValue(undefined);
     const alternate = { ...featureTemplate, name: "feature-b", title: "Feature B" };
-    const currentModel = model(current, { templates: [featureTemplate, alternate], onConfirmTemplateSwitch: confirm, onPreview });
-    const host = target();
-    const component = mount(TaskCreateForm, { target: host, props: { draft: current, model: currentModel } });
-    cleanups.push(() => unmount(component));
+    const host = mountWizard(current, model(current, { templates: [featureTemplate, alternate], onConfirmTemplateSwitch: confirm, onPreview }));
     const alternateCard = host.querySelectorAll<HTMLButtonElement>('[role="option"]')[2];
 
     alternateCard.click();
@@ -158,11 +140,26 @@ describe("CreateDialog child components", () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(onPreview).toHaveBeenCalledTimes(1);
 
+    // Walk to the fields step and edit the required field; the preview request
+    // is debounced and carries the latest value.
+    await advance(host); // -> title & slug (generated by template)
+    await advance(host); // -> template fields
     const summary = host.querySelector<HTMLInputElement>('[aria-label="Required template fields"] input')!;
     summary.value = "Newest value";
     summary.dispatchEvent(new InputEvent("input", { bubbles: true }));
     await vi.advanceTimersByTimeAsync(500);
     expect(onPreview).toHaveBeenCalledTimes(2);
     expect(onPreview.mock.calls.at(-1)?.[0].templateFields.summary).toBe("Newest value");
+  });
+
+  it("preselects the resolved default binding for the start step", async () => {
+    const current = draft();
+    mountWizard(current, model(current, {
+      defaultTaskBinding: { kind: "agent", name: "agent-b" },
+      agents: [{ id: "agent-b", label: "Agent B", summary: "" }],
+    }));
+    await tick();
+
+    expect(current.startBinding).toEqual({ kind: "agent", name: "agent-b" });
   });
 });

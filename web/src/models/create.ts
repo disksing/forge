@@ -1,3 +1,6 @@
+import type { AgentOption } from "./common";
+import type { ResourceAgentBindingModel, ResourceAgentProfileModel } from "./detail";
+
 export interface TemplateField {
   name: string;
   type: "text" | "textarea" | "select" | "boolean";
@@ -36,13 +39,15 @@ export interface CreateDraft {
   templateName: string;
   templateFields: Record<string, string | boolean>;
   title: string;
-  titleOverride: boolean;
   description: string;
   detail: string;
   slug: string;
-  activeTab: "edit" | "preview";
-  editedMarkdown: string | null;
-  showOptions: boolean;
+  // Start options (wizard final step): create the task and immediately switch
+  // the agent binding (when it differs from the resolved default) and send the
+  // start prompt as the first message.
+  startAfterCreate: boolean;
+  startBinding: ResourceAgentBindingModel;
+  startPrompt: string;
 }
 
 export interface CreateDialogModel {
@@ -57,6 +62,12 @@ export interface CreateDialogModel {
   previewError: string;
   templateDigest: string;
   submitting: boolean;
+  agents: AgentOption[];
+  agentProfiles: ResourceAgentProfileModel[];
+  // Binding a newly created task would resolve to (project task default when
+  // set, otherwise the workspace task default). The wizard preselects it and
+  // only rebinds the created task when the user picks something else.
+  defaultTaskBinding: ResourceAgentBindingModel;
   onClose: () => void;
   onPreview: (draft: CreateDraft) => Promise<void>;
   onSubmit: (draft: CreateDraft) => Promise<void>;

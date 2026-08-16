@@ -1,0 +1,338 @@
+/* TaskWizard owns the guided task creation layout: stepper, step body and footer. */
+
+:where([data-component-owner="task-wizard"]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 14px 20px 0;
+  list-style: none;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-steps li:not(:last-child)::after {
+  content: "";
+  width: 22px;
+  height: 1px;
+  margin-left: 6px;
+  background: var(--line);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-step-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-step-num svg {
+  width: 12px;
+  height: 12px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-steps li.active {
+  color: var(--text);
+  font-weight: 700;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-steps li.active .wizard-step-num {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-steps li.done {
+  color: var(--green-deep);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-steps li.done .wizard-step-num {
+  border-color: var(--green);
+  background: var(--green);
+  color: #fff;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-body {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 20px;
+}
+
+:where([data-component-owner="task-wizard"]) .create-section {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+:where([data-component-owner="task-wizard"]) .create-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="task-wizard"]) .create-required {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-field {
+  display: grid;
+  gap: 5px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-field>span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-field>span small {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-generated-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 13px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-generated-title-tag {
+  flex-shrink: 0;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-generated-title-value {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-generated-title-value.empty {
+  color: var(--faint);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-field-error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #f5d0cb;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-size: 12.5px;
+}
+
+:where([data-component-owner="task-wizard"]) .create-task-slug-field {
+  max-width: 240px;
+}
+
+:where([data-component-owner="task-wizard"]) .create-task-slug-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color 150ms ease;
+}
+
+:where([data-component-owner="task-wizard"]) .create-task-slug-prefix {
+  padding-left: 10px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+:where([data-component-owner="task-wizard"]) .create-task-slug-wrap input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px 8px 4px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+}
+
+:where([data-component-owner="task-wizard"]) .create-task-details textarea[name="detail"] {
+  min-height: clamp(180px, 32vh, 340px);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-cards {
+  display: grid;
+  gap: 10px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-card:hover:not(:disabled) {
+  border-color: var(--faint);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-card.selected {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-card-dot {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1px solid var(--faint);
+  border-radius: 50%;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-card.selected .wizard-start-card-dot::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-card strong {
+  display: block;
+  font-size: 13px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-config {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-config .agent-binding {
+  display: block;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-start-config .agent-binding-button {
+  width: 100%;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-binding-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #c6dcf0;
+  border-radius: 6px;
+  background: #eaf3fb;
+  color: #1f618d;
+  font-size: 12.5px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-summary>div {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-summary dt {
+  flex: 0 0 70px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-summary dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line-soft);
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-step-pos {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-footer-spacer {
+  flex: 1;
+}
+
+:where([data-component-owner="task-wizard"]) .wizard-footer button {
+  white-space: nowrap;
+}

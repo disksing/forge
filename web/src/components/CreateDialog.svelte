@@ -6,7 +6,7 @@
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import ProjectCreateForm from "./ProjectCreateForm.svelte";
-  import TaskCreateForm from "./TaskCreateForm.svelte";
+  import TaskWizard from "./TaskWizard.svelte";
   import type { CreateDialogModel, CreateDraft } from "./models";
 
   let { channel }: { channel: ModelChannel<CreateDialogModel> } = $props();
@@ -49,7 +49,7 @@
   });
 
   function cloneDraft(value: CreateDraft): CreateDraft {
-    return { ...value, templateFields: { ...value.templateFields } };
+    return { ...value, templateFields: { ...value.templateFields }, startBinding: { ...value.startBinding } };
   }
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -69,16 +69,19 @@
         </div>
         <button class="icon-button" type="button" title="Close" aria-label="Close" disabled={model.submitting} onclick={model.onClose}><Icon name="x" /></button>
       </header>
-      <form id="createDialogForm" class="details-form create-dialog-form" onsubmit={submit}>
-        {#key model.identity}
-          {#if isTask}<TaskCreateForm {draft} {model} />
-          {:else}<ProjectCreateForm {draft} />{/if}
-        {/key}
-        <div class="form-actions">
-          <button type="submit" disabled={model.submitting}>{model.submitting ? "Creating..." : "Create"}</button>
-          <button type="button" class="secondary" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
-        </div>
-      </form>
+      {#key model.identity}
+        {#if isTask}
+          <TaskWizard {draft} {model} />
+        {:else}
+          <form id="createDialogForm" class="details-form create-dialog-form" onsubmit={submit}>
+            <ProjectCreateForm {draft} />
+            <div class="form-actions">
+              <button type="submit" disabled={model.submitting}>{model.submitting ? "Creating..." : "Create"}</button>
+              <button type="button" class="secondary" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
+            </div>
+          </form>
+        {/if}
+      {/key}
     </div>
   </div>
 {/if}

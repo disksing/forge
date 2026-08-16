@@ -388,6 +388,11 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       attentionStates["project1.task1"] = { followed: true };
       return json(route, { status: "delivered", messageId: "msg-e2e" });
     }
+    const resourceMessagesMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/messages$/);
+    if (resourceMessagesMatch && method === "POST") {
+      harness.inputBodies.push({ resourceId: decodeURIComponent(resourceMessagesMatch[1]), ...request.postDataJSON() });
+      return json(route, { status: "delivered", messageId: "msg-e2e" });
+    }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/uploads" && method === "POST") {
       const multipart = request.postData() || "";
       const name = multipart.match(/filename="([^"]+)"/)?.[1] || "upload.txt";
@@ -595,9 +600,13 @@ test("navigates resources and creates a task through the canonical application f
   await expect.poll(() => harness.bindingBodies).toEqual([{ kind: "agent", name: "other-agent" }]);
   await page.getByRole("button", { name: "Migration project", exact: true }).click();
   await page.getByRole("button", { name: "New Task" }).click();
-  await page.locator('#createDialogForm input[name="title"]').fill("Created from baseline");
-  await page.locator('#createDialogForm textarea[name="detail"]').fill("Playwright isolated task body");
-  await page.locator("#createDialogForm").getByRole("button", { name: "Create", exact: true }).click();
+  const createDialog = page.getByRole("dialog", { name: "Create task" });
+  await createDialog.getByRole("button", { name: "Next", exact: true }).click();
+  await createDialog.locator('input[name="title"]').fill("Created from baseline");
+  await createDialog.getByRole("button", { name: "Next", exact: true }).click();
+  await createDialog.locator('textarea[name="detail"]').fill("Playwright isolated task body");
+  await createDialog.getByRole("button", { name: "Next", exact: true }).click();
+  await createDialog.getByRole("button", { name: "Create task", exact: true }).click();
 
   await expect.poll(() => harness.taskBodies.length).toBe(1);
   expect(harness.taskBodies[0]).toMatchObject({
@@ -1185,68 +1194,103 @@ test("keeps resource chat free of AgentHub Session lifecycle controls", async ({
   await expect(page.locator("#agentCloseSessionButton")).toHaveCount(0);
 });
 
-test("keeps the Svelte template editor stable and ignores an older preview response", async ({ page }) => {
+test("switches wizard templates and ignores an older preview response", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");
   await page.getByRole("button", { name: "New Task" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Create task" });
   await dialog.getByRole("option", { name: /Feature A/ }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  // The template generates the title, so the wizard shows the generated value
+  // instead of a title input.
+  await expect(dialog.locator("[data-generated-title]")).toBeVisible();
+  await expect(dialog.locator('input[name="title"]')).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
   await dialog.getByLabel("Summary *").fill("older");
   await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-a" && (body.templateFields as Record<string, unknown>)?.summary === "older").length).toBe(1);
+
+  await dialog.getByRole("button", { name: "Back", exact: true }).click();
+  await dialog.getByRole("button", { name: "Back", exact: true }).click();
   await dialog.getByRole("option", { name: /Feature B/ }).click();
   await page.getByRole("alertdialog", { name: "Switch template" }).getByRole("button", { name: "Discard" }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
   await dialog.getByLabel("Summary *").fill("newer");
   await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-b" && (body.templateFields as Record<string, unknown>)?.summary === "newer").length).toBe(1);
 
-  await expect(dialog.getByRole("heading", { name: "feature-b:newer" })).toBeVisible();
+  // The slower feature-a preview response must not overwrite the newer title.
+  await dialog.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(dialog.locator("[data-generated-title]")).toContainText("feature-b:newer");
   await page.waitForTimeout(450);
-  await expect(dialog.getByRole("heading", { name: "feature-b:newer" })).toBeVisible();
-  await dialog.getByLabel("Task markdown").fill("# Locally edited preview\n");
-  await dialog.getByLabel("Task markdown").evaluate((node) => { node.dataset.identityProbe = "same-editor"; });
-  await page.waitForTimeout(5_200);
-  await expect(dialog.getByLabel("Task markdown")).toHaveAttribute("data-identity-probe", "same-editor");
-  await expect(dialog.getByLabel("Task markdown")).toHaveValue("# Locally edited preview\n");
+  await expect(dialog.locator("[data-generated-title]")).toContainText("feature-b:newer");
 
-  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(dialog.locator("[data-summary]")).toContainText("feature-b:newer");
+  await dialog.getByRole("button", { name: "Create task", exact: true }).click();
   await expect.poll(() => harness.taskBodies.length).toBe(1);
   expect(harness.previewBodies.map((body) => body.templateName)).toEqual(expect.arrayContaining(["feature-a", "feature-b"]));
-  expect(harness.taskBodies[0]).toMatchObject({ title: "feature-b:newer", taskMarkdown: "# Locally edited preview\n" });
+  expect(harness.taskBodies[0]).toMatchObject({
+    project: "project1",
+    title: "",
+    templateName: "feature-b",
+    templateFields: { summary: "newer" },
+    expectedTemplateDigest: "digest-feature-b",
+  });
 });
 
-test("keeps the Create Task split usable across desktop and mobile layouts", async ({ page }) => {
+test("creates and starts a task with a chosen agent from the wizard", async ({ page }) => {
+  const harness = await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+  await page.getByRole("button", { name: "New Task" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Create task" });
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.locator('input[name="title"]').fill("Auto started task");
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.locator('textarea[name="detail"]').fill("Body");
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+
+  // The start step preselects the workspace default binding.
+  await dialog.getByRole("radio", { name: /Create and start/ }).click();
+  await expect(dialog.getByRole("button", { name: "Start agent" })).toContainText("default");
+  const agentMenu = page.getByRole("listbox", { name: "Start agent" });
+  await dialog.getByRole("button", { name: "Start agent" }).click();
+  await agentMenu.getByRole("option", { name: "other-agent review" }).click();
+  await expect(dialog.locator("[data-binding-note]")).toBeVisible();
+  await expect(dialog.locator('textarea[name="startPrompt"]')).not.toBeEmpty();
+
+  await dialog.getByRole("button", { name: "Create & start", exact: true }).click();
+  await expect.poll(() => harness.taskBodies.length).toBe(1);
+  // The binding is switched before the start prompt is sent.
+  await expect.poll(() => harness.bindingBodies).toEqual([{ kind: "agent", name: "other-agent" }]);
+  await expect.poll(() => harness.inputBodies.some((body) => body.resourceId === "project1.task3" && typeof body.text === "string" && body.text.length > 0)).toBe(true);
+  await expect(page.locator("#toast")).toContainText("Task created and started");
+  await expect(page).toHaveURL(/project1\.task3/);
+});
+
+test("keeps the Create task wizard usable across desktop and mobile layouts", async ({ page }) => {
   await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");
   await page.getByRole("button", { name: "New Task" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Create task" });
-  const split = dialog.locator('[data-component-owner="task-create-form"]');
-  const formColumn = split.locator(".create-task-form-col");
-  const previewColumn = split.locator('[data-component-owner="task-preview"]');
-  await expect(split).toBeVisible();
-  const desktop = await split.evaluate((node) => ({
-    columns: getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length,
-    formOverflow: getComputedStyle(node.querySelector(".create-task-form-col")!).overflowY,
-    previewOverflow: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).overflowY,
+  const wizard = dialog.locator('[data-component-owner="task-wizard"]');
+  await expect(wizard).toBeVisible();
+  await expect(dialog.locator(".wizard-steps li")).toHaveCount(4);
+  const desktop = await wizard.evaluate((node) => ({
+    bodyOverflow: getComputedStyle(node.querySelector(".wizard-body")!).overflowY,
   }));
-  expect(desktop).toEqual({ columns: 2, formOverflow: "auto", previewOverflow: "auto" });
+  expect(desktop).toEqual({ bodyOverflow: "auto" });
 
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
   const title = dialog.locator('input[name="title"]');
   await title.fill("Responsive local draft");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(title).toHaveValue("Responsive local draft");
-  const mobile = await split.evaluate((node) => ({
-    columns: getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length,
-    overflow: getComputedStyle(node).overflowY,
-    formOverflow: getComputedStyle(node.querySelector(".create-task-form-col")!).overflowY,
-    previewOverflow: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).overflowY,
-    previewBorderTop: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).borderTopStyle,
-    panelsDoNotOverlap: node.querySelector(".create-task-form-col")!.getBoundingClientRect().bottom <= node.querySelector('[data-component-owner="task-preview"]')!.getBoundingClientRect().top + 1,
-  }));
-  expect(mobile).toEqual({ columns: 1, overflow: "auto", formOverflow: "visible", previewOverflow: "visible", previewBorderTop: "solid", panelsDoNotOverlap: true });
-  await expect(formColumn).toBeVisible();
-  await expect(previewColumn).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Create", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeVisible();
+  await expect(dialog.locator(".wizard-steps li.active")).toContainText("Title");
   const bounds = await dialog.boundingBox();
   expect(bounds).not.toBeNull();
   expect(bounds!.x).toBeGreaterThanOrEqual(0);

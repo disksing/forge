@@ -28,7 +28,7 @@
 :where([data-component-owner="create-dialog"]) .create-task-dialog {
   display: flex;
   flex-direction: column;
-  width: min(1080px, calc(100vw - 48px));
+  width: min(720px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
 }
@@ -60,21 +60,6 @@
 :where([data-component-owner="create-dialog"]) .create-dialog-form {
   max-width: none;
   padding: 20px;
-}
-
-:where([data-component-owner="create-dialog"]) .create-task-dialog .create-dialog-form {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  gap: 0;
-  overflow: hidden;
-  padding: 0;
-}
-
-:where([data-component-owner="create-dialog"]) .create-task-dialog .form-actions {
-  padding: 12px 20px;
-  border-top: 1px solid var(--line-soft);
 }
 
 @media (max-width:980px) {

@@ -34,8 +34,9 @@ export function createPUAAppChannels(): PUAAppChannels {
       onMobileImmersive: noop, onToast: noop, onIconsChanged: noop, onHistoryNavigation: noopAsync,
     }),
     create: createModelChannel<CreateDialogModel>({
-      open: false, identity: "", workspaceId: "", draft: { type: "project", projectId: "", templateName: "", templateFields: {}, title: "", titleOverride: false, description: "", detail: "", slug: "", activeTab: "edit", editedMarkdown: null, showOptions: false },
+      open: false, identity: "", workspaceId: "", draft: { type: "project", projectId: "", templateName: "", templateFields: {}, title: "", description: "", detail: "", slug: "", startAfterCreate: false, startBinding: { kind: "profile", name: "" }, startPrompt: "" },
       templates: [], preview: null, previewKey: "", previewing: false, previewError: "", templateDigest: "", submitting: false,
+      agents: [], agentProfiles: [], defaultTaskBinding: { kind: "profile", name: "default" },
       onClose: noop, onPreview: noopAsync, onSubmit: noopAsync, previewRequestKey: () => "", onConfirmTemplateSwitch: async () => true, onIconsChanged: noop,
     }),
     settings: createModelChannel<SettingsModel>({
