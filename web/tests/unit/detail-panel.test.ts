@@ -40,6 +40,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     onSaveMarkdownFile: vi.fn(async (path, content) => ({ path, content, contentHash: "saved" })),
     onDeleteArtifact: vi.fn(async () => undefined),
     onSaveAgentBinding: vi.fn(async () => undefined),
+    onRenameResource: vi.fn(async () => undefined),
     onSaveWorkspaceDefaults: vi.fn(async () => undefined),
     onSaveTaskDefault: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
@@ -498,6 +499,107 @@ describe("DetailPanel", () => {
     await tick();
     target.querySelector<HTMLButtonElement>('[data-binding="inherit"]')!.click();
     await vi.waitFor(() => expect(saveTaskDefault).toHaveBeenCalledWith("project1", null));
+  });
+
+  function projectModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelModel {
+    const base = resourceModel();
+    return resourceModel({
+      identity: "ws:project1:project",
+      resourceId: "project1",
+      resourceType: "project",
+      resourceTitle: "Project Alpha",
+      parent: null,
+      detail: {
+        ...base.detail!,
+        id: "project1",
+        type: "project",
+        title: "Project Alpha",
+        path: "project1",
+        files: [{ name: "project.md", path: "project1/project.md", content: "# Project Alpha", contentHash: "doc-p" }],
+        templates: [{ name: "feature-a", title: "Feature A", path: "project1/templates/feature-a.md", valid: true, schemaVersion: 2, fields: [] }],
+      },
+      ...overrides,
+    });
+  }
+
+  async function openSettingsTab(target: HTMLElement): Promise<void> {
+    await tick();
+    (Array.from(target.querySelectorAll<HTMLButtonElement>(".details-tab")).find((button) => button.textContent?.includes("Settings")))!.click();
+    await tick();
+  }
+
+  it("renames a Project inline from the settings tab", async () => {
+    const rename = vi.fn(async () => undefined);
+    const { target } = mountModel(projectModel({ onRenameResource: rename }));
+    await openSettingsTab(target);
+
+    const card = target.querySelector<HTMLElement>(".resource-settings-card")!;
+    expect(card.querySelector("strong")?.textContent).toBe("Project Alpha");
+    const edit = Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!;
+    edit.click();
+    await tick();
+
+    const input = card.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
+    expect(input.value).toBe("Project Alpha");
+    input.value = "Project Beta";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    const save = Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    expect(card.querySelector("strong")?.textContent).toBe("Project name");
+    save.click();
+    await vi.waitFor(() => expect(rename).toHaveBeenCalledWith("Project Beta"));
+  });
+
+  it("cancels a rename with Escape without calling the callback", async () => {
+    const rename = vi.fn(async () => undefined);
+    const { target } = mountModel(projectModel({ onRenameResource: rename }));
+    await openSettingsTab(target);
+
+    const card = target.querySelector<HTMLElement>(".resource-settings-card")!;
+    Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
+    await tick();
+    const input = card.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
+    input.value = "Discarded";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+
+    expect(card.querySelector(".resource-settings-name-input")).toBeNull();
+    expect(card.querySelector("strong")?.textContent).toBe("Project Alpha");
+    expect(rename).not.toHaveBeenCalled();
+  });
+
+  it("renames a Task inline from the settings tab", async () => {
+    const rename = vi.fn(async () => undefined);
+    const { target } = mountModel(resourceModel({ onRenameResource: rename }));
+    await openSettingsTab(target);
+
+    const card = target.querySelector<HTMLElement>(".resource-settings-card")!;
+    expect(card.querySelector("strong")?.textContent).toBe("Stable detail");
+    Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!.click();
+    await tick();
+    const input = card.querySelector<HTMLInputElement>(".resource-settings-name-input")!;
+    input.value = "Renamed task";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => expect(rename).toHaveBeenCalledWith("Renamed task"));
+  });
+
+  it("moves the Project template list into settings without a Template tab", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      path: "project1/templates/feature-a.md", name: "feature-a.md", content: "# Feature A", contentHash: "tpl-a",
+    }), { headers: { "content-type": "application/json" } })));
+    const { target } = mountModel(projectModel());
+    await tick();
+
+    const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+    expect(tabs.find((tab) => tab.textContent?.trim() === "Template")).toBeUndefined();
+
+    await openSettingsTab(target);
+    const row = target.querySelector<HTMLButtonElement>(".template-row")!;
+    expect(row.textContent).toContain("Feature A");
+    row.click();
+    await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"]')).not.toBeNull());
   });
 
 });

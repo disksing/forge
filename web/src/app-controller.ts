@@ -933,6 +933,16 @@ function detailPanelModel(): DetailPanelModel {
 			publishViewModels();
 			toast("Resource agent binding saved.");
 		},
+		onRenameResource: async (title) => {
+			const resourceId = controllerState.selectedId || "";
+			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/title`, {
+				method: "PUT", body: JSON.stringify({ title })
+			});
+			await loadTree({ updateURL: false });
+			await loadDetail(resourceId, { force: true });
+			publishViewModels();
+			toast("Resource name saved.");
+		},
 		onSaveWorkspaceDefaults: async (defaults) => {
 			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/defaults`, {
 				method: "PUT", body: JSON.stringify(defaults)
