@@ -42,6 +42,19 @@
   const client = new ApiClient();
   const openCache = new Map<string, Map<string, boolean>>();
   let openTools = $state(new Map<string, boolean>());
+  // Viewport fill state. Collapsed Turns expand bottom-up one at a time until
+  // the conversation overflows the viewport (FILL_STEP_LIMIT bounds a
+  // pathological run of tiny Turns); visibility-triggered expansions arriving
+  // mid-fill are deferred and re-evaluated against the resulting layout.
+  const TURN_OBSERVER_MARGIN = 240;
+  const FILL_STEP_LIMIT = 40;
+  let filling = false;
+  // fillArmed stays false until the first fill pass for the current content
+  // completes, so the IntersectionObserver fallback (which fires synchronously
+  // on mount) cannot burst every summary into a detail request before the
+  // bottom-up fill decides what the viewport actually needs.
+  let fillArmed = false;
+  const deferredTurnExpands = new Map<HTMLElement, string>();
 
   onMount(() => {
     const scroll = scroller();
@@ -67,6 +80,8 @@
         deferredSnapshot = null;
         preview = null;
         openTools = new Map(openCache.get(next.identity) ?? []);
+        fillArmed = false;
+        deferredTurnExpands.clear();
       }
       controller?.activate(next.workspaceId, next.resourceId, next.status);
       void tick().then(() => {
@@ -114,6 +129,7 @@
     const scroll = scroller();
     const changed = next.identity !== snapshot.identity;
     if (changed || contextChanged) follow = true;
+    if (!next.loaded) fillArmed = false;
     followAfterUpdate = follow;
     contextChanged = false;
     snapshot = next;
@@ -121,23 +137,26 @@
     void tick().then(() => {
       if (followAfterUpdate && !hasActiveSelection()) scrollToBottom();
       model.onIconsChanged();
-      if (next.loaded && next.hasMoreBefore) void autoFill(next.identity);
+      if (next.loaded) void fillViewport(next.identity);
     });
   }
 
   function observeTurn(node: HTMLElement, reference: string) {
     let current = reference;
     if (typeof IntersectionObserver === "undefined") {
-      if (current) void controller?.loadTurn(current);
-      return { update(next: string) { current = next; if (current) void controller?.loadTurn(current); }, destroy() {} };
+      if (current) requestTurnExpand(node, current);
+      return {
+        update(next: string) { current = next; if (deferredTurnExpands.has(node)) deferredTurnExpands.set(node, next); if (current) requestTurnExpand(node, current); },
+        destroy() { deferredTurnExpands.delete(node); },
+      };
     }
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting) && current) void controller?.loadTurn(current);
-    }, { root: scroller(), rootMargin: "240px 0px" });
+      if (entries.some((entry) => entry.isIntersecting) && current) requestTurnExpand(node, current);
+    }, { root: scroller(), rootMargin: `${TURN_OBSERVER_MARGIN}px 0px` });
     observer.observe(node);
     return {
-      update(next: string) { current = next; },
-      destroy() { observer.disconnect(); },
+      update(next: string) { current = next; if (deferredTurnExpands.has(node)) deferredTurnExpands.set(node, next); },
+      destroy() { observer.disconnect(); deferredTurnExpands.delete(node); },
     };
   }
 
@@ -150,15 +169,80 @@
     return block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || model.agentName || "Agent";
   }
 
-  async function autoFill(identity: string): Promise<void> {
-    let pages = 0;
-    while (pages < 16 && snapshot.identity === identity && snapshot.hasMoreBefore) {
-      const scroll = scroller();
-      if (!scroll || scroll.scrollHeight > scroll.clientHeight + 160 || hasActiveSelection()) return;
-      if (!await controller?.loadOlder()) return;
-      pages++;
-      await tick();
-      scrollToBottom();
+  // fillViewport expands collapsed Turns bottom-up, one at a time, stopping as
+  // soon as the conversation overflows the viewport. The newest expanded Turn
+  // usually fills the screen on its own, so eagerly expanding every summary
+  // near the viewport (the previous behavior) wasted AgentHub round-trips and
+  // Markdown renders on history nobody scrolls to. Older summary pages are
+  // pulled only when expanded Turns still leave the viewport underfilled.
+  async function fillViewport(identity: string): Promise<void> {
+    if (filling) return;
+    filling = true;
+    try {
+      let steps = 0;
+      while (steps < FILL_STEP_LIMIT && snapshot.identity === identity && snapshot.loaded) {
+        const scroll = scroller();
+        if (!scroll || !controller || hasActiveSelection()) break;
+        if (scroll.scrollHeight > scroll.clientHeight + fillMargin(scroll)) break;
+        const reference = nextUnexpandedTurnReference();
+        if (reference) {
+          await controller.loadTurn(reference);
+          steps++;
+          await tick();
+          continue;
+        }
+        if (snapshot.hasMoreBefore && !snapshot.loadingOlder) {
+          if (!await controller.loadOlder()) break;
+          steps++;
+          await tick();
+          continue;
+        }
+        break;
+      }
+    } finally {
+      filling = false;
+      fillArmed = true;
+      flushDeferredTurnExpands();
+    }
+  }
+
+  function fillMargin(scroll: HTMLElement): number {
+    return Math.max(TURN_OBSERVER_MARGIN, scroll.clientHeight / 2);
+  }
+
+  function nextUnexpandedTurnReference(): string {
+    for (let index = snapshot.blocks.length - 1; index >= 0; index--) {
+      const block = snapshot.blocks[index];
+      if (block.kind !== "turn" || !block.turn?.reference) continue;
+      if (block.items || block.events || block.loading || block.error) continue;
+      return block.turn.reference;
+    }
+    return "";
+  }
+
+  function requestTurnExpand(node: HTMLElement, reference: string): void {
+    if (!reference) return;
+    if (filling || !fillArmed) {
+      deferredTurnExpands.set(node, reference);
+      return;
+    }
+    void controller?.loadTurn(reference);
+  }
+
+  // Intersections queued while the viewport fill was running are re-evaluated
+  // against the layout the fill produced: sections still near the viewport
+  // expand now, the rest re-trigger their observer when scrolled into view.
+  function flushDeferredTurnExpands(): void {
+    if (!deferredTurnExpands.size) return;
+    const pending = [...deferredTurnExpands];
+    deferredTurnExpands.clear();
+    const scroll = scroller();
+    if (!scroll) return;
+    const viewport = scroll.getBoundingClientRect();
+    for (const [node, reference] of pending) {
+      if (!node.isConnected) continue;
+      const bounds = node.getBoundingClientRect();
+      if (bounds.bottom >= viewport.top - TURN_OBSERVER_MARGIN && bounds.top <= viewport.bottom + TURN_OBSERVER_MARGIN) void controller?.loadTurn(reference);
     }
   }
 
@@ -258,7 +342,7 @@
           {#if block.turn?.triggerPreview && !block.items && !block.events}<div class="turn-summary-preview">{block.turn.triggerPreview}</div>{/if}
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
-              {#if item.agentStart && item.kind !== "message"}
+              {#if item.agentStart}
                 <!-- Reasoning, tool calls, and approvals render without their own
                      author label, so a run that starts with them gets a header
                      carrying the agent's name and the run's start time;

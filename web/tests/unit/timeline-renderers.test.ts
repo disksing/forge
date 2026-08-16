@@ -11,6 +11,7 @@ import ToolGroup from "../../src/components/ToolGroup.svelte";
 import ToolItem from "../../src/components/ToolItem.svelte";
 import ThinkingBlockHarness from "../fixtures/ThinkingBlockHarness.svelte";
 import UnknownEvent from "../../src/components/UnknownEvent.svelte";
+import { formatClock } from "../../src/components/timeline-events";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -62,17 +63,20 @@ describe("timeline rendering components", () => {
     expect(agent.querySelector(".agent-message-row")?.classList.contains("final")).toBe(false);
   });
 
-  it("hides the repeated agent name on assistant messages continuing a run", () => {
-    const head = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "first", agentStart: true }, agentName: "Codex" });
+  it("renders the agent name and time on every assistant message of a run", () => {
+    const head = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "first", time: "2026-08-12T00:00:00Z" }, agentName: "Codex" });
     expect(head.querySelector(".agent-message-meta strong")?.textContent).toBe("Codex");
+    expect(head.querySelector(".agent-message-meta span")?.textContent).toBe(formatClock("2026-08-12T00:00:00Z"));
 
-    const continuation = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "next", time: "2026-08-12T00:00:05Z", agentStart: false, agentContinuation: true }, agentName: "Codex" });
-    // The whole meta row moves up to the run header: no name, no timestamp.
-    expect(continuation.querySelector(".agent-message-meta")).toBeNull();
+    // Progress updates mid-run keep their own meta row: the name and each
+    // message's own timestamp repeat on every assistant message.
+    const continuation = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "next", time: "2026-08-12T00:00:05Z", agentStart: false }, agentName: "Codex" });
+    expect(continuation.querySelector(".agent-message-meta strong")?.textContent).toBe("Codex");
+    expect(continuation.textContent).toContain(formatClock("2026-08-12T00:00:05Z"));
     expect(continuation.textContent).toContain("next");
 
     // Other agents always keep their sender name.
-    const delegated = mounted(TimelineMessage, { item: { kind: "message", role: "agent", text: "note", sender: { name: "Builder" }, agentContinuation: true }, agentName: "Codex" });
+    const delegated = mounted(TimelineMessage, { item: { kind: "message", role: "agent", text: "note", sender: { name: "Builder" } }, agentName: "Codex" });
     expect(delegated.querySelector(".agent-message-meta strong")?.textContent).toBe("Builder");
   });
 

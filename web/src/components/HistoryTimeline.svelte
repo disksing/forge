@@ -252,7 +252,7 @@
                 <div class="history-items">
                   {#each blockItems(block) as item (timelineKey(item))}
                     <div class="history-item" data-history-kind={item.kind}>
-                      {#if item.agentStart && item.kind !== "message"}
+                      {#if item.agentStart}
                         <div data-component-owner="event-timeline" class="agent-run-header"><strong>{blockAgentName(block)}</strong>{#if formatClock(item.time)}<span>{formatClock(item.time)}</span>{/if}</div>
                       {/if}
                       {#if item.kind === "message"}

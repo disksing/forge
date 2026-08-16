@@ -26,6 +26,13 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$workspace_dir" "$agenthub_data_dir"
+
+# The embedded frontend build output is not committed; build it on demand so a
+# fresh checkout can run e2e tests without a manual frontend build.
+if [ ! -f "$root/web/static/assets/pua-app.js" ]; then
+	npm --prefix "$root/web" run build
+fi
+
 go -C "$root" build -o "$binary_path" ./cli/cmd/pua
 (
 	cd "$workspace_dir"

@@ -3,3 +3,7 @@ coverage/
 playwright-report/
 test-results/
 .vite/
+
+# Vite build output is generated, never committed. Run
+# `npm --prefix web run build` (or `scripts/build`) after checkout.
+static/assets/
