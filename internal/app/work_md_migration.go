@@ -13,9 +13,13 @@ import (
 )
 
 const (
-	legacyWorkMDFileName       = "work.md"
-	workMigrationMarkerPrefix  = "<!-- forge:migration:work-md:v1 "
-	workMigrationMarkerPattern = `(?m)^<!-- forge:migration:work-md:v1 source=work\.md digest=(sha256:[0-9a-f]{64}) -->[ \t]*$`
+	legacyWorkMDFileName = "work.md"
+	// workMigrationMarkerPrefix is written by new migrations. The legacy
+	// forge-branded prefix is still recognized so files migrated before the
+	// rebrand are not migrated again.
+	workMigrationMarkerPrefix      = "<!-- pua:migration:work-md:v1 "
+	forgeWorkMigrationMarkerPrefix = "<!-- forge:migration:work-md:v1 "
+	workMigrationMarkerPattern     = `(?m)^<!-- (?:pua|forge):migration:work-md:v1 source=work\.md digest=(sha256:[0-9a-f]{64}) -->[ \t]*$`
 )
 
 var workMigrationMarkerRE = regexp.MustCompile(workMigrationMarkerPattern)
@@ -436,7 +440,7 @@ func verifyLegacyWorkSource(root string, plan legacyTaskWorkPlan) error {
 }
 
 func existingWorkMigrationMarker(content string) (string, bool, error) {
-	if !strings.Contains(content, workMigrationMarkerPrefix) {
+	if !strings.Contains(content, workMigrationMarkerPrefix) && !strings.Contains(content, forgeWorkMigrationMarkerPrefix) {
 		return "", false, nil
 	}
 	matches := workMigrationMarkerRE.FindAllStringSubmatch(content, -1)
