@@ -14,7 +14,6 @@
   let draft = $state<SettingsDraft>({
     ...initialDraft,
     profiles: initialDraft.profiles.map((profile) => ({ ...profile })),
-    newProfile: { ...initialDraft.newProfile },
   });
   let pending = $state("");
 
