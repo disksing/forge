@@ -7,7 +7,10 @@ import type {
 import { compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
 import { formatToolCallCount, normalizeToolCallCount } from "./tool-group";
 
-const HISTORY_LIMIT = 20;
+// A small summary page keeps the initial history read cheap: the Chat view
+// expands Turns bottom-up only until the viewport is filled, so a large
+// summary page would mostly fetch metadata nobody scrolls to.
+const HISTORY_LIMIT = 5;
 const EVENT_LIMIT = 250;
 const STREAM_BATCH_WINDOW_MS = 80;
 const STATUS_SYNC_INTERVAL_MS = 2000;
@@ -35,6 +38,7 @@ interface ResourceChatContext {
   detailErrors: Map<string, string>;
   liveEvents: Map<string, AgentEvent[]>;
   orphanEvents: Map<string, AgentEvent[]>;
+  detailChain: Promise<void>;
   notices: AgentNotice[];
   nextCursor: string;
   hasMoreBefore: boolean;
@@ -165,12 +169,24 @@ export class ChatSessionController {
     void this.loadInitial(context);
   }
 
+  // Turn detail requests are serialized per context. The Chat timeline fills
+  // the viewport bottom-up one Turn at a time, and its visibility observer can
+  // still produce bursts when a run of collapsed Turns enters view; a chain
+  // keeps those bursts from becoming concurrent AgentHub round-trips. Guards
+  // re-run when the queued task executes so duplicate requests collapse.
   async loadTurn(reference: string): Promise<void> {
     const context = this.activeContext();
-    if (!context || !reference || context.details.has(reference) || context.detailLoading.has(reference)) return;
+    if (!context || !reference || context.details.has(reference)) return;
+    const generation = context.requestGeneration;
+    const task = context.detailChain.then(() => this.loadTurnDetail(context, reference, generation));
+    context.detailChain = task.then(() => undefined, () => undefined);
+    return task;
+  }
+
+  private async loadTurnDetail(context: ResourceChatContext, reference: string, generation: number): Promise<void> {
+    if (!this.isCurrent(context, generation) || context.details.has(reference) || context.detailLoading.has(reference)) return;
     const summary = this.findTurn(context, reference);
     if (!summary) return;
-    const generation = context.requestGeneration;
     context.detailLoading.add(reference);
     context.detailErrors.delete(reference);
     this.emit();
@@ -244,7 +260,7 @@ export class ChatSessionController {
     const context: ResourceChatContext = {
       key: contextKey(workspaceId, resourceId), workspaceId, resourceId, status: null, generationId: "",
       requestGeneration: 1, streamGeneration: 0, segments: new Map(), details: new Map(), detailLoading: new Set(),
-      detailErrors: new Map(), liveEvents: new Map(), orphanEvents: new Map(), notices: [], nextCursor: "", hasMoreBefore: false,
+      detailErrors: new Map(), liveEvents: new Map(), orphanEvents: new Map(), detailChain: Promise.resolve(), notices: [], nextCursor: "", hasMoreBefore: false,
       loading: false, loadingOlder: false, loaded: false, error: "", stream: null, pendingEvents: [], headRefreshing: false,
       terminalMaterializing: new Set(), flushTimer: null, statusSyncTimer: null, statusSyncInFlight: false,
     };
