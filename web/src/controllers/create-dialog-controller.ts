@@ -79,11 +79,14 @@ function emptyState(identity: number): CreateDialogState {
 	};
 }
 
-export function createTaskRequest(dialog: CreateDialogState) {
+export function createTaskRequest(dialog: CreateDialogState, templates: TaskTemplate[] = []) {
+	// Only templates with a taskTitle pattern generate the title from their
+	// fields; for every other template the manual title must be sent or the
+	// server rejects the request with an empty rendered title.
+	const generatesTitle = templates.some((template) => template.name === dialog.templateName && Boolean(template.taskTitle?.trim()));
 	return {
 		project: dialog.projectId,
-		// Templates that generate the task title ignore any manual title.
-		title: dialog.templateName ? "" : dialog.title,
+		title: dialog.templateName && generatesTitle ? "" : dialog.title,
 		...(dialog.templateName ? {
 			templateName: dialog.templateName,
 			templateFields: dialog.templateFields,
@@ -99,6 +102,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 	let previewGeneration = 0;
 	let previewController: AbortController | null = null;
 	let previewPendingKey = "";
+	let previewInFlight: Promise<void> | null = null;
 
 	function draft(dialog = state): CreateDraft {
 		return {
@@ -129,6 +133,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 		previewController?.abort();
 		previewController = null;
 		previewPendingKey = "";
+		previewInFlight = null;
 	}
 
 	function syncDraft(next: CreateDraft): void {
@@ -164,7 +169,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 			onClose: close,
 			onPreview: refreshPreview,
 			onSubmit: submit,
-			previewRequestKey: (next) => JSON.stringify(createTaskRequest({ ...dialog, ...stateFromDraft(next), templateDigest: "" } as CreateDialogState)),
+			previewRequestKey: (next) => JSON.stringify(createTaskRequest({ ...dialog, ...stateFromDraft(next), templateDigest: "" } as CreateDialogState, dependencies.templates(dialog.projectId))),
 			onConfirmTemplateSwitch: dependencies.confirmTemplateSwitch,
 			onIconsChanged: dependencies.onIconsChanged
 		});
@@ -192,14 +197,28 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 	async function refreshPreview(next: CreateDraft): Promise<void> {
 		syncDraft(next);
 		if (!state.open || !state.templateName) return;
-		const request = createTaskRequest({ ...state, templateDigest: "" });
+		const request = createTaskRequest({ ...state, templateDigest: "" }, dependencies.templates(state.projectId));
 		const requestKey = JSON.stringify(request);
 		if (state.previewing) {
-			if (requestKey === previewPendingKey) return;
+			// An identical preview is already in flight: wait for it instead of
+			// returning empty-handed, so submit() can rely on its digest.
+			if (requestKey === previewPendingKey) {
+				if (previewInFlight) await previewInFlight;
+				return;
+			}
 			cancelPreview();
 			state.previewing = false;
 		}
 		const selectedTemplate = dependencies.templates(state.projectId).find((item) => item.name === state.templateName);
+		// The server validates every required field; while required fields are
+		// still blank, skip the request instead of surfacing the raw validation
+		// error before the user had a chance to fill the form.
+		const missingRequired = (selectedTemplate?.fields || []).some((field) => field.required && field.type !== "boolean" && !String(state.templateFields[field.name] ?? "").trim());
+		if (missingRequired) {
+			state.previewError = "";
+			render();
+			return;
+		}
 		if (selectedTemplate && !selectedTemplate.taskTitle && !state.title.trim()) {
 			state.previewError = "This template does not generate a title. Enter a task title to render the preview.";
 			render();
@@ -215,12 +234,15 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 		previewController = controller;
 		previewPendingKey = requestKey;
 		render();
+		const requestPromise = dependencies.request<TaskPreview>(`/api/workspaces/${workspaceId}/tasks/preview`, {
+			method: "POST",
+			body: JSON.stringify(request),
+			signal: controller.signal
+		});
+		const inFlight = requestPromise.then(() => undefined, () => undefined);
+		previewInFlight = inFlight;
 		try {
-			const preview = await dependencies.request<TaskPreview>(`/api/workspaces/${workspaceId}/tasks/preview`, {
-				method: "POST",
-				body: JSON.stringify(request),
-				signal: controller.signal
-			});
+			const preview = await requestPromise;
 			if (generation !== previewGeneration || dialogIdentity !== state.identity || workspaceId !== dependencies.workspaceId()) return;
 			state.preview = preview;
 			state.templateDigest = preview.template?.digest || "";
@@ -233,6 +255,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 				state.previewing = false;
 				if (previewController === controller) previewController = null;
 				if (previewPendingKey === requestKey) previewPendingKey = "";
+				if (previewInFlight === inFlight) previewInFlight = null;
 				render();
 			}
 		}
@@ -278,7 +301,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 					await refreshPreview(draft());
 					if (!state.templateDigest) throw new Error(state.previewError || "Could not render the selected template.");
 				}
-				const created = await dependencies.request<CreatedResource>(`/api/workspaces/${workspaceId}/tasks`, { method: "POST", body: JSON.stringify(createTaskRequest(state)) });
+				const created = await dependencies.request<CreatedResource>(`/api/workspaces/${workspaceId}/tasks`, { method: "POST", body: JSON.stringify(createTaskRequest(state, dependencies.templates(state.projectId))) });
 				resourceId = createdResourceId(created);
 				if (state.startAfterCreate) {
 					try {
