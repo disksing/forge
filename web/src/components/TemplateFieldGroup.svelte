@@ -18,14 +18,14 @@
 
 <div class="template-fields" aria-label={label} data-component-owner="template-field-group">
   {#each fields as field (field.name)}
-    <label class:template-boolean={field.type === "boolean"}>
+    <label class="template-field" class:template-boolean={field.type === "boolean"}>
       {#if field.type === "boolean"}
-        <input type="checkbox" checked={values[field.name] === true} onchange={(event) => change(field, event)} /><span>{field.label}{field.required ? " *" : ""}</span>
-      {:else}<span>{field.label}{field.required ? " *" : ""}</span>{/if}
+        <input type="checkbox" checked={values[field.name] === true} onchange={(event) => change(field, event)} />
+      {/if}
+      <span class="template-field-label">{field.label}{#if field.required}{" "}<small class="template-required">*</small>{/if}{#if field.description}{" "}<small>{field.description}</small>{/if}</span>
       {#if field.type === "textarea"}<textarea required={field.required} placeholder={field.placeholder || ""} value={String(values[field.name] ?? "")} oninput={(event) => change(field, event)}></textarea>{/if}
       {#if field.type === "select"}<select required={field.required} value={String(values[field.name] ?? "")} onchange={(event) => change(field, event)}><option value="">Select...</option>{#each field.options || [] as option}<option value={option}>{option}</option>{/each}</select>{/if}
       {#if field.type === "text"}<input required={field.required} placeholder={field.placeholder || ""} value={String(values[field.name] ?? "")} oninput={(event) => change(field, event)} />{/if}
-      {#if field.description}<small>{field.description}</small>{/if}
     </label>
   {/each}
 </div>

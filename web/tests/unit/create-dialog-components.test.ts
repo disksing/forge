@@ -152,6 +152,36 @@ describe("CreateDialog child components", () => {
     expect(onPreview.mock.calls.at(-1)?.[0].templateFields.summary).toBe("Newest value");
   });
 
+  it("switches templates without confirmation while only untouched defaults are present", async () => {
+    const current = draft();
+    const confirm = vi.fn().mockResolvedValue(true);
+    const alternate = { ...featureTemplate, name: "feature-b", title: "Feature B" };
+    const host = mountWizard(current, model(current, { templates: [featureTemplate, alternate], onConfirmTemplateSwitch: confirm }));
+    const cards = host.querySelectorAll<HTMLButtonElement>('[role="option"]');
+
+    cards[1].click(); // select feature-a; its defaults fill templateFields
+    await tick();
+    expect(current.templateName).toBe("feature-a");
+    expect(current.templateFields.summary).toBe("Default summary");
+
+    cards[2].click(); // switch away without editing — no confirmation prompt
+    await tick();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(current.templateName).toBe("feature-b");
+  });
+
+  it("hides the Back button on the first step and shows it afterwards", async () => {
+    const current = draft();
+    const host = mountWizard(current, model(current));
+    await tick();
+
+    const footerTexts = () => [...host.querySelectorAll<HTMLButtonElement>(".wizard-footer button")].map((button) => button.textContent?.trim());
+    expect(footerTexts()).toEqual(["Cancel", "Next"]);
+
+    await advance(host); // -> title & slug
+    expect(footerTexts()).toEqual(["Back", "Cancel", "Next"]);
+  });
+
   it("preselects the resolved default binding for the start step", async () => {
     const current = draft();
     mountWizard(current, model(current, {

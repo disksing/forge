@@ -226,7 +226,7 @@ describe("CreateDialog task wizard", () => {
     await tick();
     await advance(target);
 
-    target.querySelector<HTMLButtonElement>(".wizard-footer button.secondary")!.click();
+    target.querySelector<HTMLButtonElement>(".wizard-footer button.secondary-button")!.click();
     await tick();
     expect(target.querySelector<HTMLInputElement>('input[name="title"]')?.value).toBe("Remember me");
   });

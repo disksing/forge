@@ -8,17 +8,54 @@
   border-radius: 6px;
 }
 
+:where([data-component-owner="template-field-group"]) .template-field {
+  display: grid;
+  gap: 5px;
+}
+
+:where([data-component-owner="template-field-group"]) .template-field-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="template-field-group"]) .template-field-label small {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+:where([data-component-owner="template-field-group"]) .template-field-label .template-required {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+:where([data-component-owner="template-field-group"]) input:not([type="checkbox"]),
+:where([data-component-owner="template-field-group"]) textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+:where([data-component-owner="template-field-group"]) textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
 :where([data-component-owner="template-field-group"]) .template-boolean {
   grid-template-columns: auto 1fr;
   align-items: center;
 }
 
-:where([data-component-owner="template-field-group"]) .template-boolean small {
-  grid-column: 2;
-}
-
 :where([data-component-owner="template-field-group"]) select {
   width: 100%;
+  box-sizing: border-box;
   padding: 8px 28px 8px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
