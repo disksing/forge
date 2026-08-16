@@ -511,22 +511,22 @@ func (f *runtimeFakeAgentHub) appendLocked(sessionID, eventType string, data any
 func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, serveWorkspace, string) {
 	t.Helper()
 	workspacePath := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspacePath, "en")
+	puaWorkspace, err := app.Initialize(workspacePath, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := forgeWorkspace.CreateProject("Runtime test project", "runtime-test")
+	project, err := puaWorkspace.CreateProject("Runtime test project", "runtime-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Runtime test task", Slug: "runtime-test"}); err != nil {
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Runtime test task", Slug: "runtime-test"}); err != nil {
 		t.Fatal(err)
 	}
 	workspace := serveWorkspace{ID: "workspace-test", Name: "Test", Path: workspacePath}
 	configPath := filepath.Join(t.TempDir(), "serve.json")
 	configData, _ := json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
-		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-runtime-test",
+		AgentHubEndpoint: hubURL, AgentHubInstanceID: "pua-runtime-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
@@ -1000,7 +1000,7 @@ func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 
 func TestAgentRunIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
 	workspacePath := t.TempDir()
-	legacyDir := filepath.Join(workspacePath, ".forge", "gui-agent")
+	legacyDir := filepath.Join(workspacePath, ".pua", "gui-agent")
 	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1014,7 +1014,7 @@ func TestAgentRunIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
 	if err != nil || len(runs) != 1 || runs[0].ID != "run-legacy" {
 		t.Fatalf("migrated runs=%#v err=%v", runs, err)
 	}
-	if _, err := os.Stat(filepath.Join(workspacePath, ".forge", "runtime", "generation-store.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(workspacePath, ".pua", "runtime", "generation-store.json")); err != nil {
 		t.Fatalf("generation store marker missing: %v", err)
 	}
 	store, err := generation.Open(workspacePath, "")
@@ -1039,12 +1039,12 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 	if firstRecorder.Code != http.StatusOK {
 		t.Fatalf("first message failed: %d %s", firstRecorder.Code, firstRecorder.Body.String())
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	binding := app.AgentBinding{Kind: "agent", Name: "replacement-agent"}
-	if _, err := forgeWorkspace.SetResourceAgentBinding("project1.task1", binding); err != nil {
+	if _, err := puaWorkspace.SetResourceAgentBinding("project1.task1", binding); err != nil {
 		t.Fatal(err)
 	}
 	if err := manager.resourceBindingChanged(context.Background(), workspace, "project1.task1", binding); err != nil {

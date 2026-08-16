@@ -42,13 +42,13 @@ func migrateLegacyMetadata(root string) error {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path != root && (entry.Name() == workspacepath.CurrentControlDirName || entry.Name() == workspacepath.LegacyControlDirName || entry.Name() == "repos") {
+			if path != root && (entry.Name() == workspacepath.ControlDirName || entry.Name() == "repos") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		name := entry.Name()
-		if name == workspaceConfigFile || name == legacyWorkspaceConfigFile || name == "project.json" || name == "task.json" || name == "scheduler.json" {
+		if name == workspaceConfigFile || name == "project.json" || name == "task.json" || name == "scheduler.json" {
 			files = append(files, path)
 		}
 		return nil

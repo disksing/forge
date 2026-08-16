@@ -2404,23 +2404,21 @@ function Fi(e, t) {
 }
 //#endregion
 //#region src/components/markdown-editor-session.ts
-var Ii = /* @__PURE__ */ new Map(), Li = "pua:file-preview-handoff", Ri = "forge:file-preview-handoff";
-function zi() {
+var Ii = /* @__PURE__ */ new Map(), Li = "pua:file-preview-handoff";
+function Ri() {
 	try {
-		let e = localStorage.getItem(Ri);
-		localStorage.getItem("pua:file-preview-handoff") === null && e !== null && localStorage.setItem(Li, e), localStorage.removeItem(Ri);
-		let t = localStorage.getItem(Li);
-		if (!t) return null;
-		let n = JSON.parse(t);
-		return !n || typeof n != "object" || n.version !== 1 || typeof n.path != "string" ? null : n;
+		let e = localStorage.getItem(Li);
+		if (!e) return null;
+		let t = JSON.parse(e);
+		return !t || typeof t != "object" || t.version !== 1 || typeof t.path != "string" ? null : t;
 	} catch {
 		return null;
 	}
 }
-function Bi() {
+function zi() {
 	try {
 		localStorage.removeItem(Li);
 	} catch {}
 }
 //#endregion
-export { Ke as $, Er as A, Q as B, Xr as C, Rr as D, zr as E, br as F, cn as G, Tn as H, Sr as I, I as J, ln as K, mr as L, Ar as M, wr as N, Ir as O, Cr as P, qe as Q, pr as R, Zr as S, Ur as T, yn as U, er as V, sn as W, St as X, F as Y, ot as Z, di as _, Fi as a, si as b, ji as c, Ti as d, ze as et, vi as f, fi as g, yi as h, zi as i, Tr as j, Fr as k, Ai as l, bi as m, Bi as n, Ni as o, xi as p, Qt as q, Ii as r, Mi as s, Li as t, Re as tt, Ei as u, ui as v, Yr as w, Qr as x, li as y, fr as z };
+export { Ke as $, Er as A, Q as B, Xr as C, Rr as D, zr as E, br as F, cn as G, Tn as H, Sr as I, I as J, ln as K, mr as L, Ar as M, wr as N, Ir as O, Cr as P, qe as Q, pr as R, Zr as S, Ur as T, yn as U, er as V, sn as W, St as X, F as Y, ot as Z, di as _, Fi as a, si as b, ji as c, Ti as d, ze as et, vi as f, fi as g, yi as h, Ri as i, Tr as j, Fr as k, Ai as l, bi as m, zi as n, Ni as o, xi as p, Qt as q, Ii as r, Mi as s, Li as t, Re as tt, Ei as u, ui as v, Yr as w, Qr as x, li as y, fr as z };

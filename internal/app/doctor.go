@@ -165,11 +165,6 @@ func (s *doctorScanner) issue(severity, code, path, resourceID, message, suggest
 
 func (s *doctorScanner) scanWorkspaceConfig() {
 	canonical := filepath.Join(s.root, workspaceConfigFile)
-	legacy := filepath.Join(s.root, legacyWorkspaceConfigFile)
-	if pathExists(canonical) && pathExists(legacy) {
-		s.issue(DoctorSeverityError, "workspace_config_conflict", workspaceConfigFile, "workspace",
-			"both workspace.json and legacy forge.json exist", "Keep workspace.json and migrate or remove the legacy file after review.")
-	}
 	if !pathExists(canonical) {
 		s.issue(DoctorSeverityError, "workspace_config_missing", workspaceConfigFile, "workspace",
 			"workspace.json is missing", "Restore workspace.json from backup or reconstruct it before using PUA.")

@@ -13,14 +13,14 @@ import (
 
 func TestResolveResourceAgentPreservesMissingBindingAndUsesTypedFallback(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.SetResourceAgentBinding("project1.task1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
+	if _, err := puaWorkspace.SetResourceAgentBinding("project1.task1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
+	if _, err := puaWorkspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
 		Project: app.AgentBinding{Kind: "profile", Name: "default"},
 		Task:    app.AgentBinding{Kind: "profile", Name: "task-fast"},
 	}); err != nil {
@@ -36,7 +36,7 @@ func TestResolveResourceAgentPreservesMissingBindingAndUsesTypedFallback(t *test
 	if resolved.Binding.Name != "deleted" || resolved.ResolvedProfile != "task-fast" || resolved.AgentName != "task-agent" || !strings.Contains(resolved.ConfigError, "deleted") {
 		t.Fatalf("typed fallback resolution = %#v", resolved)
 	}
-	binding, err := forgeWorkspace.ResourceAgentBinding("project1.task1")
+	binding, err := puaWorkspace.ResourceAgentBinding("project1.task1")
 	if err != nil || binding.Name != "deleted" {
 		t.Fatalf("fallback rewrote explicit binding: %#v, %v", binding, err)
 	}
@@ -44,12 +44,12 @@ func TestResolveResourceAgentPreservesMissingBindingAndUsesTypedFallback(t *test
 
 func TestRestoredProfileWithSameAgentClearsErrorWithoutReplacement(t *testing.T) {
 	manager, workspace, configPath := newRuntimeTestManager(t, "http://127.0.0.1:1")
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	binding := app.AgentBinding{Kind: "profile", Name: "restored"}
-	if _, err := forgeWorkspace.SetResourceAgentBinding("project1.task1", binding); err != nil {
+	if _, err := puaWorkspace.SetResourceAgentBinding("project1.task1", binding); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().Format(time.RFC3339Nano)
@@ -63,7 +63,7 @@ func TestRestoredProfileWithSameAgentClearsErrorWithoutReplacement(t *testing.T)
 	}
 	manager.registerRuntime(newAgentHubRuntime(manager, workspace, run, nil))
 	data, err := json.Marshal(agentHubServeConfig{
-		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace}, AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "forge-runtime-test",
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace}, AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "pua-runtime-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}, {Key: "restored", AgentName: "fake-agent"}},
 	})
 	if err != nil {
@@ -83,14 +83,14 @@ func TestRestoredProfileWithSameAgentClearsErrorWithoutReplacement(t *testing.T)
 
 func TestResolveResourceAgentFallsBackGloballyThenFailsActionably(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.SetResourceAgentBinding("project1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
+	if _, err := puaWorkspace.SetResourceAgentBinding("project1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
+	if _, err := puaWorkspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
 		Project: app.AgentBinding{Kind: "profile", Name: "missing-default"},
 		Task:    app.AgentBinding{Kind: "profile", Name: "default"},
 	}); err != nil {
@@ -110,14 +110,14 @@ func TestResolveResourceAgentFallsBackGloballyThenFailsActionably(t *testing.T) 
 
 func TestResolveResourceAgentFallsBackToAgentDefault(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.SetResourceAgentBinding("project1.task1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
+	if _, err := puaWorkspace.SetResourceAgentBinding("project1.task1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
+	if _, err := puaWorkspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
 		Project: app.AgentBinding{Kind: "profile", Name: "default"},
 		Task:    app.AgentBinding{Kind: "agent", Name: "task-agent"},
 	}); err != nil {

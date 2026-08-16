@@ -25,7 +25,7 @@ func TestReadAgentHubConfigRejectsRemovedVersion(t *testing.T) {
 
 func TestReadAgentHubConfigUpgradesVersionThreeDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "serve.json")
-	if err := os.WriteFile(path, []byte(`{"version":3,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"forge-old"}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":3,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"pua-old"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := readAgentHubConfigFile(path)
@@ -46,7 +46,7 @@ func TestReadAgentHubConfigUpgradesVersionThreeDefaults(t *testing.T) {
 
 func TestReadAgentHubConfigDropsRemovedResourceDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "serve.json")
-	legacy := `{"version":5,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"forge-old","resourceDefaults":{"workspace":"fast","project":"default","task":"reasoning"}}`
+	legacy := `{"version":5,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"pua-old","resourceDefaults":{"workspace":"fast","project":"default","task":"reasoning"}}`
 	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 		}
 	}))
 	defer fake.Close()
-	t.Setenv("FORGE_AGENTHUB_URL", "")
+	t.Setenv("PUA_AGENTHUB_URL", "")
 	path := filepath.Join(t.TempDir(), "serve.json")
 	server := &server{config: path}
 	request := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub", strings.NewReader(`{
@@ -264,7 +264,7 @@ func TestAgentHubRunProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
 }
 
 func TestAgentHubConfigEnvironmentOverrideAndValidation(t *testing.T) {
-	t.Setenv("FORGE_AGENTHUB_URL", "http://agenthub.test:9000/")
+	t.Setenv("PUA_AGENTHUB_URL", "http://agenthub.test:9000/")
 	endpoint, err := effectiveAgentHubEndpoint("http://configured.test:4646")
 	if err != nil || endpoint != "http://agenthub.test:9000" {
 		t.Fatalf("environment override: %q, %v", endpoint, err)

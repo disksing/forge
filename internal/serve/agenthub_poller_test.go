@@ -17,12 +17,9 @@ import (
 // matching local run projection for the poller to reconcile.
 func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace serveWorkspace, run agentRun, session agentHubSession) {
 	t.Helper()
-	if run.ForgeSessionID != "" {
-		run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
-	}
 	if session.Source == nil {
 		session.Source = &agentHubSource{
-			App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID,
+			App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: run.SourceExternalID,
 		}
 	}
 	fake.mu.Lock()
@@ -102,7 +99,6 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 	if response := closeRuntimeTestRun(t, manager, workspace, "run-a"); response.Code != http.StatusOK {
 		t.Fatalf("test cleanup close failed: %d %s", response.Code, response.Body.String())
 	}
-	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
 func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T) {
@@ -153,7 +149,7 @@ func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T
 	}
 
 	// AgentHub may return to ready before clearing currentTurnId from its
-	// session projection. Forge must treat ready as authoritative so Activity
+	// session projection. PUA must treat ready as authoritative so Activity
 	// stops presenting the resource as active and restores its dismiss action.
 	fake.mu.Lock()
 	session := fake.sessions["ses_activity_turn"]
@@ -206,18 +202,15 @@ func TestAgentHubPollerStopsSessionForArchivedTask(t *testing.T) {
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-archived-task", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_archived_task", SourceExternalID: workspace.ID + "/run-archived-task",
-		ForgeSessionID: "session-test", Status: "idle",
+		Status:    "idle",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_archived_task", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+	if _, err := puaWorkspace.ArchiveResource("project1.task1"); err != nil {
 		t.Fatal(err)
-	}
-	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
-		t.Fatalf("archiving must retain the transient session record until AgentHub reconciliation: %#v", sessions)
 	}
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
@@ -237,11 +230,8 @@ func TestAgentHubPollerStopsSessionForArchivedTask(t *testing.T) {
 	}
 	waitForRuntimeTest(t, func() bool {
 		run := pollerRunState(manager.runtimeByID("run-archived-task"))
-		return run.Status == "stopped" && run.AgentHubStoppedObserved && run.ForgeSessionID == ""
+		return run.Status == "stopped" && run.AgentHubStoppedObserved
 	})
-	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
-		t.Fatalf("terminal reconciliation did not remove the transient session record: %#v", sessions)
-	}
 }
 
 func TestAgentHubPollerKeepsSessionForOpenTask(t *testing.T) {
@@ -282,11 +272,11 @@ func TestArchiveResourceAllowsActiveTurnAndConvergesAsynchronously(t *testing.T)
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "archive") {
 		t.Fatalf("active Turn archive = %d %s", recorder.Code, recorder.Body.String())
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := forgeWorkspace.ResourceValue("project1.task1")
+	value, err := puaWorkspace.ResourceValue("project1.task1")
 	if err != nil || !value.Archived {
 		t.Fatalf("active resource was not archived before runtime convergence: %#v, %v", value, err)
 	}
@@ -302,14 +292,14 @@ func TestAgentHubPollerStopsProjectSessionWhenProjectArchived(t *testing.T) {
 		AgentHubSessionID: "ses_project", SourceExternalID: workspace.ID + "/run-project", Status: "idle",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_project", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+	if _, err := puaWorkspace.ArchiveResource("project1.task1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.ArchiveResource("project1"); err != nil {
+	if _, err := puaWorkspace.ArchiveResource("project1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -342,13 +332,13 @@ func TestAgentHubPollerDoesNotStopArchivedTaskSessionWithMismatchedSource(t *tes
 	}
 	seedPollerRun(t, fake, workspace, run, agentHubSession{
 		ID: "ses_source_mismatch", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z",
-		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "another-forge", ExternalID: run.SourceExternalID},
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "another-pua", ExternalID: run.SourceExternalID},
 	})
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+	if _, err := puaWorkspace.ArchiveResource("project1.task1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -392,14 +382,14 @@ func TestAgentHubPollerRetriesAmbiguousArchivedTaskStop(t *testing.T) {
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-stop-failure", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_stop_failure", SourceExternalID: workspace.ID + "/run-stop-failure",
-		ForgeSessionID: "session-test", Status: "idle",
+		Status:    "idle",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_stop_failure", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+	if _, err := puaWorkspace.ArchiveResource("project1.task1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -410,8 +400,7 @@ func TestAgentHubPollerRetriesAmbiguousArchivedTaskStop(t *testing.T) {
 		rt := manager.runtimeByID("run-stop-failure")
 		rt.mu.Lock()
 		defer rt.mu.Unlock()
-		return !rt.agentHubStopRequested && rt.run.ArchivedTaskStopRequested &&
-			rt.run.Status == "recovering" && rt.run.ForgeSessionID != ""
+		return !rt.agentHubStopRequested && rt.run.ArchivedTaskStopRequested && rt.run.Status == "recovering"
 	})
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
@@ -433,7 +422,7 @@ func TestAgentHubPollerRetriesAmbiguousArchivedTaskStop(t *testing.T) {
 		t.Fatalf("retried stop did not persist terminal observation: %#v", run)
 	}
 
-	// Replacing the manager simulates a Forge restart. The converged archived
+	// Replacing the manager simulates a PUA restart. The converged archived
 	// generation remains idempotent and needs no additional Stop request.
 	restarted := newAgentManager(manager.server)
 	if err := restarted.pollAgentHubSessions(context.Background()); err != nil {
@@ -450,7 +439,7 @@ func TestAgentHubPollerRetriesAmbiguousArchivedTaskStop(t *testing.T) {
 	}
 }
 
-func TestAgentHubPollerRunningToStoppedFinishesTurnAndReleasesForgeSession(t *testing.T) {
+func TestAgentHubPollerRunningToStoppedFinishesTurn(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -458,7 +447,7 @@ func TestAgentHubPollerRunningToStoppedFinishesTurnAndReleasesForgeSession(t *te
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
-		ForgeSessionID: "session-test", Status: "running",
+		Status:    "running",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "stopped", UpdatedAt: "2026-08-01T00:00:10Z"})
 
@@ -468,14 +457,11 @@ func TestAgentHubPollerRunningToStoppedFinishesTurnAndReleasesForgeSession(t *te
 	rt := manager.runtimeByID("run-sched")
 	waitForRuntimeTest(t, func() bool {
 		run := pollerRunState(rt)
-		return run.ForgeSessionID == "" && run.Status == "stopped"
+		return run.Status == "stopped"
 	})
 	run := pollerRunState(rt)
 	if !run.AgentHubStoppedObserved {
 		t.Fatalf("stopped observation was not recorded: %#v", run)
-	}
-	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
-		t.Fatalf("durable stopped did not release the Forge session: %#v", sessions)
 	}
 }
 
@@ -487,7 +473,7 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
-		ForgeSessionID: "session-test", Status: "waiting_approval",
+		Status:    "waiting_approval",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "running", UpdatedAt: "2026-08-01T00:00:10Z"})
 
@@ -598,11 +584,11 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:10Z",
 		LastOutputAt: "2026-08-01T00:00:10Z",
 	}, agentHubSession{ID: "ses_idle", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeConfig, err := forgeWorkspace.RuntimeConfig()
+	runtimeConfig, err := puaWorkspace.RuntimeConfig()
 	if err != nil {
 		t.Fatal(err)
 	}

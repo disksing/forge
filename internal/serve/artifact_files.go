@@ -23,12 +23,12 @@ func (s *server) deleteResourceArtifact(w http.ResponseWriter, r *http.Request, 
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	resource, err := forgeWorkspace.ResourceValue(resourceID)
+	resource, err := puaWorkspace.ResourceValue(resourceID)
 	if err != nil {
 		writeError(w, err, http.StatusNotFound)
 		return

@@ -377,7 +377,7 @@ export class ChatSessionController {
         this.emit();
       }
     };
-    stream.addEventListener("forge.notice", (message) => {
+    stream.addEventListener("pua.notice", (message) => {
       if (!this.isActiveStream(context, stream, streamGeneration)) return;
       try {
         const notice = JSON.parse((message as MessageEvent).data) as AgentNotice;

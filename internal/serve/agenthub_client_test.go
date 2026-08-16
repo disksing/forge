@@ -43,7 +43,7 @@ func TestAgentHubClientContract(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			writeFakeAgentHubJSON(t, w, sessionEnvelope("ses_1", "ready"))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sessions":
-			if r.URL.Query().Get("sourceApp") != "forge" || r.URL.Query().Get("sourceInstanceId") != "instance-1" {
+			if r.URL.Query().Get("sourceApp") != "pua" || r.URL.Query().Get("sourceInstanceId") != "instance-1" {
 				t.Errorf("unexpected session filter: %s", r.URL.RawQuery)
 			}
 			writeFakeAgentHubJSON(t, w, map[string]any{"sessions": []any{sessionData("ses_1", "ready")}})
@@ -94,12 +94,12 @@ func TestAgentHubClientContract(t *testing.T) {
 	created, err := client.CreateSession(ctx, agentHubCreateSessionRequest{
 		Cwd:       t.TempDir(),
 		AgentName: "gpt-5.6-sol",
-		Source:    &agentHubSource{App: "forge", InstanceID: "instance-1", ExternalID: "run-1"},
+		Source:    &agentHubSource{App: "pua", InstanceID: "instance-1", ExternalID: "run-1"},
 	})
 	if err != nil || created.ID != "ses_1" {
 		t.Fatalf("create: %+v, %v", created, err)
 	}
-	sessions, err := client.ListSessions(ctx, agentHubSessionFilter{SourceApp: "forge", SourceInstanceID: "instance-1"})
+	sessions, err := client.ListSessions(ctx, agentHubSessionFilter{SourceApp: "pua", SourceInstanceID: "instance-1"})
 	if err != nil || len(sessions) != 1 {
 		t.Fatalf("list: %+v, %v", sessions, err)
 	}
@@ -208,7 +208,7 @@ func TestAgentHubStatusValidation(t *testing.T) {
 }
 
 func TestNormalizeAgentHubEndpoint(t *testing.T) {
-	t.Setenv("FORGE_AGENTHUB_URL", "")
+	t.Setenv("PUA_AGENTHUB_URL", "")
 	got, err := normalizeAgentHubEndpoint("")
 	if err != nil || got != defaultAgentHubEndpoint {
 		t.Fatalf("default endpoint: %q, %v", got, err)

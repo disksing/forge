@@ -1,8 +1,6 @@
 import type { NotificationRecord, NotificationSettings, NotificationStore } from "./notification-types";
-import { migrateStoragePrefix } from "./storage-migration";
 
 export const NOTIFICATION_STORAGE_PREFIX = "pua.web.notifications.v1";
-const LEGACY_STORAGE_PREFIXES = ["forge.web.notifications.v1", "forge.gui.notifications.v1"];
 export const NOTIFICATION_SETTINGS_KEY = `${NOTIFICATION_STORAGE_PREFIX}.settings`;
 export const NOTIFICATION_STORE_VERSION = 1;
 
@@ -55,7 +53,6 @@ export function notificationStateKey(workspaceId: string): string {
 }
 
 export function createNotificationRepository(storage: Storage | null) {
-  for (const legacyPrefix of LEGACY_STORAGE_PREFIXES) migrateStoragePrefix(storage, legacyPrefix, NOTIFICATION_STORAGE_PREFIX);
   function readStore(workspaceId: string): NotificationStore {
     const key = notificationStateKey(workspaceId);
     if (!storage || !key) return defaultNotificationStore();

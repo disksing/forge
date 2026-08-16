@@ -10,7 +10,7 @@ import (
 )
 
 func TestServeConfigLockPreventsSecondInstance(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "forge", "serve.json")
+	configPath := filepath.Join(t.TempDir(), "pua", "serve.json")
 	first, err := acquireServeConfigLock(configPath, "127.0.0.1:4936")
 	if err != nil {
 		t.Fatal(err)

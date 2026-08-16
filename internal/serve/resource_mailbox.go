@@ -257,7 +257,7 @@ type resourceAPIError struct {
 
 func (e *resourceAPIError) Error() string { return e.Message }
 
-func isStableForgeResourceID(value string) bool {
+func isStablePUAResourceID(value string) bool {
 	value = strings.TrimSpace(value)
 	if value == "workspace" || value == app.SchedulerResourceID {
 		return true
@@ -299,7 +299,7 @@ func bindMailboxResultSubscription(message *resourceMailboxMessage, turnID strin
 		message.ResultOperationID = ""
 		return
 	}
-	if message.Role != "agent" || message.Sender == nil || !isStableForgeResourceID(message.Sender.ID) ||
+	if message.Role != "agent" || message.Sender == nil || !isStablePUAResourceID(message.Sender.ID) ||
 		strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" || strings.TrimSpace(turnID) == "" {
 		message.ResultSubscriptionStatus = resourceResultSubscriptionNone
 		message.ResultOperationID = ""
@@ -818,19 +818,19 @@ func markResourceMailboxArchived(workspacePath, resourceID string) error {
 
 func resourceExistsAndArchived(workspacePath, resourceID string) (bool, bool, app.AgentBinding, error) {
 	resourceID = normalizedResourceID(resourceID)
-	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
+	puaWorkspace, err := app.OpenWorkspace(workspacePath)
 	if err != nil {
 		return false, false, app.AgentBinding{}, err
 	}
 	if resourceID == "workspace" {
-		binding, err := forgeWorkspace.ResourceAgentBinding(resourceID)
+		binding, err := puaWorkspace.ResourceAgentBinding(resourceID)
 		return err == nil, false, binding, err
 	}
 	if resourceID == app.SchedulerResourceID {
-		binding, err := forgeWorkspace.ResourceAgentBinding(resourceID)
+		binding, err := puaWorkspace.ResourceAgentBinding(resourceID)
 		return err == nil, false, binding, err
 	}
-	value, err := forgeWorkspace.ResourceValue(resourceID)
+	value, err := puaWorkspace.ResourceValue(resourceID)
 	if err != nil {
 		return false, false, app.AgentBinding{}, err
 	}
@@ -1089,7 +1089,7 @@ func (m *agentManager) ensureRuntime(workspace serveWorkspace, run agentRun, cli
 		return rt
 	}
 	rt = newAgentHubRuntime(m, workspace, run, client)
-	rt.agentHubState = agentHubStateForForgeStatus(run.Status)
+	rt.agentHubState = agentHubStateForPUAStatus(run.Status)
 	m.registerRuntime(rt)
 	return rt
 }

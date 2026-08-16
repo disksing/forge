@@ -666,7 +666,7 @@ func migratedTemplateContent(template TaskTemplate) string {
 }
 
 func writeTemplateAtomic(path, content string) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".forge-template-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".pua-template-*.tmp")
 	if err != nil {
 		return err
 	}

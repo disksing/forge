@@ -2,13 +2,13 @@ import { mount, unmount } from "svelte";
 
 import "./app.css";
 
-import ForgeApp from "./ForgeApp.svelte";
+import PUAApp from "./PUAApp.svelte";
 import FilePreviewFullscreen from "./components/FilePreviewFullscreen.svelte";
-import { createForgeAppChannels } from "./app-channels";
-import { startForgeApp, stopForgeApp, type ForgeViewPublisher } from "./app-controller";
+import { createPUAAppChannels } from "./app-channels";
+import { startPUAApp, stopPUAApp, type PUAViewPublisher } from "./app-controller";
 
-const channels = createForgeAppChannels();
-const publisher: ForgeViewPublisher = {
+const channels = createPUAAppChannels();
+const publisher: PUAViewPublisher = {
   renderAppShell: channels.appShell.publish,
   renderCreateDialog: channels.create.publish,
   renderSettings: channels.settings.publish,
@@ -32,12 +32,12 @@ async function mountApplication(): Promise<void> {
     return;
   }
   target.dataset.componentOwner = "app-shell";
-  application = mount(ForgeApp, { target, props: { channels } });
-  startForgeApp(publisher);
+  application = mount(PUAApp, { target, props: { channels } });
+  startPUAApp(publisher);
 }
 
 async function unmountApplication(): Promise<void> {
-  stopForgeApp();
+  stopPUAApp();
   if (!application) return;
   const mounted = application;
   application = null;

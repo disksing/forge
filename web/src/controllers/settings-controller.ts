@@ -7,7 +7,7 @@ export type SettingsProfile = AgentProfile;
 
 export type SettingsWorkspace = WorkspaceOption;
 
-export type ForgeSettingsConfig = WorkspaceConfig;
+export type PUASettingsConfig = WorkspaceConfig;
 
 export interface AgentHubData {
 	configuredEndpoint?: string;
@@ -33,8 +33,8 @@ interface SettingsData {
 }
 
 export interface SettingsControllerDependencies {
-	config(): ForgeSettingsConfig;
-	setConfig(config: ForgeSettingsConfig): void;
+	config(): PUASettingsConfig;
+	setConfig(config: PUASettingsConfig): void;
 	activeWorkspaceId(): string;
 	setActiveWorkspaceId(id: string): void;
 	selectWorkspaceResource(): void;
@@ -61,7 +61,7 @@ export interface SettingsControllerDependencies {
 	onIconsChanged(): void;
 }
 
-export function configWithAgentHubCatalog(base: ForgeSettingsConfig, agentHub: AgentHubData): ForgeSettingsConfig {
+export function configWithAgentHubCatalog(base: PUASettingsConfig, agentHub: AgentHubData): PUASettingsConfig {
 	const catalog = agentHub?.catalog || {};
 	// AgentHub is the source of truth for Agent definitions. PUA's workspace
 	// settings endpoint only contains workspaces and profile routes, so there
@@ -191,7 +191,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 
 	async function refresh(): Promise<void> {
 		const [base, agentHub] = await Promise.all([
-			dependencies.request<ForgeSettingsConfig>("/api/workspaces"),
+			dependencies.request<PUASettingsConfig>("/api/workspaces"),
 			dependencies.request<AgentHubData>("/api/settings/agenthub")
 		]);
 		state.data = { ...base, agentHub };
@@ -248,7 +248,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		if (!id) return;
 		dependencies.flushDraft();
 		await dependencies.request(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
-		const config = await dependencies.request<ForgeSettingsConfig>("/api/workspaces");
+		const config = await dependencies.request<PUASettingsConfig>("/api/workspaces");
 		dependencies.setConfig(config);
 		if (dependencies.activeWorkspaceId() === id) {
 			const nextId = config.activeId || config.workspaces[0]?.id || "";

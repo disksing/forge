@@ -63,15 +63,15 @@ func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace serv
 }
 
 func (m *agentManager) resolveResourceAgent(workspace serveWorkspace, resourceID string, cfg config) (resolvedResourceAgent, error) {
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return resolvedResourceAgent{}, err
 	}
-	runtimeConfig, err := forgeWorkspace.RuntimeConfig()
+	runtimeConfig, err := puaWorkspace.RuntimeConfig()
 	if err != nil {
 		return resolvedResourceAgent{}, err
 	}
-	binding, err := forgeWorkspace.ResourceAgentBinding(resourceID)
+	binding, err := puaWorkspace.ResourceAgentBinding(resourceID)
 	if err != nil {
 		return resolvedResourceAgent{}, err
 	}
@@ -84,7 +84,7 @@ func (m *agentManager) resolveResourceAgent(workspace serveWorkspace, resourceID
 		resolved.ResolvedProfile = requested
 		resolved.AgentName = configuredAgentProfileName(cfg.AgentProfiles, requested)
 		if strings.TrimSpace(resolved.AgentName) == "" {
-			kind, kindErr := resourceAgentKind(forgeWorkspace, resourceID)
+			kind, kindErr := resourceAgentKind(puaWorkspace, resourceID)
 			if kindErr != nil {
 				return resolvedResourceAgent{}, kindErr
 			}
@@ -164,11 +164,11 @@ func resourceGenerationTitle(workspace serveWorkspace, resourceID string, genera
 	if resourceID == app.SchedulerResourceID {
 		title = "Scheduler"
 	} else if resourceID != "workspace" {
-		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 		if err != nil {
 			return "", err
 		}
-		resource, err := forgeWorkspace.ResourceValue(resourceID)
+		resource, err := puaWorkspace.ResourceValue(resourceID)
 		if err != nil {
 			return "", err
 		}
@@ -259,17 +259,11 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace s
 	}
 	run.SourceExternalID = resourceKey + "/" + fmt.Sprint(run.Generation)
 
-	forgeSessionID, err := m.createForgeSession(ctx, workspace, run, cfg)
-	if err != nil {
-		return agentRun{}, err
-	}
-	run.ForgeSessionID = forgeSessionID
 	rt := newAgentHubRuntime(m, workspace, run, client)
 	persisted := false
 	defer func() {
 		if !persisted {
 			m.removeRuntime(run.ID)
-			_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
 		}
 	}()
 	if err := saveAgentRun(workspace.Path, run); err != nil {
@@ -288,12 +282,9 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace s
 		},
 	}
 	launchEnvironment := map[string]string{
-		"PUA_WORKSPACE_ROOT":          workspace.Path,
-		"PUA_WORKSPACE_INSTANCE_ID":   run.SourceInstanceID,
-		"PUA_RESOURCE_ID":             resourceKey,
-		"FORGE_WORKSPACE_ROOT":        workspace.Path,
-		"FORGE_WORKSPACE_INSTANCE_ID": run.SourceInstanceID,
-		"FORGE_RESOURCE_ID":           resourceKey,
+		"PUA_WORKSPACE_ROOT":        workspace.Path,
+		"PUA_WORKSPACE_INSTANCE_ID": run.SourceInstanceID,
+		"PUA_RESOURCE_ID":           resourceKey,
 	}
 	session, err := m.findOrCreateAgentHubSession(ctx, client, source, agentHubCreateSessionRequest{
 		Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
@@ -312,10 +303,6 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace s
 		run.CompletionCursor = session.LastEventID
 	})
 	if err != nil {
-		rt.setRecoveryError(m, err)
-		return rt.snapshotRun(), err
-	}
-	if err := m.bindForgeSessionAgentHub(ctx, workspace, forgeSessionID, session.ID); err != nil {
 		rt.setRecoveryError(m, err)
 		return rt.snapshotRun(), err
 	}
@@ -416,12 +403,12 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
-		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
 			continue
 		}
-		runtimeConfig, err := forgeWorkspace.RuntimeConfig()
+		runtimeConfig, err := puaWorkspace.RuntimeConfig()
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
 			continue
@@ -430,7 +417,7 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 			id      string
 			binding app.AgentBinding
 		}{{id: "workspace", binding: runtimeConfig.AgentBinding}}
-		tree, err := forgeWorkspace.Tree()
+		tree, err := puaWorkspace.Tree()
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
 			continue
@@ -550,7 +537,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		// Never interrupt it for automatic sleep; the next ready boundary gets a
 		// fresh deadline.
 		_, _ = rt.mutateRun(func(run *agentRun) {
-			run.Status = forgeStatusForAgentHubState(session.State)
+			run.Status = puaStatusForAgentHubState(session.State)
 			run.IdleSinceAt = ""
 			run.IdleDeadlineAt = ""
 			run.IdleSleepStopRequested = false
@@ -708,7 +695,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 	}
 	pending, pendingErr := mailboxPendingForResource(rt.workspace.Path, updated.ResourceID)
 	if pendingErr != nil {
-		rt.addForgeNotice(m, "warning", "resource/replacement", "Inspect Workspace mailbox: "+pendingErr.Error())
+		rt.addPUANotice(m, "warning", "resource/replacement", "Inspect Workspace mailbox: "+pendingErr.Error())
 		return
 	}
 	if !pending {
@@ -716,7 +703,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 	}
 	cfg, replacementClient, err := m.agentHubRuntimeConfig()
 	if err != nil {
-		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement could not read AgentHub config: "+err.Error())
+		rt.addPUANotice(m, "warning", "resource/replacement", "Queued replacement could not read AgentHub config: "+err.Error())
 		return
 	}
 	resolved, err := m.resolveResourceAgent(rt.workspace, updated.ResourceID, cfg)
@@ -724,21 +711,21 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		resolved.AgentName, err = validateAgentHubRunAgent(ctx, replacementClient, resolved.AgentName)
 	}
 	if err != nil {
-		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement could not resolve its Agent: "+err.Error())
+		rt.addPUANotice(m, "warning", "resource/replacement", "Queued replacement could not resolve its Agent: "+err.Error())
 		return
 	}
 	replacement, err := m.createResourceGeneration(ctx, rt.workspace, updated.ResourceID, updated.Cwd, cfg, replacementClient, resolved)
 	if err != nil {
-		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement generation failed: "+err.Error())
+		rt.addPUANotice(m, "warning", "resource/replacement", "Queued replacement generation failed: "+err.Error())
 		return
 	}
 	replacementRuntime := m.runtimeByID(replacement.ID)
 	if replacementRuntime == nil {
-		rt.addForgeNotice(m, "warning", "resource/replacement", "Replacement runtime disappeared before mailbox delivery")
+		rt.addPUANotice(m, "warning", "resource/replacement", "Replacement runtime disappeared before mailbox delivery")
 		return
 	}
 	if err := m.reconcileResourceMailboxLocked(ctx, rt.workspace, updated.ResourceID); err != nil {
-		replacementRuntime.addForgeNotice(m, "warning", "resource/message", "Workspace mailbox delivery remains queued: "+err.Error())
+		replacementRuntime.addPUANotice(m, "warning", "resource/message", "Workspace mailbox delivery remains queued: "+err.Error())
 	}
-	rt.addForgeNotice(m, "info", "resource/replacement", "Started replacement resource generation "+replacement.GenerationID)
+	rt.addPUANotice(m, "info", "resource/replacement", "Started replacement resource generation "+replacement.GenerationID)
 }

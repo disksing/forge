@@ -296,7 +296,7 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 	events := httptest.NewRecorder()
 	manager.server.handleWorkspace(events, httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/events?generationId=gen-current&after=0&limit=10", nil))
-	if events.Code != http.StatusOK || events.Header().Get("X-PUA-Generation-ID") != "gen-current" || events.Header().Get("X-Forge-Generation-ID") != "gen-current" || !strings.Contains(events.Body.String(), `"id":1`) {
+	if events.Code != http.StatusOK || events.Header().Get("X-PUA-Generation-ID") != "gen-current" || !strings.Contains(events.Body.String(), `"id":1`) {
 		t.Fatalf("resource events response = %d headers=%v body=%s", events.Code, events.Header(), events.Body.String())
 	}
 
@@ -321,7 +321,7 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 	historical := httptest.NewRecorder()
 	manager.server.handleWorkspace(historical, httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/events?generationId=gen-old&after=0&limit=10", nil))
-	if historical.Code != http.StatusOK || historical.Header().Get("X-PUA-Generation-ID") != "gen-old" || historical.Header().Get("X-Forge-Generation-ID") != "gen-old" || !strings.Contains(historical.Body.String(), `"id":2`) {
+	if historical.Code != http.StatusOK || historical.Header().Get("X-PUA-Generation-ID") != "gen-old" || !strings.Contains(historical.Body.String(), `"id":2`) {
 		t.Fatalf("historical generation events response = %d headers=%v body=%s", historical.Code, historical.Header(), historical.Body.String())
 	}
 
@@ -375,7 +375,7 @@ func TestResourceStreamAllowsResumableSuspendedCurrentGeneration(t *testing.T) {
 	stream := httptest.NewRecorder()
 	manager.server.handleWorkspace(stream, httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/stream?generationId=gen-suspended", nil))
-	if stream.Code != http.StatusOK || stream.Header().Get("X-PUA-Generation-ID") != run.GenerationID || stream.Header().Get("X-Forge-Generation-ID") != run.GenerationID || !strings.Contains(stream.Body.String(), `"state":"stopped"`) {
+	if stream.Code != http.StatusOK || stream.Header().Get("X-PUA-Generation-ID") != run.GenerationID || !strings.Contains(stream.Body.String(), `"state":"stopped"`) {
 		t.Fatalf("suspended resource stream response = %d headers=%v body=%s", stream.Code, stream.Header(), stream.Body.String())
 	}
 }

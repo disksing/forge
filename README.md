@@ -32,7 +32,7 @@ AgentHub ── provider processes and durable agent sessions
 shared checkout in repos/ ── git worktree ── task-owned branch in worktree/
 ```
 
-- The **CLI** owns flag parsing and compatibility output; deterministic workspace mutations and typed views live in the reusable `internal/app` API.
+- The **CLI** owns flag parsing and stable user-facing output; deterministic workspace mutations and typed views live in the reusable `internal/app` API.
 - **`pua serve`** renders workspace state in the web UI, routes interactive sessions through AgentHub, and calls `internal/app` directly for workspace operations.
 - **AgentHub** owns provider discovery, provider process lifecycle, provider-native configuration, and durable agent sessions.
 - **Agents** may read other Workspace resources for context, but write only files owned by their starting resource and its task worktrees. Host files outside the Workspace follow user scope and host permissions.
@@ -59,11 +59,9 @@ This creates:
 
 ```text
 bin/pua
-bin/forge
 ```
 
-`pua` is the canonical workspace CLI and web service (`pua serve`). The `forge`
-binary is a compatibility entry point backed by the same implementation. Pass
+`pua` provides both the workspace CLI and web service (`pua serve`). Pass
 another output directory to `scripts/build` if needed.
 
 ## Quick Start
@@ -109,7 +107,7 @@ PUA does not import provider adapters, spawn provider CLIs, probe provider healt
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-PUA persists each resource generation under `<workspace>/<control-dir>/runtime/resources/<resource-key>/`: new Workspaces use `.pua`, while existing `.forge` Workspaces keep using that directory until explicitly renamed. If both directories exist, PUA fails instead of splitting state. The resource key is derived from the stable Workspace instance ID and normalized resource ID, so it is unambiguous and independent of the Workspace path. A versioned `generation-store.json` marker and staging directory make migration from the old runtime generation index repeatable; legacy files remain as rollback evidence, while records without a generation ID are isolated as cold history. The same resource directory contains the atomic mailbox `hot.json`, `receipts.json`, `outbox.json`, `scheduler.json`, and `commit.json`: hot state retains complete messages while delivery, recovery, notification, or Scheduler turn-boundary work is unresolved; terminal messages become minimal receipts without body text.
+PUA persists each resource generation under `<workspace>/.pua/runtime/resources/<resource-key>/`. The resource key is derived from the stable Workspace instance ID and normalized resource ID, so it is unambiguous and independent of the Workspace path. A versioned `generation-store.json` marker and staging directory make migration from the old runtime generation index repeatable; legacy files remain as rollback evidence, while records without a generation ID are isolated as cold history. The same resource directory contains the atomic mailbox `hot.json`, `receipts.json`, `outbox.json`, `scheduler.json`, and `commit.json`: hot state retains complete messages while delivery, recovery, notification, or Scheduler turn-boundary work is unresolved; terminal messages become minimal receipts without body text.
 
 A ready current generation is automatically slept after 30 minutes of continuous idle when there is no active Turn or approval, pending mailbox delivery, or lifecycle convergence. PUA persists the ready boundary and Stop-confirms the exact AgentHub Session, then retains that same generation and Session as an addressable idle-suspended resource. A later user, agent, system, or Scheduler message resumes that exact Session on demand and only delivers after the Session is ready; a stopped current Session observed after a PUA or AgentHub restart follows the same path. Temporary Resume failures use durable exponential backoff from five seconds to five minutes, so polling and Server restarts cannot create a restart storm. With no pending message, a stopped Session stays stopped and no provider work starts. Only a binding/profile change, explicit generation end, resource archive, archived/missing Session, explicit provider/native resume failure, or other replacement intent archives and retires the generation. Polling and Server restarts do not reset the deadline, and the resource history remains continuous across the retained generation.
 
@@ -155,21 +153,10 @@ Useful overrides:
 ```text
 PUA_AGENTHUB_URL    AgentHub endpoint override
 PUA_SERVE_CONFIG    serve configuration file
-FORGE_AGENTHUB_URL  legacy alias of PUA_AGENTHUB_URL
-FORGE_SERVE_CONFIG  legacy alias of PUA_SERVE_CONFIG
-FORGE_GUI_CONFIG    older legacy alias of PUA_SERVE_CONFIG
 ```
 
 When neither variable is set, PUA stores the serve configuration at
-`~/.pua/serve.json`; an existing `~/.forge/serve.json` or
-`~/.forge/gui.json` keeps being used. Conflicting new and legacy overrides or
-multiple discovered config files fail closed.
-
-For a very old installation, stop the running PUA service before migrating
-the file from `~/Library/Application Support/forge/gui.json` to a supported
-location. The old Application Support location is not read automatically.
-
-`pua serve` no longer reads the former `FORGE_CLI` override. Remove that setting when upgrading; Workspace operations use the in-process typed API and the configured Workspace path.
+`~/.pua/serve.json`.
 
 Each running serve instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `pua serve` process through an OS advisory `serve.lock` in its selected control directory. A second instance cannot write a Workspace owned by another instance: startup fails before runtime recovery begins.
 
@@ -311,7 +298,7 @@ Run `pua help` for the top-level command list, and `pua help <command>` (or `<co
 ```text
 pua --version
 pua init [--language=<language>]
-pua migrate [--language=<language>] [--rename-storage]
+pua migrate [--language=<language>]
 
 pua repo add [--bare] <name> <url>
 pua repo list
@@ -363,18 +350,13 @@ templates and PUA-managed `AGENTS.md` prompts. Existing workspaces without a
 language setting default to English. Use `pua migrate --language=zh-CN` (or
 `--language=en`) to switch languages.
 
-Existing workspaces using the former `forge.json` name remain readable. Run
-`pua migrate` once to write `workspace.json` and remove the old file.
-
 Workspace, Project, and Task creation is local and uses the shared `internal/app` application boundary. Creation no longer persists resource creator metadata; Agent sender provenance remains on messages and is validated from the injected generation environment. Creation sends no initial message and creates no generation; call `pua message send` separately, which lazily creates the first generation. A message that actually opens a Turn subscribes to that Turn's result by default; a message delivered as steer into an existing Turn does not. A steer request downgraded to enqueue becomes an opener and does subscribe. Pass `--subscribe-result=false` to disable the result for an opening message. If a create command commits but its output is lost, query the resource before deciding whether to issue a new create operation.
 
 Subscribed terminal Turn results and terminal cross-resource delivery failures return through the source resource's recoverable outbox as structured system messages with stable `type`, `causation`, and receipt metadata. Only the Agent message that opened a Turn receives its final result; steer inputs delivered into that Turn require an explicit PUA reply when needed. The generated body is retained only until the target mailbox accepts it; after that, source and target retain bounded summaries while AgentHub canonical history remains the content source. Generated messages force `subscribeResult=false` and never recursively generate another notification. Use `pua message show` for delivery diagnostics and `pua history turn show` for Turn references.
 
 `pua migrate` upgrades supported resource metadata, generation/mailbox stores,
 legacy task history, Scheduler resources, and PUA-managed `AGENTS.md` blocks.
-Pass `--rename-storage` only while `pua serve` is stopped to atomically rename a
-legacy `.forge` control directory to `.pua`. After this rename, an old Forge
-binary must not write the Workspace. Repeated migration is safe.
+Repeated migration is safe.
 
 ```markdown
 <!-- managed by pua cli -->

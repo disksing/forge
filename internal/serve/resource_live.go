@@ -96,9 +96,6 @@ func (m *agentManager) handleResourceStream(w http.ResponseWriter, r *http.Reque
 
 func setGenerationIDHeaders(w http.ResponseWriter, generationID string) {
 	w.Header().Set("X-PUA-Generation-ID", generationID)
-	// Retain the old header for external clients during the Forge-to-PUA
-	// compatibility window. New clients should use X-PUA-Generation-ID.
-	w.Header().Set("X-Forge-Generation-ID", generationID)
 }
 
 func isResourceEventStreamable(run agentRun) bool {

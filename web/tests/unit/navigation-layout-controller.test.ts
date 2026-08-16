@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createPaneLayoutController, normalizePaneSizes } from "../../src/controllers/pane-layout-controller";
-import { createRouteController, forgeRoutePath, parseForgeRoute } from "../../src/controllers/route-controller";
+import { createRouteController, puaRoutePath, parsePUARoute } from "../../src/controllers/route-controller";
 import { MemoryStorage } from "../fixtures/memory-storage";
 
 describe("route and pane layout controllers", () => {
@@ -15,10 +15,10 @@ describe("route and pane layout controllers", () => {
 	});
 
 	it("round-trips encoded Workspace and Resource routes", () => {
-		const path = forgeRoutePath("workspace one", "project1.task/2");
+		const path = puaRoutePath("workspace one", "project1.task/2");
 		expect(path).toBe("/w/workspace%20one/r/project1.task%2F2");
-		expect(parseForgeRoute(path)).toEqual({ workspaceId: "workspace one", resourceId: "project1.task/2" });
-		expect(parseForgeRoute("/not-forge")).toEqual({});
+		expect(parsePUARoute(path)).toEqual({ workspaceId: "workspace one", resourceId: "project1.task/2" });
+		expect(parsePUARoute("/not-pua")).toEqual({});
 	});
 
 	it("increments route revisions and retains replace semantics", () => {

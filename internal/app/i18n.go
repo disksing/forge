@@ -271,7 +271,7 @@ Workspace 外的文件不受 PUA 额外限制，但仍要符合请求、任务�
 
 通常在自己负责的资源目录运行 PUA CLI。省略 --project 或 --task 时，PUA 会根据当前目录选择对象；跨资源操作时建议显式指定资源。
 
-status、history 和 message 命令会自动找到管理当前 Workspace 的 PUA Server。一般不需要填写 --server，也不要手工修改控制目录中的 serve.lock（新 Workspace 为 .pua/serve.lock，旧 Workspace 可能仍为 .forge/serve.lock）。
+status、history 和 message 命令会自动找到管理当前 Workspace 的 PUA Server。一般不需要填写 --server，也不要手工修改 .pua/serve.lock。
 
 ## 5. PUA 资源管理
 

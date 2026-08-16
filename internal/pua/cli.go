@@ -310,7 +310,7 @@ How PUA works:
 Usage:
   pua --version
   pua init [--language=<language>]
-  pua migrate [--language=<language>] [--rename-storage]
+  pua migrate [--language=<language>]
   pua doctor [--json] [--server=<url>]
   pua repo <command>
   pua project <command>
@@ -333,11 +333,10 @@ Commands:
     Initialize the current directory as a new AgentWorkspace. Fails when run
     from inside an existing workspace. Supported languages: en, zh-CN.
 
-  pua migrate [--language=<language>] [--rename-storage]
+  pua migrate [--language=<language>]
     Refresh pua-managed AGENTS.md blocks and migrate legacy task/resource
     history before removing obsolete files. Pass --language to switch between
-    en and zh-CN. Pass --rename-storage to atomically rename an existing
-    .forge control directory to .pua while the Workspace service is stopped.
+    en and zh-CN.
 
   pua doctor [--json] [--server=<url>]
     Inspect open Workspace data and Agent bindings without changing them.
@@ -445,14 +444,13 @@ Commands:
 
 func printMigrateHelp() {
 	fmt.Print(`Usage:
-  pua migrate [--language=<language>] [--rename-storage]
+  pua migrate [--language=<language>]
 
 Commands:
-  pua migrate [--language=<language>] [--rename-storage]
+  pua migrate [--language=<language>]
     Refresh pua-managed AGENTS.md blocks and migrate legacy task/resource
     history before removing obsolete files. Pass --language to switch between
-    en and zh-CN. Pass --rename-storage to atomically rename an existing
-    .forge control directory to .pua while the Workspace service is stopped.
+    en and zh-CN.
 `)
 }
 
@@ -706,7 +704,7 @@ Commands:
   pua message show --id=<message-id> [--server=<url>]
     Query the current delivery record for a stable mailbox message id. Status
     and message commands discover the owner from the Workspace control
-    directory (.pua/serve.lock, or legacy .forge/serve.lock);
+    directory (.pua/serve.lock);
     --server explicitly overrides its diagnostic address.
 `)
 }

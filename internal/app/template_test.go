@@ -255,7 +255,7 @@ func TestTemplateDigestConflictAndValidationAreAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "task") || strings.HasPrefix(entry.Name(), ".forge-create-") {
+		if strings.HasPrefix(entry.Name(), "task") || strings.HasPrefix(entry.Name(), ".pua-create-") {
 			t.Fatalf("failed template creation left side effects: %s", entry.Name())
 		}
 	}

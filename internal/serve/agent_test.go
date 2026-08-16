@@ -70,15 +70,15 @@ func TestSafeUploadNameRemovesPathsAndUnsafeCharacters(t *testing.T) {
 
 func resourceUploadManager(t *testing.T, workspace string) (*agentManager, string, string) {
 	t.Helper()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := forgeWorkspace.CreateProject("Project", "project")
+	project, err := puaWorkspace.CreateProject("Project", "project")
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Task"})
+	task, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Task"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func writeCurrentTestConfig(t *testing.T, path, workspace string) {
 		Version:            agentHubConfigVersion,
 		Workspaces:         []serveWorkspace{{ID: "workspace-one", Path: workspace}},
 		AgentHubEndpoint:   defaultAgentHubEndpoint,
-		AgentHubInstanceID: "forge-test",
+		AgentHubInstanceID: "pua-test",
 		AgentProfiles:      []agentHubProfileRoute{{Key: "default", AgentName: "test-agent"}},
 	})
 	if err != nil {

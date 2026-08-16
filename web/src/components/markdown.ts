@@ -1,4 +1,4 @@
-import { forgeRoutePath } from "../controllers/route-controller";
+import { puaRoutePath } from "../controllers/route-controller";
 
 export type ResourceTitleResolver = (resourceId: string) => string | null;
 
@@ -7,14 +7,14 @@ export interface MarkdownRenderContext {
   resolveResourceTitle: ResourceTitleResolver;
 }
 
-interface ForgeResourceToken {
-  type: "forgeResource";
+interface PUAResourceToken {
+  type: "puaResource";
   raw: string;
   resourceId: string;
 }
 
 interface ProtectedLinkToken {
-  type: "forgeProtectedLink";
+  type: "puaProtectedLink";
   raw: string;
   tokens: unknown[];
 }
@@ -28,7 +28,7 @@ interface MarkedLexerContext {
 
 interface MarkedRendererContext {
   parser: {
-    options: { forgeMarkdownContext?: MarkdownRenderContext };
+    options: { puaMarkdownContext?: MarkdownRenderContext };
     parseInline(tokens: unknown[]): string;
   };
 }
@@ -53,7 +53,7 @@ export function markdownHTML(content: string, context?: MarkdownRenderContext): 
   return window.DOMPurify.sanitize(parser.parse(String(content ?? ""), {
     breaks: true,
     gfm: true,
-    forgeMarkdownContext: context,
+    puaMarkdownContext: context,
   }));
 }
 
@@ -69,9 +69,9 @@ export function handleMarkdownResourceClick(event: MouseEvent, context: Markdown
   const root = event.currentTarget;
   if (!(root instanceof Node)) return;
 
-  const resourceAnchor = event.target.closest<HTMLAnchorElement>("a[data-forge-resource-id]");
+  const resourceAnchor = event.target.closest<HTMLAnchorElement>("a[data-pua-resource-id]");
   if (resourceAnchor && root.contains(resourceAnchor) && (!resourceAnchor.target || resourceAnchor.target === "_self")) {
-    const resourceId = resourceAnchor.dataset.forgeResourceId || "";
+    const resourceId = resourceAnchor.dataset.puaResourceId || "";
     if (isSafeResourceId(resourceId) && context.resolveResourceTitle(resourceId)) {
       event.preventDefault();
       context.onNavigate(resourceId);
@@ -119,14 +119,14 @@ function configuredParser(): MarkedParser | null {
   parser.use({
     extensions: [
       {
-        name: "forgeProtectedLink",
+        name: "puaProtectedLink",
         level: "inline",
         tokenizer(this: MarkedLexerContext, source: string): ProtectedLinkToken | undefined {
           if (this.lexer.state.inLink || this.lexer.state.inRawBlock) return undefined;
           const protectedLink = protectLeadingInlineLink(source);
           if (!protectedLink) return undefined;
           return {
-            type: "forgeProtectedLink",
+            type: "puaProtectedLink",
             raw: protectedLink.raw,
             tokens: this.lexer.inlineTokens(protectedLink.markdown),
           };
@@ -137,24 +137,24 @@ function configuredParser(): MarkedParser | null {
         childTokens: ["tokens"],
       },
       {
-        name: "forgeResource",
+        name: "puaResource",
         level: "inline",
         start(source: string): number {
           return source.indexOf("[[");
         },
-        tokenizer(this: MarkedLexerContext, source: string): ForgeResourceToken | undefined {
+        tokenizer(this: MarkedLexerContext, source: string): PUAResourceToken | undefined {
           if (this.lexer.state.inLink || this.lexer.state.inRawBlock) return undefined;
           const match = RESOURCE_REFERENCE.exec(source);
           if (!match) return undefined;
-          return { type: "forgeResource", raw: match[0], resourceId: match[1] };
+          return { type: "puaResource", raw: match[0], resourceId: match[1] };
         },
-        renderer(this: MarkedRendererContext, token: ForgeResourceToken): string {
-          const context = this.parser.options.forgeMarkdownContext;
+        renderer(this: MarkedRendererContext, token: PUAResourceToken): string {
+          const context = this.parser.options.puaMarkdownContext;
           const title = context?.resolveResourceTitle(token.resourceId);
           if (!context || !title) return escapeHTML(token.raw);
-          const href = forgeRoutePath(context.workspaceId, token.resourceId);
+          const href = puaRoutePath(context.workspaceId, token.resourceId);
           if (!href) return escapeHTML(token.raw);
-          return `<a class="forge-resource-reference" href="${escapeHTML(href)}" data-forge-resource-id="${escapeHTML(token.resourceId)}">${escapeHTML(title)}</a>`;
+          return `<a class="pua-resource-reference" href="${escapeHTML(href)}" data-pua-resource-id="${escapeHTML(token.resourceId)}">${escapeHTML(title)}</a>`;
         },
       },
     ],

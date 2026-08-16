@@ -10,37 +10,23 @@ import (
 )
 
 const (
-	workspaceConfigFile       = "workspace.json"
-	legacyWorkspaceConfigFile = "forge.json"
-	reposDir                  = "repos"
-	archiveDir                = "archive"
-	wikiDir                   = "wiki"
+	workspaceConfigFile = "workspace.json"
+	reposDir            = "repos"
+	archiveDir          = "archive"
+	wikiDir             = "wiki"
 )
 
 func workspaceConfigPath(root string) string {
-	canonical := filepath.Join(root, workspaceConfigFile)
-	if pathExists(canonical) {
-		return canonical
-	}
-	legacy := filepath.Join(root, legacyWorkspaceConfigFile)
-	if pathExists(legacy) {
-		return legacy
-	}
-	return canonical
+	return filepath.Join(root, workspaceConfigFile)
 }
 
 func hasWorkspaceConfig(root string) bool {
-	return pathExists(filepath.Join(root, workspaceConfigFile)) ||
-		pathExists(filepath.Join(root, legacyWorkspaceConfigFile))
+	return pathExists(filepath.Join(root, workspaceConfigFile))
 }
 
 func writeWorkspaceConfig(root string, config Config) error {
 	canonical := filepath.Join(root, workspaceConfigFile)
 	if err := writeJSON(canonical, config); err != nil {
-		return err
-	}
-	legacy := filepath.Join(root, legacyWorkspaceConfigFile)
-	if err := os.Remove(legacy); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
@@ -65,7 +51,7 @@ func writeJSON(path string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".forge-json-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".pua-json-*.tmp")
 	if err != nil {
 		return err
 	}

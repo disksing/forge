@@ -27,4 +27,3 @@ npm --prefix web ci
 npm --prefix web run check
 npm --prefix web run build
 go build -ldflags "$ldflags" -o "$out_path/pua" ./cli/cmd/pua
-go build -ldflags "$ldflags" -o "$out_path/forge" ./cli/cmd/forge

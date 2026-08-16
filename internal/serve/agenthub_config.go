@@ -12,7 +12,7 @@ import (
 
 const (
 	agentHubConfigVersion = 6
-	agentHubSourceApp     = "forge"
+	agentHubSourceApp     = "pua"
 )
 
 type systemAgentProfileDefinition struct {
@@ -40,9 +40,7 @@ type agentHubProfileRoute struct {
 }
 
 func effectiveAgentHubEndpoint(configured string) (string, error) {
-	if override, err := environmentOverride("PUA_AGENTHUB_URL", "FORGE_AGENTHUB_URL"); err != nil {
-		return "", err
-	} else if override != "" {
+	if override := strings.TrimSpace(os.Getenv("PUA_AGENTHUB_URL")); override != "" {
 		return normalizeAgentHubEndpoint(override)
 	}
 	return normalizeAgentHubEndpoint(configured)
@@ -53,7 +51,7 @@ func newAgentHubInstanceID() (string, error) {
 	if _, err := rand.Read(random[:]); err != nil {
 		return "", fmt.Errorf("generate AgentHub instance id: %w", err)
 	}
-	return "forge-" + hex.EncodeToString(random[:]), nil
+	return "pua-" + hex.EncodeToString(random[:]), nil
 }
 
 func normalizeAgentHubConfig(cfg agentHubServeConfig, catalog agentHubCatalog) (agentHubServeConfig, error) {

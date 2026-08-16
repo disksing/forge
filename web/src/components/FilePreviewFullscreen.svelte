@@ -2,7 +2,7 @@
   import "./FilePreviewFullscreen.css";
 
   import { ApiClient } from "../api/client";
-  import { forgeRoutePath } from "../controllers/route-controller";
+  import { puaRoutePath } from "../controllers/route-controller";
   import type { TaskTemplate } from "./models";
   import FilePreviewModal from "./FilePreviewModal.svelte";
   import Icon from "./Icon.svelte";
@@ -78,7 +78,7 @@
   }
 
   function navigateToResource(target: string): void {
-    const route = forgeRoutePath(workspaceId, target);
+    const route = puaRoutePath(workspaceId, target);
     if (route) window.location.assign(route);
   }
 

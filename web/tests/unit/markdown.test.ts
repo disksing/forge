@@ -27,14 +27,14 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-describe("Forge Markdown resource references", () => {
+describe("PUA Markdown resource references", () => {
   it("renders known resources with their current title and route", () => {
     const container = document.createElement("div");
     container.innerHTML = markdownHTML("See [[project1.task2]] here.", context());
 
-    const link = container.querySelector<HTMLAnchorElement>("a[data-forge-resource-id]");
+    const link = container.querySelector<HTMLAnchorElement>("a[data-pua-resource-id]");
     expect(link?.textContent).toBe("Second task");
-    expect(link?.dataset.forgeResourceId).toBe("project1.task2");
+    expect(link?.dataset.puaResourceId).toBe("project1.task2");
     expect(link?.getAttribute("href")).toBe("/w/workspace-a/r/project1.task2");
   });
 
@@ -50,7 +50,7 @@ describe("Forge Markdown resource references", () => {
     const container = document.createElement("div");
     container.innerHTML = html;
 
-    expect(container.querySelector("a[data-forge-resource-id]")).toBeNull();
+    expect(container.querySelector("a[data-pua-resource-id]")).toBeNull();
     expect(container.textContent).toContain("[[project1.task404]]");
     expect(container.textContent).toContain("[[not a resource]]");
     expect(container.textContent).toContain("Escaped [[project1.task2]]");
@@ -71,7 +71,7 @@ describe("Forge Markdown resource references", () => {
     expect(links[0].getAttribute("href")).toBe("https://example.com");
     expect(links[0].getAttribute("title")).toBe("closing ) title");
     expect(links[0].textContent).toBe("label [[project1.task2]]");
-    expect(links[0].hasAttribute("data-forge-resource-id")).toBe(false);
+    expect(links[0].hasAttribute("data-pua-resource-id")).toBe(false);
     expect(container.querySelector("img")?.getAttribute("alt")).toBe("alt [[project1.task2]]");
   });
 
@@ -102,7 +102,7 @@ describe("Forge Markdown resource references", () => {
     expect(modifiedClick.defaultPrevented).toBe(false);
     expect(onNavigate).toHaveBeenCalledTimes(1);
 
-    (link as HTMLElement).dataset.forgeResourceId = "project1.task404";
+    (link as HTMLElement).dataset.puaResourceId = "project1.task404";
     const tamperedClick = new MouseEvent("click", { bubbles: true, cancelable: true });
     Object.defineProperties(tamperedClick, { target: { value: link }, currentTarget: { value: container } });
     handleMarkdownResourceClick(tamperedClick, navigation);
@@ -112,7 +112,7 @@ describe("Forge Markdown resource references", () => {
   });
 });
 
-describe("Forge Markdown workspace file links", () => {
+describe("PUA Markdown workspace file links", () => {
   it("opens workspace-root file links through onOpenFile without navigating", () => {
     const container = document.body.appendChild(document.createElement("div"));
     container.innerHTML = markdownHTML("[attachment](/project1/task2/artifacts/foobar.md)", context());

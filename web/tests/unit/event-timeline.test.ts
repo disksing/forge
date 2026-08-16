@@ -153,7 +153,7 @@ describe("EventTimeline", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path.includes("/files?path=")) return new Response(JSON.stringify({
-        path: "project1-forge/task388/artifacts/report.md", name: "report.md", size: 18,
+        path: "project1-pua/task388/artifacts/report.md", name: "report.md", size: 18,
         binary: false, image: false, truncated: false, mimeType: "text/markdown", contentHash: "hash", content: "# Previewed report",
       }), { status: 200, headers: { "content-type": "application/json" } });
       return new Response(JSON.stringify(path.includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } });

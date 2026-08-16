@@ -188,7 +188,7 @@ func newAgentHubRuntime(m *agentManager, workspace serveWorkspace, run agentRun,
 	}
 }
 
-func forgeStatusForAgentHubState(state string) string {
+func puaStatusForAgentHubState(state string) string {
 	switch state {
 	case "starting":
 		return "starting"
@@ -219,62 +219,19 @@ func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
 		run.UpdatedAt = time.Now().Format(time.RFC3339)
 	})
 	if err != nil {
-		rt.addForgeNotice(m, "error", "agenthub/recovery", err.Error())
+		rt.addPUANotice(m, "error", "agenthub/recovery", err.Error())
 	}
 }
 
-// releaseForgeSessionAfterStopped synchronously removes the transient PUA
-// session record before reporting success to a caller. Background poller and
-// recovery paths may call the same function; the mutex makes those calls
-// idempotent without racing a close response or a second poll.
-func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) error {
-	rt.forgeSessionReleaseMu.Lock()
-	defer rt.forgeSessionReleaseMu.Unlock()
-
-	rt.mu.Lock()
-	run := rt.run
-	rt.mu.Unlock()
-	if !run.AgentHubStoppedObserved || run.Status != "stopped" || strings.TrimSpace(run.ForgeSessionID) == "" {
-		return nil
-	}
-	sessionID := strings.TrimSpace(run.ForgeSessionID)
-	if err := m.endForgeSession(context.Background(), rt.workspace, sessionID); err != nil {
-		releaseErr := fmt.Errorf("durable stopped observed but PUA session release failed: %w", err)
-		rt.addForgeNotice(m, "error", "forge/session/end", releaseErr.Error())
-		return releaseErr
-	}
-	rt.mu.Lock()
-	if rt.run.ForgeSessionID == sessionID && rt.run.AgentHubStoppedObserved && rt.run.Status == "stopped" {
-		updated := rt.run
-		updated.ForgeSessionID = ""
-		updated.UpdatedAt = time.Now().Format(time.RFC3339)
-		err := saveAgentRun(rt.workspace.Path, updated)
-		if err == nil {
-			rt.run = updated
-		}
-		rt.mu.Unlock()
-		if err != nil {
-			releaseErr := fmt.Errorf("durable stopped observed but PUA run cleanup could not be persisted: %w", err)
-			rt.addForgeNotice(m, "error", "forge/run/save", releaseErr.Error())
-			return releaseErr
-		}
-		return nil
-	}
-	rt.mu.Unlock()
-	// A resume or another lifecycle transition replaced this PUA session while
-	// the idempotent release was in flight. Never overwrite the newer runtime projection.
-	return nil
-}
-
-func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text string) {
+func (rt *agentRuntime) addPUANotice(m *agentManager, level, method, text string) {
 	rt.mu.Lock()
 	runID := rt.run.ID
 	rt.mu.Unlock()
-	notice := forgeNotice{
-		Source: "forge",
-		Type:   "forge.notice",
+	notice := puaNotice{
+		Source: "pua",
+		Type:   "pua.notice",
 		Time:   time.Now().Format(time.RFC3339),
-		Data: forgeNoticeData{
+		Data: puaNoticeData{
 			Level:  level,
 			Method: method,
 			Text:   text,
@@ -612,32 +569,13 @@ func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config,
 	// Let applyAgentHubSessionState compare the recovered state with the
 	// persisted projection. This preserves a running -> ready/stopped edge across
 	// a PUA restart instead of treating recovery as a fresh idle baseline.
-	rt.agentHubState = agentHubStateForForgeStatus(previousStatus)
+	rt.agentHubState = agentHubStateForPUAStatus(previousStatus)
 	m.registerRuntime(rt)
-	if strings.TrimSpace(run.ForgeSessionID) == "" && activeAgentHubSessionState(session.State) {
-		forgeSessionID, err := m.createForgeSession(ctx, workspace, run, cfg)
-		if err != nil {
-			rt.setRecoveryError(m, err)
-			return err
-		}
-		run, err = rt.mutateRun(func(run *agentRun) { run.ForgeSessionID = forgeSessionID })
-		if err != nil {
-			_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
-			rt.setRecoveryError(m, err)
-			return err
-		}
-	}
-	if strings.TrimSpace(run.ForgeSessionID) != "" {
-		if err := m.bindForgeSessionAgentHub(ctx, workspace, run.ForgeSessionID, session.ID); err != nil {
-			rt.setRecoveryError(m, err)
-			return err
-		}
-	}
 	rt.applyAgentHubSessionState(m, session)
 	updated := rt.snapshotRun()
 	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
 		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
-			rt.addForgeNotice(m, "warning", "resource/idle-sleep", err.Error())
+			rt.addPUANotice(m, "warning", "resource/idle-sleep", err.Error())
 		}
 	}
 	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
@@ -648,7 +586,7 @@ func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config,
 	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
 		_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
 			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, run.ResourceID); err != nil {
-				rt.addForgeNotice(m, "warning", "resource/message", "Queued message recovery failed: "+err.Error())
+				rt.addPUANotice(m, "warning", "resource/message", "Queued message recovery failed: "+err.Error())
 			}
 			return nil
 		})

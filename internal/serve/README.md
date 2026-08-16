@@ -13,18 +13,11 @@ Generation 生命周期的 canonical facts、operation 优先级、网络 effect
 ```text
 PUA_AGENTHUB_URL    AgentHub endpoint override
 PUA_SERVE_CONFIG    serve configuration file path
-FORGE_AGENTHUB_URL  legacy alias of PUA_AGENTHUB_URL
-FORGE_SERVE_CONFIG  legacy alias of PUA_SERVE_CONFIG
-FORGE_GUI_CONFIG    older legacy alias of PUA_SERVE_CONFIG
 ```
 
-未设置配置环境变量时，配置默认保存于 `~/.pua/serve.json`；已存在的
-`~/.forge/serve.json` 或 `~/.forge/gui.json` 会继续使用。新旧环境变量同时设置为
-不同值，或发现多个旧/新配置文件时，服务会拒绝启动，避免分裂配置。
-更早的安装需要先停止正在运行的 PUA，再将旧文件
-`~/Library/Application Support/forge/gui.json` 移动到支持的位置；服务不会自动读取旧位置。
+未设置配置环境变量时，配置默认保存于 `~/.pua/serve.json`。
 
-每个被管理的 Workspace 同时只能由一个 `pua serve` 进程持有。服务启动时为配置中的每个 Workspace 获取 `<workspace>/<control-dir>/serve.lock` 的 OS advisory 独占锁，并在整个生命周期内保持文件描述符打开。新 Workspace 使用 `.pua`；已有 `.forge` Workspace 在显式执行 `pua migrate --rename-storage` 前继续使用旧目录。两个目录同时存在会被拒绝。锁冲突会让启动整体失败并释放本轮已取得的锁。
+每个被管理的 Workspace 同时只能由一个 `pua serve` 进程持有。服务启动时为配置中的每个 Workspace 获取 `<workspace>/.pua/serve.lock` 的 OS advisory 独占锁，并在整个生命周期内保持文件描述符打开。锁冲突会让启动整体失败并释放本轮已取得的锁。
 
 ## Workspace 与模板 API
 
@@ -95,7 +88,7 @@ curl -sS -X POST http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESS
 
 绑定或 Profile 映射变化会标记旧代际替换：活动 Turn 先完成，之后底层 AgentHub Session stop 并 archive，新代际按需创建。删除仍被引用的自定义 Profile 不会改写资源显式绑定；解析按资源类型默认、再按全局 `default` 回退，同时在 generation 暴露 `agentConfigError` 和实际 `resolvedProfile`。原 Profile 恢复后周期 reconciler 会重新收敛。
 
-PUA 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconciler 更新 durable generation 记录、Profile 解析和全部资源 runtime。Task 或 Project 归档首先以一个可恢复的顶层目录移动提交事实；它不因活动 Turn、queued/hot mailbox 或 Stop/Archive 的未知失败而阻断。Project 子树中的所有 generation 随后由 resource planner/reconciler 异步执行 Stop、确认 `stopped`、Archive；未知响应、服务重启和中间状态均由持久事实与重复 reconcile 恢复。PUA 不再创建或删除旧的 `forge-sessions.json` 生命周期投影。
+PUA 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconciler 更新 durable generation 记录、Profile 解析和全部资源 runtime。Task 或 Project 归档首先以一个可恢复的顶层目录移动提交事实；它不因活动 Turn、queued/hot mailbox 或 Stop/Archive 的未知失败而阻断。Project 子树中的所有 generation 随后由 resource planner/reconciler 异步执行 Stop、确认 `stopped`、Archive；未知响应、服务重启和中间状态均由持久事实与重复 reconcile 恢复。
 
 同一周期 reconciler 还读取每个 Workspace 的 `scheduler.json` 并生成稳定、enqueue-only 的 `scheduler_tick` mailbox 消息；该消息显式以 `requestedMode=enqueue`、`actualMode=enqueue`、`ModeFrozen=true` 接受，不能被生成消息公共 helper 改成 `steer`。空列表不会生成消息；配置变化在 Scheduler 忙碌时最多保留一个 waiting tick。间隔基准只接受由 Server tick 触发且 canonical 状态为 `completed` 的 Turn 结束时间，普通用户 Turn 不会重置计时；失败 tick 和无法恢复历史的 tick 使用恢复原因重新唤醒。资源级 `scheduler.json` checkpoint 保留最近 tick 的稳定 ID、generation/Session/Turn、配置 digest 和 delivery/Turn terminal 边界，即使 tick receipt 已 compact，Server 重启也不会重复或丢失恢复判断。
 
@@ -105,8 +98,8 @@ ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/appro
 
 资源历史接口以版本化 base64url opaque reference/cursor 绑定 Workspace instance、资源和 generation。列表跨 generation 反向分页，保留创建时标题、绑定与解析结果；缺失、损坏或暂时不可读的 AgentHub 历史形成显式 gap，单个 gap 不阻断更旧历史。浏览器先加载 Turn 摘要，由视口按需请求详情；只有当前 generation 的开放 Turn 通过资源级 `events` 补齐原始事件并接入 SSE，terminal 后替换为紧凑 Turn。跨 generation 的复合 key、滚动锚点、未读与草稿由 PUA 管理。
 
-AgentHub 的固定 revision `@agenthub/event-timeline` 仍只负责解释当前开放 Turn 的 canonical raw events 和 provider tool semantics；PUA 自己的 adapter 渲染已关闭 Turn 的紧凑 items，不制造伪 canonical events。为了让升级前创建的 Session 可继续恢复，AgentHub source app 与恢复诊断事件暂时保留稳定协议标识 `forge` / `forge.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。
+AgentHub 的固定 revision `@agenthub/event-timeline` 仍只负责解释当前开放 Turn 的 canonical raw events 和 provider tool semantics；PUA 自己的 adapter 渲染已关闭 Turn 的紧凑 items，不制造伪 canonical events。AgentHub source app 与恢复诊断事件使用协议标识 `pua` / `pua.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。
 
-资源 generation 向 AgentHub Session 注入 `PUA_WORKSPACE_ROOT`、`PUA_WORKSPACE_INSTANCE_ID` 和 `PUA_RESOURCE_ID`，并在兼容期同时注入旧的 `FORGE_*` 别名，供本地 CLI 验证 Agent sender provenance。创建仍由 CLI 或 Web 界面委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。每条输入的 `subscribeResult` 省略时默认为 true，实际 delivered 后按 generation+Turn+稳定 sender 建立订阅；同一 sender 在同一 Turn 的多条输入聚合为一条 `turn_result`，payload 带全部源 message IDs，其他 sender 独立投递。`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。两类系统通知在 durable accept 时请求 `steer` 且保持 `ModeFrozen=false`，交由普通 mailbox reconcile 按目标活动 Turn 与 steer capability 冻结为 `steer` 或降级为 `enqueue`（分别记录 `no_active_turn`/`steer_unsupported`）；已冻结模式重试不得漂移。结果和终态通知在源资源的独立 outbox 中保存可恢复 operation：目标 mailbox durable accepted 后清空生成正文，只保留 accepted/delivery 摘要，目标 delivery 进入明确终态后删除 operation 并把最小 notification 摘要写入源 receipt。目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息强制 `subscribeResult=false`，不会再生成通知。
+资源 generation 向 AgentHub Session 注入 `PUA_WORKSPACE_ROOT`、`PUA_WORKSPACE_INSTANCE_ID` 和 `PUA_RESOURCE_ID`，供本地 CLI 验证 Agent sender provenance。创建仍由 CLI 或 Web 界面委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。每条输入的 `subscribeResult` 省略时默认为 true，实际 delivered 后按 generation+Turn+稳定 sender 建立订阅；同一 sender 在同一 Turn 的多条输入聚合为一条 `turn_result`，payload 带全部源 message IDs，其他 sender 独立投递。`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。两类系统通知在 durable accept 时请求 `steer` 且保持 `ModeFrozen=false`，交由普通 mailbox reconcile 按目标活动 Turn 与 steer capability 冻结为 `steer` 或降级为 `enqueue`（分别记录 `no_active_turn`/`steer_unsupported`）；已冻结模式重试不得漂移。结果和终态通知在源资源的独立 outbox 中保存可恢复 operation：目标 mailbox durable accepted 后清空生成正文，只保留 accepted/delivery 摘要，目标 delivery 进入明确终态后删除 operation 并把最小 notification 摘要写入源 receipt。目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息强制 `subscribeResult=false`，不会再生成通知。
 
-持久 schema 升级是无损的：一次性版本化迁移会删除 Workspace/Project/Task 中旧的 `creator`/`createdBy` 字段，并把已 durable 的旧 callback/outbox 类型转换为当前 `turn_result`；已完成历史不会重新批量通知。mailbox schema v1/v2 与 generation pending queue 只执行一次 staging/marker migration，旧 `<control-dir>/runtime/mailbox.json` 保留为回滚证据，不会被新版本继续改写。迁移中断可重试，已提交资源按稳定 ID 合并，marker 只在资源 store 与 pending queue 收敛后写入；旧 Forge 版本只能回滚到仍理解旧文件的版本，不能在新 marker/store 上继续写入或覆盖新资源文档。`<control-dir>/initializing.json` 表示可重试但尚未完成的 Workspace 初始化，正常打开会拒绝该半成品并提示重新执行 `pua init`。发布前可备份 Workspace；代码回滚不要求改写资源 JSON，回滚前应暂停跨 Workspace 通知。
+持久 schema 升级是无损的：一次性版本化迁移会删除 Workspace/Project/Task 中旧的 `creator`/`createdBy` 字段，并把已 durable 的旧 callback/outbox 类型转换为当前 `turn_result`；已完成历史不会重新批量通知。mailbox schema v1/v2 与 generation pending queue 只执行一次 staging/marker migration，旧 `<control-dir>/runtime/mailbox.json` 保留为回滚证据，不会被新版本继续改写。迁移中断可重试，已提交资源按稳定 ID 合并，marker 只在资源 store 与 pending queue 收敛后写入。`<control-dir>/initializing.json` 表示可重试但尚未完成的 Workspace 初始化，正常打开会拒绝该半成品并提示重新执行 `pua init`。发布前可备份 Workspace；代码回滚不要求改写资源 JSON，回滚前应暂停跨 Workspace 通知。

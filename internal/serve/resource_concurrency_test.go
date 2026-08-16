@@ -15,15 +15,15 @@ import (
 func addRuntimeTestWorkspace(t *testing.T, manager *agentManager, id, name string) serveWorkspace {
 	t.Helper()
 	path := t.TempDir()
-	forgeWorkspace, err := app.Initialize(path, "en")
+	puaWorkspace, err := app.Initialize(path, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := forgeWorkspace.CreateProject(name+" project", strings.ToLower(name)+"-project")
+	project, err := puaWorkspace.CreateProject(name+" project", strings.ToLower(name)+"-project")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: name + " task", Slug: strings.ToLower(name) + "-task"}); err != nil {
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: name + " task", Slug: strings.ToLower(name) + "-task"}); err != nil {
 		t.Fatal(err)
 	}
 	workspace := serveWorkspace{ID: id, Name: name, Path: path}

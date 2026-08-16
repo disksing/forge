@@ -6,7 +6,7 @@ import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
 import type { AppShellModel } from "./models/shell";
 
-export interface ForgeAppChannels {
+export interface PUAAppChannels {
   appShell: ModelChannel<AppShellModel>;
   create: ModelChannel<CreateDialogModel>;
   settings: ModelChannel<SettingsModel>;
@@ -21,7 +21,7 @@ export interface ForgeAppChannels {
 const noop = () => undefined;
 const noopAsync = async () => undefined;
 
-export function createForgeAppChannels(): ForgeAppChannels {
+export function createPUAAppChannels(): PUAAppChannels {
   return {
     appShell: createModelChannel<AppShellModel>({
       identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaces: [], projects: [], attentionList: [],

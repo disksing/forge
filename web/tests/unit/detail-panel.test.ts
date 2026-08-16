@@ -26,7 +26,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
       id: "project1.task1", type: "task", title: "Stable detail", path: "project1/task1",
       files: [{ name: "task.md", path: "project1/task1/task.md", content: "# Stable detail\n\nSelected text.", contentHash: "doc-a" }],
       artifacts: [{ name: "folder", path: "project1/task1/artifacts/folder", type: "directory", children: [{ name: "nested.txt", path: "project1/task1/artifacts/folder/nested.txt", type: "file", size: 4 }] }, { name: "a.txt", path: "project1/task1/artifacts/a.txt", type: "file", size: 3 }, { name: "b.txt", path: "project1/task1/artifacts/b.txt", type: "file", size: 3 }],
-      repos: [{ name: "forge", worktreePath: "project1/task1/worktree/forge", branch: "topic", targetBranch: "master" }, { name: "docs", worktreePath: "project1/task1/worktree/docs", branch: "docs-topic", targetBranch: "master" }],
+      repos: [{ name: "pua", worktreePath: "project1/task1/worktree/pua", branch: "topic", targetBranch: "master" }, { name: "docs", worktreePath: "project1/task1/worktree/docs", branch: "docs-topic", targetBranch: "master" }],
     },
     wiki: null,
     workspaceAgents: null,
@@ -362,7 +362,7 @@ describe("DetailPanel", () => {
     viewButtons[1].click();
     await tick();
     const urls = [...pending.keys()];
-    pending.get(urls[0])!(new Response(JSON.stringify({ path: "forge", diff: "stale diff", hasChanges: true }), { headers: { "content-type": "application/json" } }));
+    pending.get(urls[0])!(new Response(JSON.stringify({ path: "pua", diff: "stale diff", hasChanges: true }), { headers: { "content-type": "application/json" } }));
     pending.get(urls[1])!(new Response(JSON.stringify({ path: "docs", diff: "current diff", hasChanges: true }), { headers: { "content-type": "application/json" } }));
     await vi.waitFor(() => expect(target.querySelector('[role="dialog"]')?.textContent).toContain("current diff"));
     expect(target.querySelector('[role="dialog"]')?.textContent).not.toContain("stale diff");
@@ -371,7 +371,7 @@ describe("DetailPanel", () => {
   it("renders workspace AGENTS.md in full across AGENTS.md and Wiki tabs", async () => {
     const initial = resourceModel({
       identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
-      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n\n<!-- managed by forge cli -->\nGenerated guidance.\n<!-- end of forge cli prompt -->\n", contentHash: "hash-a" },
+      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n\n<!-- managed by pua cli -->\nGenerated guidance.\n<!-- end of pua cli prompt -->\n", contentHash: "hash-a" },
       wiki: { exists: true, entries: [{ name: "index.md", path: "wiki/index.md", type: "file", size: 10 }] },
     });
     const { target } = mountModel(initial);
@@ -389,11 +389,11 @@ describe("DetailPanel", () => {
   it("edits workspace AGENTS.md through the Markdown editor dialog", async () => {
     const save = vi.fn(async (_content: string, _hash: string) => ({ path: "AGENTS.md", name: "AGENTS.md", content: "# Notes\n\nEdited.\n", contentHash: "saved-hash" }));
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      path: "AGENTS.md", name: "AGENTS.md", content: "# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n", contentHash: "hash-a",
+      path: "AGENTS.md", name: "AGENTS.md", content: "# Notes\n\n<!-- managed by pua cli -->\nsystem\n<!-- end of pua cli prompt -->\n", contentHash: "hash-a",
     }), { headers: { "content-type": "application/json" } })));
     const initial = resourceModel({
       identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
-      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n", contentHash: "hash-a" },
+      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n\n<!-- managed by pua cli -->\nsystem\n<!-- end of pua cli prompt -->\n", contentHash: "hash-a" },
       onSaveWorkspaceAgents: save,
     });
     const { target } = mountModel(initial);
@@ -408,7 +408,7 @@ describe("DetailPanel", () => {
     const saveButton = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
     saveButton.click();
     await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
-    expect(save).toHaveBeenCalledWith("# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n\nEdited.\n", "hash-a");
+    expect(save).toHaveBeenCalledWith("# Notes\n\n<!-- managed by pua cli -->\nsystem\n<!-- end of pua cli prompt -->\n\nEdited.\n", "hash-a");
   });
 
   it("keeps file-browser directory icons stable and toggles expansion with a class", async () => {

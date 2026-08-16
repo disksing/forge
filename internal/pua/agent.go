@@ -160,7 +160,6 @@ Commands:
     agent, description) followed by agents (name, provider, availability). Use
     --json for the complete structured result including profiles, providers,
     and probes. --server overrides the owner address discovered from
-    the Workspace control directory (.pua/serve.lock, or legacy
-    .forge/serve.lock).
+    the Workspace control directory (.pua/serve.lock).
 `)
 }

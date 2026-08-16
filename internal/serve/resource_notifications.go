@@ -19,11 +19,11 @@ func notificationMessageID(parts ...string) string {
 }
 
 func workspaceInstanceID(workspacePath string) (string, error) {
-	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
+	puaWorkspace, err := app.OpenWorkspace(workspacePath)
 	if err != nil {
 		return "", err
 	}
-	runtime, err := forgeWorkspace.RuntimeConfig()
+	runtime, err := puaWorkspace.RuntimeConfig()
 	if err != nil {
 		return "", err
 	}
@@ -434,7 +434,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 		for _, message := range mailbox.Messages {
 			if message.Type != "" || message.Status != resourceMessageDelivered || message.ActualMode == resourceMessageModeSteer || !message.SubscribeResult ||
 				(message.ResultSubscriptionStatus != resourceResultSubscriptionPending && message.ResultSubscriptionStatus != "") ||
-				message.Sender == nil || !isStableForgeResourceID(message.Sender.ID) ||
+				message.Sender == nil || !isStablePUAResourceID(message.Sender.ID) ||
 				strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" || strings.TrimSpace(message.GenerationID) == "" {
 				continue
 			}

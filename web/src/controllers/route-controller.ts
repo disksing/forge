@@ -17,7 +17,7 @@ function decodePathPart(value = ""): string {
 	}
 }
 
-export function parseForgeRoute(pathname: string): RouteState {
+export function parsePUARoute(pathname: string): RouteState {
 	const parts = pathname.split("/").filter(Boolean);
 	if (parts[0] !== "w") return {};
 	return {
@@ -26,7 +26,7 @@ export function parseForgeRoute(pathname: string): RouteState {
 	};
 }
 
-export function forgeRoutePath(workspaceId: string, resourceId = ""): string {
+export function puaRoutePath(workspaceId: string, resourceId = ""): string {
 	const workspace = String(workspaceId || "").trim();
 	if (!workspace) return "";
 	const resource = resourceId && resourceId !== "workspace" ? String(resourceId) : "";
@@ -39,7 +39,7 @@ export function createRouteController(onChange: () => void) {
 	let projection: RouteProjection = { path: "", revision: 0, replace: true };
 
 	function project(workspaceId: string, resourceId: string, options: { replace?: boolean } = {}): void {
-		const nextPath = forgeRoutePath(workspaceId, resourceId);
+		const nextPath = puaRoutePath(workspaceId, resourceId);
 		if (!nextPath) return;
 		if (window.location.pathname === nextPath && projection.path === nextPath) return;
 		projection = {
@@ -51,7 +51,7 @@ export function createRouteController(onChange: () => void) {
 	}
 
 	return {
-		parse: (pathname = window.location.pathname) => parseForgeRoute(pathname),
+		parse: (pathname = window.location.pathname) => parsePUARoute(pathname),
 		project,
 		projection: () => ({ ...projection })
 	};

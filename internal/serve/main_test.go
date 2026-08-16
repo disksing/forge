@@ -248,18 +248,18 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 
 func TestWorkspaceFileLinkResolvesSluggedDirectories(t *testing.T) {
 	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateProject("API project", "forge"); err != nil {
+	if _, err := puaWorkspace.CreateProject("API project", "pua"); err != nil {
 		t.Fatal(err)
 	}
-	task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: "project1", Title: "First task", Slug: "fix"})
+	task, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: "project1", Title: "First task", Slug: "fix"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail, err := forgeWorkspace.Resource(task.ID)
+	detail, err := puaWorkspace.Resource(task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestWorkspaceFileLinkResolvesSluggedDirectories(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
 		t.Fatal(err)
 	}
-	if preview.Path != "project1-forge/task1-fix/artifacts/foobar.md" || preview.Binary || !strings.Contains(preview.Content, "Hello link") {
+	if preview.Path != "project1-pua/task1-fix/artifacts/foobar.md" || preview.Binary || !strings.Contains(preview.Content, "Hello link") {
 		t.Fatalf("unexpected preview: %+v", preview)
 	}
 
@@ -301,11 +301,11 @@ func TestWorkspaceFileLinkResolvesSluggedDirectories(t *testing.T) {
 
 func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateProject("API project", "api"); err != nil {
+	if _, err := puaWorkspace.CreateProject("API project", "api"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -321,7 +321,7 @@ func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
 	}
-	resource, err := forgeWorkspace.Resource("project1.task1")
+	resource, err := puaWorkspace.Resource("project1.task1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,11 +333,11 @@ func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 
 func TestRemovedAutomationHTTPInputsAreRejected(t *testing.T) {
 	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateProject("API project", "api"); err != nil {
+	if _, err := puaWorkspace.CreateProject("API project", "api"); err != nil {
 		t.Fatal(err)
 	}
 	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
@@ -369,15 +369,15 @@ func TestLegacyAgentRunControlRouteIsGone(t *testing.T) {
 
 func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := forgeWorkspace.CreateProject("API project", "api")
+	project, err := puaWorkspace.CreateProject("API project", "api")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Archive task", Slug: "archive"}); err != nil {
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Archive task", Slug: "archive"}); err != nil {
 		t.Fatal(err)
 	}
 	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
@@ -402,15 +402,15 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 
 func TestArchiveResourceReturnsNonBlockingWarningsAfterMove(t *testing.T) {
 	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := forgeWorkspace.CreateProject("Warning project", "warning")
+	project, err := puaWorkspace.CreateProject("Warning project", "warning")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Open child", Slug: "child"}); err != nil {
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Open child", Slug: "child"}); err != nil {
 		t.Fatal(err)
 	}
 	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
@@ -434,7 +434,7 @@ func TestArchiveResourceReturnsNonBlockingWarningsAfterMove(t *testing.T) {
 	if !strings.Contains(response.Path, "archive") || len(response.Warnings) == 0 || response.Warnings[0].Severity != "warning" {
 		t.Fatalf("archive response did not expose structured warning: %#v", response)
 	}
-	if _, err := forgeWorkspace.ResourceValue("project1.task1"); err != nil {
+	if _, err := puaWorkspace.ResourceValue("project1.task1"); err != nil {
 		t.Fatalf("archived child should remain addressable after HTTP archive: %v", err)
 	}
 }
@@ -504,7 +504,7 @@ func TestWorkspaceAgentsSaveWritesFullContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fullContent := "# User notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n"
+	fullContent := "# User notes\n\n<!-- managed by pua cli -->\nsystem\n<!-- end of pua cli prompt -->\n"
 	body, _ := json.Marshal(map[string]string{"content": fullContent, "expectedContentHash": preview.ContentHash})
 	put := httptest.NewRecorder()
 	s.handleWorkspace(put, httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/files?path=AGENTS.md", bytes.NewReader(body)))
@@ -796,7 +796,7 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 
 func TestUIStateMigratesLegacyGUIStateFile(t *testing.T) {
 	workspace := t.TempDir()
-	legacy := filepath.Join(workspace, ".forge", "gui-state.json")
+	legacy := filepath.Join(workspace, ".pua", "gui-state.json")
 	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
 		t.Fatal(err)
 	}

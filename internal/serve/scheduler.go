@@ -243,11 +243,11 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace serveWo
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return err
 	}
-	config, err := forgeWorkspace.Scheduler()
+	config, err := puaWorkspace.Scheduler()
 	if err != nil {
 		return err
 	}

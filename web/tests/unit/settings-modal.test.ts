@@ -20,7 +20,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     initialTab: "workspace",
     workspaces: [{ id: "workspace-a", name: "Workspace A", path: "/tmp/a" }],
     activeWorkspaceId: "workspace-a",
-    workspaceIcons: [{ id: "", label: "Forge default", src: "/favicon.svg" }],
+    workspaceIcons: [{ id: "", label: "PUA default", src: "/favicon.svg" }],
     workspaceIconSavingId: "",
     userName: "User",
     appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },

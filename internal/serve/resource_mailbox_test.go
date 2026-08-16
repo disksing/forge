@@ -357,19 +357,19 @@ func TestResourceMailboxModesAndPriority(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("current generation missing: found=%v err=%v", found, err)
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtimeConfig, err := forgeWorkspace.RuntimeConfig()
+	runtimeConfig, err := puaWorkspace.RuntimeConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
 	session := fake.sessions[run.AgentHubSessionID]
-	if session.LaunchEnvironment["FORGE_WORKSPACE_ROOT"] != workspace.Path ||
-		session.LaunchEnvironment["FORGE_WORKSPACE_INSTANCE_ID"] != runtimeConfig.InstanceID ||
-		session.LaunchEnvironment["FORGE_RESOURCE_ID"] != "project1.task1" {
+	if session.LaunchEnvironment["PUA_WORKSPACE_ROOT"] != workspace.Path ||
+		session.LaunchEnvironment["PUA_WORKSPACE_INSTANCE_ID"] != runtimeConfig.InstanceID ||
+		session.LaunchEnvironment["PUA_RESOURCE_ID"] != "project1.task1" {
 		fake.mu.Unlock()
 		t.Fatalf("resource generation provenance environment = %#v", session.LaunchEnvironment)
 	}
@@ -527,11 +527,11 @@ func TestResourceMailboxArchiveTerminatesPendingMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+	if _, err := puaWorkspace.ArchiveResource("project1.task1"); err != nil {
 		t.Fatal(err)
 	}
 	err = manager.withResourceController(context.Background(), workspace, "project1.task1", func() error {
@@ -562,7 +562,7 @@ func TestResourceMailboxArchiveRaceEitherRejectsOrTerminatesAcceptedMessage(t *t
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
 	configData, _ := json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
-		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-runtime-test",
+		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "pua-runtime-test",
 	})
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
 		t.Fatal(err)
@@ -611,7 +611,7 @@ func TestResourceMailboxPersistsBindingAndTemporaryDeliveryErrors(t *testing.T) 
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
 	configData, _ := json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
-		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-runtime-test",
+		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "pua-runtime-test",
 	})
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
 		t.Fatal(err)
@@ -626,7 +626,7 @@ func TestResourceMailboxPersistsBindingAndTemporaryDeliveryErrors(t *testing.T) 
 	hub.Close()
 	configData, _ = json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
-		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-runtime-test",
+		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "pua-runtime-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {

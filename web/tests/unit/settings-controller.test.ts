@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { createSettingsController, configWithAgentHubCatalog } from "../../src/controllers/settings-controller";
 import type { SettingsModel } from "../../src/components/models";
-import type { ForgeSettingsConfig } from "../../src/controllers/settings-controller";
+import type { PUASettingsConfig } from "../../src/controllers/settings-controller";
 
 describe("SettingsController", () => {
-	function settingsDependencies(activeWorkspaceId: string, base: ForgeSettingsConfig, publish: (model: SettingsModel) => void) {
+	function settingsDependencies(activeWorkspaceId: string, base: PUASettingsConfig, publish: (model: SettingsModel) => void) {
 		return {
 			config: () => base,
 			setConfig: () => undefined,
@@ -42,7 +42,7 @@ describe("SettingsController", () => {
 
 	it("marks the routed Workspace active even when the persisted fallback points elsewhere", async () => {
 		const published: SettingsModel[] = [];
-		const config: ForgeSettingsConfig = {
+		const config: PUASettingsConfig = {
 			activeId: "workspace-c",
 			workspaces: [
 				{ id: "workspace-a", name: "Workspace A", path: "/tmp/a" },
@@ -60,7 +60,7 @@ describe("SettingsController", () => {
 
 	it("keeps the routed Workspace marker aligned when route and persisted fallback match", async () => {
 		const published: SettingsModel[] = [];
-		const config: ForgeSettingsConfig = {
+		const config: PUASettingsConfig = {
 			activeId: "workspace-a",
 			workspaces: [{ id: "workspace-a", name: "Workspace A", path: "/tmp/a" }],
 			agents: [],
@@ -73,7 +73,7 @@ describe("SettingsController", () => {
 		expect(published.at(-1)?.activeWorkspaceId).toBe("workspace-a");
 	});
 
-	it("joins AgentHub availability and profiles into the Forge configuration without mutating the base", () => {
+	it("joins AgentHub availability and profiles into the PUA configuration without mutating the base", () => {
 		const base = {
 			activeId: "alpha",
 			workspaces: [],

@@ -131,8 +131,8 @@ func TestStoreEnforcesCurrentOwnershipAndImmutableRetirement(t *testing.T) {
 
 func TestStoreMigratesBothLegacyIndexesAndKeepsRollbackEvidence(t *testing.T) {
 	root := t.TempDir()
-	runtimeDir := filepath.Join(root, ".forge", "runtime")
-	guiDir := filepath.Join(root, ".forge", "gui-agent")
+	runtimeDir := filepath.Join(root, ".pua", "runtime")
+	guiDir := filepath.Join(root, ".pua", "gui-agent")
 	legacyGenerationPath := filepath.Join(runtimeDir, legacyIndexName)
 	legacyGUIPath := filepath.Join(guiDir, "runs.json")
 	generationIndex := map[string]any{
@@ -202,7 +202,7 @@ func TestStoreMigratesBothLegacyIndexesAndKeepsRollbackEvidence(t *testing.T) {
 
 func TestStoreRetriesAfterMigrationFailureAndPartialSwitch(t *testing.T) {
 	root := t.TempDir()
-	legacyPath := filepath.Join(root, ".forge", "runtime", legacyIndexName)
+	legacyPath := filepath.Join(root, ".pua", "runtime", legacyIndexName)
 	writeTestFile(t, legacyPath, []byte(`{"version":1,"generations":[`))
 	store, err := Open(root, "instance-retry")
 	if err != nil {
@@ -219,7 +219,7 @@ func TestStoreRetriesAfterMigrationFailureAndPartialSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, filepath.Join(root, ".forge", "runtime", stagingDirName, resourcesDirName, key, currentFileName), []byte("stale staging"))
+	writeTestFile(t, filepath.Join(root, ".pua", "runtime", stagingDirName, resourcesDirName, key, currentFileName), []byte("stale staging"))
 	valid := map[string]any{"version": 1, "generations": []map[string]any{{"id": "run-retry", "resourceId": "workspace", "generation": 1, "generationId": "gen-retry", "status": "idle"}}}
 	data, err := json.Marshal(valid)
 	if err != nil {

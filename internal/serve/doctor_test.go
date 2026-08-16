@@ -46,7 +46,7 @@ func TestDoctorMonitorScansConfiguredWorkspacesAndServesCache(t *testing.T) {
 	s := &server{config: configPath}
 	cfg := config{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Name: "One", Path: workspacePath}},
-		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-doctor-test",
+		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "pua-doctor-test",
 		AgentProfiles: []agentProfileRoute{
 			{Key: "default", AgentName: "fake-agent"},
 			{Key: "fast", AgentName: "fake-agent"},
@@ -101,7 +101,7 @@ func TestDoctorMonitorMarksCatalogFailureIncompleteWithoutAgentFalsePositives(t 
 	s := &server{config: configPath}
 	if err := s.saveConfig(config{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspacePath}},
-		AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "forge-doctor-test",
+		AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "pua-doctor-test",
 		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "missing-agent"}},
 	}); err != nil {
 		t.Fatal(err)

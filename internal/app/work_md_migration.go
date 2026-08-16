@@ -549,7 +549,7 @@ func isMarkdownFence(line string) bool {
 
 func writeFileAtomically(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".forge-migrate-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".pua-migrate-*.tmp")
 	if err != nil {
 		return err
 	}

@@ -77,7 +77,7 @@ function resourceDetail(resource: MockResource) {
       { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.${resourceReference}\n\n${longDetailBody}`, contentHash: `${resource.id}-brief-v1` },
     ],
     artifacts: [{ name: "notes.md", path: `${resource.path}/artifacts/notes.md`, type: "file", size: 24 }],
-    repos: resource.type === "task" ? [{ name: "forge", worktreePath: `${resource.path}/worktree/forge`, branch: "topic", targetBranch: "master" }] : [],
+    repos: resource.type === "task" ? [{ name: "pua", worktreePath: `${resource.path}/worktree/pua`, branch: "topic", targetBranch: "master" }] : [],
     templates: resource?.type === "project" ? templates : [],
   };
 }
@@ -191,7 +191,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       return json(route, {
         version: 3,
         activeId: "ws-test",
-        workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/forge-e2e" }],
+        workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/pua-e2e" }],
         agentProfiles: [{ key: "default", agentName: "test-agent" }, { key: "fast", agentName: "test-agent" }, { key: "review", agentName: "other-agent" }],
       });
     }
@@ -220,7 +220,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       return json(route, {
         version: 3,
         activeId: "ws-test",
-        workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/forge-e2e" }],
+        workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/pua-e2e" }],
       });
     }
     if (path === "/api/workspaces/ws-test/ui-state") {
@@ -257,7 +257,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         return state.dismissedTurn === undefined || Number(runtime?.turnNumber || 0) > state.dismissedTurn;
       }).map((item) => ({ ...item, children: undefined }));
       return json(route, {
-        root: "/tmp/forge-e2e",
+        root: "/tmp/pua-e2e",
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
         projects: [projectSnapshot, ...(createdProject ? [{ ...createdProject, attention: attentionStates[createdProject.id] }] : [])],
         attentionList,
@@ -626,22 +626,22 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
       workspaces: [{
         id: "ws-test",
         name: "Isolated E2E",
-        path: "/tmp/forge-e2e",
+        path: "/tmp/pua-e2e",
         report: {
           complete: true,
           summary: { errors: 1, warnings: 0 },
           issues: [{
             severity: "error",
             code: "agents_managed_section_modified",
-            message: "Forge managed AGENTS.md section has been modified",
+            message: "PUA managed AGENTS.md section has been modified",
             path: "AGENTS.md",
-            suggestion: "Run forge migrate after reviewing local instructions.",
+            suggestion: "Run pua migrate after reviewing local instructions.",
           }],
         },
       }, {
         id: "ws-other",
         name: "Other Workspace",
-        path: "/tmp/forge-other",
+        path: "/tmp/pua-other",
         report: {
           complete: true,
           summary: { errors: 4, warnings: 0 },
@@ -655,7 +655,7 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
   await expect(page.locator("#doctorButton")).toHaveAttribute("aria-label", "1 errors and 0 warnings");
   await page.locator("#doctorButton").click();
   const dialog = page.getByRole("dialog", { name: "Workspace problems" });
-  await expect(dialog).toContainText("Forge managed AGENTS.md section has been modified");
+  await expect(dialog).toContainText("PUA managed AGENTS.md section has been modified");
   await expect(dialog).toContainText("agents_managed_section_modified");
   await expect(dialog).not.toContainText("Other Workspace must stay hidden");
   await dialog.getByRole("button", { name: "Refresh workspace checks" }).click();
@@ -1030,7 +1030,7 @@ test("resolves Markdown resource references and navigates through the SPA", asyn
   await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
 
-  const reference = page.locator('[data-doc-file="task.md"] a[data-forge-resource-id="project1.task2"]');
+  const reference = page.locator('[data-doc-file="task.md"] a[data-pua-resource-id="project1.task2"]');
   await expect(reference).toHaveText("Follow-up task");
   await expect(reference).toHaveAttribute("href", "/w/ws-test/r/project1.task2");
   await reference.click();

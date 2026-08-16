@@ -10,9 +10,9 @@
   import Toast from "./components/Toast.svelte";
   import UploadDialog from "./components/UploadDialog.svelte";
   import { confirmDialogChannel } from "./controllers/confirm-dialog-controller";
-  import type { ForgeAppChannels } from "./app-channels";
+  import type { PUAAppChannels } from "./app-channels";
 
-  let { channels }: { channels: ForgeAppChannels } = $props();
+  let { channels }: { channels: PUAAppChannels } = $props();
 </script>
 
 <AppShell channel={channels.appShell}>

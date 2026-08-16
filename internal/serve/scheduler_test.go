@@ -87,11 +87,11 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	if err != nil || len(schedulerMessages(t, workspace.Path)) != 0 {
 		t.Fatalf("empty Scheduler reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: "Check status", Condition: "when appropriate", Target: "workspace"})
+	created, err := puaWorkspace.AddSchedule(app.CreateScheduleInput{Description: "Check status", Condition: "when appropriate", Target: "workspace"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	}
 
 	description := "Check status with new context"
-	if _, err := forgeWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Description: &description}); err != nil {
+	if _, err := puaWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Description: &description}); err != nil {
 		t.Fatal(err)
 	}
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
@@ -160,14 +160,14 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 		t.Fatalf("queued change tick = %#v", ticks)
 	}
 	condition := "when the updated condition is satisfied"
-	if _, err := forgeWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Condition: &condition}); err != nil {
+	if _, err := puaWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Condition: &condition}); err != nil {
 		t.Fatal(err)
 	}
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
 	if err != nil || len(schedulerMessages(t, workspace.Path)) != 3 {
 		t.Fatalf("coalesced change reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
 	}
-	if _, err := forgeWorkspace.RemoveSchedule(created.ID); err != nil {
+	if _, err := puaWorkspace.RemoveSchedule(created.ID); err != nil {
 		t.Fatal(err)
 	}
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
@@ -183,8 +183,8 @@ func TestFailedSchedulerTickDoesNotResetInterval(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	client, _ := newAgentHubClient(hub.URL, nil)
-	forgeWorkspace, _ := app.OpenWorkspace(workspace.Path)
-	if _, err := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: "Retry", Condition: "always inspect", Target: "workspace"}); err != nil {
+	puaWorkspace, _ := app.OpenWorkspace(workspace.Path)
+	if _, err := puaWorkspace.AddSchedule(app.CreateScheduleInput{Description: "Retry", Condition: "always inspect", Target: "workspace"}); err != nil {
 		t.Fatal(err)
 	}
 	err := manager.reconcileSchedulerLocked(context.Background(), workspace, client)

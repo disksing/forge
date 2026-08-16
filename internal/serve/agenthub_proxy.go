@@ -13,7 +13,7 @@ import (
 // This file implements the same-origin, cache-free, on-demand AgentHub events
 // proxy. The PUA serve server never parses, stores, or replays event content
 // here: JSON pages are forwarded byte-for-byte and SSE frames are forwarded as
-// a raw stream. The only PUA addition is the forge.notice frames interleaved
+// a raw stream. The only PUA addition is the pua.notice frames interleaved
 // into the proxy stream so existing browser notifications keep working.
 
 // errAgentHubProxyUnbound marks an internal generation record that has no
@@ -196,7 +196,7 @@ func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Reques
 			flusher.Flush()
 		case message := <-messages:
 			if message.Notice != nil {
-				writeForgeNoticeSSE(w, *message.Notice)
+				writePUANoticeSSE(w, *message.Notice)
 				flusher.Flush()
 			}
 		case <-ctx.Done():

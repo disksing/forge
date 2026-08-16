@@ -12,7 +12,7 @@ import (
 	"github.com/disksing/pua/internal/app"
 )
 
-func openTestForgeWorkspace(t *testing.T, path, language string) *app.Workspace {
+func openTestPUAWorkspace(t *testing.T, path, language string) *app.Workspace {
 	t.Helper()
 	workspace, err := app.Initialize(path, language)
 	if err != nil {
@@ -136,7 +136,6 @@ func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWor
 	}
 	run.Status = "stopped"
 	run.AgentHubStoppedObserved = true
-	run.ForgeSessionID = ""
 	run.UpdatedAt = time.Now().Format(time.RFC3339)
 	if err := saveAgentRun(workspace.Path, run); err != nil {
 		writeError(response, err, http.StatusInternalServerError)
@@ -144,35 +143,4 @@ func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWor
 	}
 	writeJSON(response, map[string]any{"status": "stopped"})
 	return response
-}
-
-func seedTestForgeSession(t *testing.T, workspace serveWorkspace, externalID string) string {
-	t.Helper()
-	return "legacy-session-" + newRunID()
-}
-
-type testForgeSession struct {
-	ID       string
-	Liveness struct {
-		AgentHubSessionID string
-	}
-}
-
-func testForgeSessions(t *testing.T, workspacePath string) []testForgeSession {
-	t.Helper()
-	runs, err := loadAgentRuns(workspacePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sessions := make([]testForgeSession, 0, len(runs))
-	for _, run := range runs {
-		if run.ForgeSessionID == "" || (run.Status == "stopped" && run.AgentHubStoppedObserved) {
-			continue
-		}
-		sessions = append(sessions, testForgeSession{
-			ID:       run.ForgeSessionID,
-			Liveness: struct{ AgentHubSessionID string }{AgentHubSessionID: run.AgentHubSessionID},
-		})
-	}
-	return sessions
 }

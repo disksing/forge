@@ -51,25 +51,6 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func TestMigrateCanRenameLegacyWorkspaceStorage(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		if err := os.Rename(filepath.Join(root, ".pua"), filepath.Join(root, ".forge")); err != nil {
-			t.Fatal(err)
-		}
-		out := run(t, "migrate", "--rename-storage")
-		if !strings.Contains(out, "migrated AgentWorkspace") {
-			t.Fatalf("migration output = %q", out)
-		}
-		if _, err := os.Stat(filepath.Join(root, ".pua")); err != nil {
-			t.Fatalf("renamed .pua storage is missing: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(root, ".forge")); !os.IsNotExist(err) {
-			t.Fatalf("legacy .forge storage remains: %v", err)
-		}
-	})
-}
-
 func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -115,9 +96,6 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	t.Setenv(puaWorkspaceRootEnvironment, "")
 	t.Setenv(puaWorkspaceInstanceEnvironment, "")
 	t.Setenv(puaResourceIDEnvironment, "")
-	t.Setenv(forgeWorkspaceRootEnvironment, "")
-	t.Setenv(forgeWorkspaceInstanceEnvironment, "")
-	t.Setenv(forgeResourceIDEnvironment, "")
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Mailbox project")
@@ -260,18 +238,6 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	})
 }
 
-func TestSenderEnvironmentSupportsLegacyAndRejectsConflict(t *testing.T) {
-	t.Setenv(puaResourceIDEnvironment, "")
-	t.Setenv(forgeResourceIDEnvironment, "project1.task1")
-	if got, err := senderEnvironmentValue(puaResourceIDEnvironment, forgeResourceIDEnvironment); err != nil || got != "project1.task1" {
-		t.Fatalf("legacy sender environment = %q, %v", got, err)
-	}
-	t.Setenv(puaResourceIDEnvironment, "project1.task2")
-	if _, err := senderEnvironmentValue(puaResourceIDEnvironment, forgeResourceIDEnvironment); err == nil {
-		t.Fatal("expected conflicting sender environments to fail")
-	}
-}
-
 func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
 		t.Fatalf("expected pua start to be unknown, got %v", err)
@@ -285,8 +251,8 @@ func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	for _, marker := range []string{
 		"usage: pua serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"in-process application API",
-		"FORGE_AGENTHUB_URL",
-		"FORGE_SERVE_CONFIG",
+		"PUA_AGENTHUB_URL",
+		"PUA_SERVE_CONFIG",
 	} {
 		if !strings.Contains(serveHelp, marker) {
 			t.Fatalf("expected pua serve help to contain %q, got:\n%s", marker, serveHelp)
@@ -751,7 +717,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"The web service is provided by pua serve.",
 		"Usage:",
 		"  pua --version\n  pua init [--language=<language>]",
-		"  pua migrate [--language=<language>] [--rename-storage]",
+		"  pua migrate [--language=<language>]",
 		"  pua repo <command>",
 		"  pua project <command>",
 		"  pua task <command>",

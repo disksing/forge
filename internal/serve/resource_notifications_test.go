@@ -18,7 +18,7 @@ func newNotificationTestManager(t *testing.T, hubURL string, workspaces []serveW
 	configPath := filepath.Join(t.TempDir(), "serve.json")
 	data, err := json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: workspaces,
-		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-notification-test",
+		AgentHubEndpoint: hubURL, AgentHubInstanceID: "pua-notification-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
 	if err != nil {

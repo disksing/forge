@@ -76,7 +76,7 @@ describe("AppShell", () => {
           report: {
             complete: true,
             summary: { errors: 1, warnings: 0 },
-            issues: [{ severity: "error", code: "managed_section_modified", message: "Forge-managed instructions were modified", path: "AGENTS.md", suggestion: "Restore the managed section." }],
+            issues: [{ severity: "error", code: "managed_section_modified", message: "PUA-managed instructions were modified", path: "AGENTS.md", suggestion: "Restore the managed section." }],
           },
         }],
       },
@@ -90,7 +90,7 @@ describe("AppShell", () => {
     target.querySelector<HTMLButtonElement>("#doctorButton")!.click();
     await tick();
     expect(target.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(target.textContent).toContain("Forge-managed instructions were modified");
+    expect(target.textContent).toContain("PUA-managed instructions were modified");
     expect(target.textContent).toContain("managed_section_modified");
 
     target.querySelector<HTMLButtonElement>('[aria-label="Refresh workspace checks"]')!.click();

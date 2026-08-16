@@ -15,7 +15,7 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -23,7 +23,7 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 	if len(parts) == 0 {
 		switch r.Method {
 		case http.MethodGet:
-			config, readErr := forgeWorkspace.Scheduler()
+			config, readErr := puaWorkspace.Scheduler()
 			if readErr != nil {
 				writeError(w, readErr, http.StatusBadRequest)
 				return
@@ -41,7 +41,7 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 				writeError(w, decodeErr, http.StatusBadRequest)
 				return
 			}
-			created, createErr := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: body.Description, Condition: body.Condition, Target: body.Target})
+			created, createErr := puaWorkspace.AddSchedule(app.CreateScheduleInput{Description: body.Description, Condition: body.Condition, Target: body.Target})
 			if createErr != nil {
 				writeError(w, createErr, http.StatusBadRequest)
 				return
@@ -64,7 +64,7 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 			writeError(w, decodeErr, http.StatusBadRequest)
 			return
 		}
-		updated, updateErr := forgeWorkspace.SetSchedulerSettings(body)
+		updated, updateErr := puaWorkspace.SetSchedulerSettings(body)
 		if updateErr != nil {
 			writeError(w, updateErr, http.StatusBadRequest)
 			return
@@ -90,14 +90,14 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 			writeError(w, decodeErr, http.StatusBadRequest)
 			return
 		}
-		updated, updateErr := forgeWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: id, Description: body.Description, Condition: body.Condition, Target: body.Target})
+		updated, updateErr := puaWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: id, Description: body.Description, Condition: body.Condition, Target: body.Target})
 		if updateErr != nil {
 			writeError(w, updateErr, http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, updated)
 	case http.MethodDelete:
-		removed, removeErr := forgeWorkspace.RemoveSchedule(id)
+		removed, removeErr := puaWorkspace.RemoveSchedule(id)
 		if removeErr != nil {
 			writeError(w, removeErr, http.StatusBadRequest)
 			return

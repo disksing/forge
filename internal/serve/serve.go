@@ -168,8 +168,8 @@ Options:
 
 Workspace ownership:
   Each managed Workspace is exclusively owned by one pua serve process via
-  an OS advisory lock in the Workspace control directory (.pua, or legacy
-  .forge). A second instance using a different PUA_SERVE_CONFIG cannot manage
+  an OS advisory lock in the Workspace control directory (.pua). A second
+  instance using a different PUA_SERVE_CONFIG cannot manage
   the same Workspace; it
   fails at startup before session recovery begins. The OS releases the
   lock automatically when the owning process exits.
@@ -177,9 +177,6 @@ Workspace ownership:
 Environment overrides:
   PUA_AGENTHUB_URL      AgentHub endpoint override
   PUA_SERVE_CONFIG      serve configuration file path (default ~/.pua/serve.json)
-  FORGE_AGENTHUB_URL    legacy alias of PUA_AGENTHUB_URL
-  FORGE_SERVE_CONFIG    legacy alias of PUA_SERVE_CONFIG
-  FORGE_GUI_CONFIG      older legacy alias of PUA_SERVE_CONFIG
 `
 
 // PrintHelp writes the pua serve usage text to stdout.
@@ -564,12 +561,12 @@ func (s *server) updateWorkspaceDefaults(w http.ResponseWriter, r *http.Request,
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	updated, err := forgeWorkspace.SetResourceAgentDefaults(defaults)
+	updated, err := puaWorkspace.SetResourceAgentDefaults(defaults)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -601,12 +598,12 @@ func (s *server) updateProjectTaskDefault(w http.ResponseWriter, r *http.Request
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	updated, err := forgeWorkspace.SetProjectTaskDefault(resourceID, binding)
+	updated, err := puaWorkspace.SetProjectTaskDefault(resourceID, binding)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -643,12 +640,12 @@ func (s *server) updateResourceAgentBinding(w http.ResponseWriter, r *http.Reque
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	updated, err := forgeWorkspace.SetResourceAgentBinding(resourceID, binding)
+	updated, err := puaWorkspace.SetResourceAgentBinding(resourceID, binding)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -706,12 +703,12 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	result, err := forgeWorkspace.CreateProject(body.Description, body.Slug)
+	result, err := puaWorkspace.CreateProject(body.Description, body.Slug)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -772,12 +769,12 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	result, err := forgeWorkspace.CreateTask(createTaskInputFromRequest(body))
+	result, err := puaWorkspace.CreateTask(createTaskInputFromRequest(body))
 	if err != nil {
 		status := http.StatusBadRequest
 		if app.IsKind(err, "template_conflict") {
@@ -800,12 +797,12 @@ func (s *server) previewTask(w http.ResponseWriter, r *http.Request, id string) 
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	result, err := forgeWorkspace.PreviewTask(createTaskInputFromRequest(body))
+	result, err := puaWorkspace.PreviewTask(createTaskInputFromRequest(body))
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -819,7 +816,7 @@ func (s *server) handleTemplates(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -830,7 +827,7 @@ func (s *server) handleTemplates(w http.ResponseWriter, r *http.Request, id stri
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		result, err := forgeWorkspace.Templates(projectID)
+		result, err := puaWorkspace.Templates(projectID)
 		if err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -853,7 +850,7 @@ func (s *server) handleTemplates(w http.ResponseWriter, r *http.Request, id stri
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, forgeWorkspace.ValidateTemplateContent(body.Name, body.Content))
+		writeJSON(w, puaWorkspace.ValidateTemplateContent(body.Name, body.Content))
 		return
 	}
 	name := parts[0]
@@ -862,7 +859,7 @@ func (s *server) handleTemplates(w http.ResponseWriter, r *http.Request, id stri
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		result, err := forgeWorkspace.Template(projectID, name)
+		result, err := puaWorkspace.Template(projectID, name)
 		if err != nil {
 			writeError(w, err, http.StatusNotFound)
 			return
@@ -885,7 +882,7 @@ func (s *server) handleTemplates(w http.ResponseWriter, r *http.Request, id stri
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
-		result, err := forgeWorkspace.RenderTemplate(app.TemplateRenderInput{ProjectID: projectID, Name: name, Fields: body.Fields, Title: body.Title})
+		result, err := puaWorkspace.RenderTemplate(app.TemplateRenderInput{ProjectID: projectID, Name: name, Fields: body.Fields, Title: body.Title})
 		if err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -914,15 +911,15 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
 	var archiveResult app.ArchiveResult
 	archive := func() error {
-		resourceIDs, resourceIDsErr := archiveResourceIDs(forgeWorkspace, resourceID)
-		result, archiveErr := forgeWorkspace.ArchiveResource(resourceID)
+		resourceIDs, resourceIDsErr := archiveResourceIDs(puaWorkspace, resourceID)
+		result, archiveErr := puaWorkspace.ArchiveResource(resourceID)
 		if archiveErr != nil {
 			return archiveErr
 		}
@@ -1294,11 +1291,11 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	if err != nil {
 		return serveWorkspace{}, err
 	}
-	forgeWorkspace, err := app.OpenWorkspace(tree.Root)
+	puaWorkspace, err := app.OpenWorkspace(tree.Root)
 	if err != nil {
 		return serveWorkspace{}, err
 	}
-	if _, err := forgeWorkspace.EnsureResourceRuntime(); err != nil {
+	if _, err := puaWorkspace.EnsureResourceRuntime(); err != nil {
 		return serveWorkspace{}, err
 	}
 	replaced := false
@@ -1332,14 +1329,14 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 		if !s.ownsWorkspace(workspace.Path) {
 			continue
 		}
-		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 		if err != nil {
 			return fmt.Errorf("open Workspace %s for resource runtime: %w", workspace.ID, err)
 		}
-		if _, err := forgeWorkspace.EnsureResourceRuntime(); err != nil {
+		if _, err := puaWorkspace.EnsureResourceRuntime(); err != nil {
 			return fmt.Errorf("initialize Workspace %s resource runtime: %w", workspace.ID, err)
 		}
-		if _, err := forgeWorkspace.EnsureScheduler(); err != nil {
+		if _, err := puaWorkspace.EnsureScheduler(); err != nil {
 			return fmt.Errorf("initialize Workspace %s Scheduler: %w", workspace.ID, err)
 		}
 		if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
@@ -1425,17 +1422,17 @@ func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error)
 	if err := s.requireWorkspaceOwnership(path); err != nil {
 		return workspaceTree{}, err
 	}
-	forgeWorkspace, err := app.OpenWorkspace(path)
+	puaWorkspace, err := app.OpenWorkspace(path)
 	if err != nil {
 		return workspaceTree{}, err
 	}
 	_ = ctx
-	typedTree, err := forgeWorkspace.Tree()
+	typedTree, err := puaWorkspace.Tree()
 	if err != nil {
 		return workspaceTree{}, err
 	}
 	tree := workspaceTreeFromApp(typedTree)
-	runtimeConfig, runtimeErr := forgeWorkspace.RuntimeConfig()
+	runtimeConfig, runtimeErr := puaWorkspace.RuntimeConfig()
 	if runtimeErr == nil {
 		tree.AgentBinding = runtimeConfig.AgentBinding
 		tree.ResourceDefaults = runtimeConfig.ResourceDefaults
@@ -1541,11 +1538,11 @@ func (s *server) resource(ctx context.Context, id string, resourceID string) (ap
 	if err != nil {
 		return app.ResourceDetailView{}, err
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return app.ResourceDetailView{}, err
 	}
-	return forgeWorkspace.Resource(resourceID)
+	return puaWorkspace.Resource(resourceID)
 }
 
 func (s *server) loadUIState(id string) (uiState, error) {
@@ -1738,44 +1735,14 @@ func (s *server) saveConfig(cfg config) error {
 }
 
 func defaultConfigPath() (string, error) {
-	path, err := environmentOverride("PUA_SERVE_CONFIG", "FORGE_SERVE_CONFIG")
-	if err != nil {
-		return "", err
-	}
-	// FORGE_GUI_CONFIG predates the serve rename; keep honoring it so existing
-	// deployments (for example launchd plists) keep working.
-	legacyGUIOverride := strings.TrimSpace(os.Getenv("FORGE_GUI_CONFIG"))
-	if path != "" && legacyGUIOverride != "" && path != legacyGUIOverride {
-		return "", fmt.Errorf("PUA_SERVE_CONFIG/FORGE_SERVE_CONFIG and legacy FORGE_GUI_CONFIG are both set to different values")
-	}
-	if path != "" {
+	if path := strings.TrimSpace(os.Getenv("PUA_SERVE_CONFIG")); path != "" {
 		return path, nil
-	}
-	if legacyGUIOverride != "" {
-		return legacyGUIOverride, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	current := filepath.Join(home, ".pua", "serve.json")
-	legacyServe := filepath.Join(home, ".forge", "serve.json")
-	legacyGUI := filepath.Join(home, ".forge", "gui.json")
-	existing := make([]string, 0, 3)
-	for _, candidate := range []string{current, legacyServe, legacyGUI} {
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			existing = append(existing, candidate)
-		} else if !os.IsNotExist(statErr) {
-			return "", statErr
-		}
-	}
-	if len(existing) > 1 {
-		return "", fmt.Errorf("multiple PUA serve configuration files exist: %s; set PUA_SERVE_CONFIG explicitly", strings.Join(existing, ", "))
-	}
-	if len(existing) == 1 {
-		return existing[0], nil
-	}
-	return current, nil
+	return filepath.Join(home, ".pua", "serve.json"), nil
 }
 
 func workspaceID(path string) string {

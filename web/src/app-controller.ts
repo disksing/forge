@@ -23,7 +23,7 @@ import { errorMessage } from "./runtime/errors";
 import { ResourceScope } from "./runtime/resource-scope";
 import { projectConversationEvents } from "./components/timeline-events";
 
-export interface ForgeViewPublisher {
+export interface PUAViewPublisher {
   renderAppShell(model: AppShellModel): void;
   renderCreateDialog(model: CreateDialogModel): void;
   renderSettings(model: SettingsModel): void;
@@ -35,7 +35,7 @@ export interface ForgeViewPublisher {
   renderToast(model: ToastModel): void;
 }
 
-let publisher: ForgeViewPublisher;
+let publisher: PUAViewPublisher;
 let lifecycle: ResourceScope | null = null;
 
 interface ControllerState {
@@ -1655,7 +1655,7 @@ function installControllerListeners(): void {
 	});
 }
 let appBooted = false;
-export function startForgeApp(nextPublisher: ForgeViewPublisher): void {
+export function startPUAApp(nextPublisher: PUAViewPublisher): void {
 	publisher = nextPublisher;
 	if (appBooted) {
 		publishAllViewModels();
@@ -1694,7 +1694,7 @@ export function startForgeApp(nextPublisher: ForgeViewPublisher): void {
 function flushAgentDraftOnPageLeave(): void {
 	flushAgentDraft();
 }
-export function stopForgeApp(): void {
+export function stopPUAApp(): void {
 	if (!appBooted) return;
 	flushAgentDraftOnPageLeave();
 	appBooted = false;

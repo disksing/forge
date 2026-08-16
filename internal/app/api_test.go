@@ -200,7 +200,7 @@ func TestConcurrentResourceCreationAllocatesUniqueAtomicIDs(t *testing.T) {
 	if len(seen) != count {
 		t.Fatalf("created %d projects, want %d", len(seen), count)
 	}
-	matches, err := filepath.Glob(filepath.Join(workspace.Root(), ".forge-create-*"))
+	matches, err := filepath.Glob(filepath.Join(workspace.Root(), ".pua-create-*"))
 	if err != nil || len(matches) != 0 {
 		t.Fatalf("partial staging directories = %#v, %v", matches, err)
 	}
@@ -289,68 +289,6 @@ func TestMigrateDropsRemovedAgentCommandConfig(t *testing.T) {
 	}
 }
 
-func TestMigrateIsolatesLegacySessionProjectionWithoutTouchingRuntime(t *testing.T) {
-	root := t.TempDir()
-	workspace, err := app.Initialize(root, "en")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := workspace.EnsureResourceRuntime(); err != nil {
-		t.Fatal(err)
-	}
-	if err := workspace.Migrate(""); err != nil {
-		t.Fatal(err)
-	}
-	legacy := []byte(`{"version":1,"sessions":[{"id":"legacy","liveness":{"type":"pid","pid":1}}]}` + "\n")
-	legacyPath := filepath.Join(root, "forge-sessions.json")
-	if err := os.WriteFile(legacyPath, legacy, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	legacyLock := []byte("legacy-lock")
-	legacyLockPath := filepath.Join(root, ".forge-sessions.lock")
-	if err := os.WriteFile(legacyLockPath, legacyLock, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	generationPath := filepath.Join(root, ".pua", "runtime", "generations.json")
-	if err := os.WriteFile(generationPath, []byte("[]\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	generationBefore, err := os.ReadFile(generationPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	schedulerPath := filepath.Join(root, "scheduler", "scheduler.json")
-	schedulerBefore, err := os.ReadFile(schedulerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := workspace.Migrate(""); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
-		t.Fatalf("legacy Session projection still visible after migration: %v", err)
-	}
-	if _, err := os.Stat(legacyLockPath); !os.IsNotExist(err) {
-		t.Fatalf("legacy Session lock still visible after migration: %v", err)
-	}
-	backup, err := os.ReadFile(filepath.Join(root, ".pua", "legacy", "forge-sessions.json"))
-	if err != nil || string(backup) != string(legacy) {
-		t.Fatalf("legacy Session backup = %q, %v", backup, err)
-	}
-	lockBackup, err := os.ReadFile(filepath.Join(root, ".pua", "legacy", ".forge-sessions.lock"))
-	if err != nil || string(lockBackup) != string(legacyLock) {
-		t.Fatalf("legacy Session lock backup = %q, %v", lockBackup, err)
-	}
-	generationAfter, _ := os.ReadFile(generationPath)
-	schedulerAfter, _ := os.ReadFile(schedulerPath)
-	if string(generationAfter) != string(generationBefore) || string(schedulerAfter) != string(schedulerBefore) {
-		t.Fatal("migration changed the generation index or Scheduler content")
-	}
-	if err := workspace.Migrate(""); err != nil {
-		t.Fatalf("repeat migration was not idempotent: %v", err)
-	}
-}
-
 func TestResourceDetailToleratesDeletedMarkdownAndDirectories(t *testing.T) {
 	root := t.TempDir()
 	workspace, err := app.Initialize(root, "en")
@@ -409,60 +347,5 @@ func TestResourceDetailToleratesDeletedMarkdownAndDirectories(t *testing.T) {
 	}
 	if len(projectDetail.Files) != 1 || projectDetail.Files[0].Name != "AGENTS.md" {
 		t.Fatalf("expected only AGENTS.md after deleting project.md, got %#v", projectDetail.Files)
-	}
-}
-
-func TestWorkspaceControlDirectoryCompatibilityAndMigration(t *testing.T) {
-	root := t.TempDir()
-	workspace, err := app.Initialize(root, "en")
-	if err != nil {
-		t.Fatal(err)
-	}
-	current := filepath.Join(root, ".pua")
-	legacy := filepath.Join(root, ".forge")
-	if _, err := os.Stat(current); err != nil {
-		t.Fatalf("new Workspace did not use .pua: %v", err)
-	}
-	if err := os.Rename(current, legacy); err != nil {
-		t.Fatal(err)
-	}
-
-	workspace, err = app.OpenWorkspace(root)
-	if err != nil {
-		t.Fatalf("open legacy .forge Workspace: %v", err)
-	}
-	if _, err := workspace.EnsureResourceRuntime(); err != nil {
-		t.Fatalf("use legacy .forge runtime: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(legacy, "runtime")); err != nil {
-		t.Fatalf("legacy runtime was not preserved: %v", err)
-	}
-	if err := workspace.RenameControlDir(); err != nil {
-		t.Fatalf("rename legacy control directory: %v", err)
-	}
-	if _, err := os.Stat(current); err != nil {
-		t.Fatalf("renamed .pua control directory is missing: %v", err)
-	}
-	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
-		t.Fatalf("legacy .forge control directory remains after rename: %v", err)
-	}
-	if _, err := app.OpenWorkspace(root); err != nil {
-		t.Fatalf("open renamed .pua Workspace: %v", err)
-	}
-	if err := workspace.RenameControlDir(); err != nil {
-		t.Fatalf("repeated control directory rename is not idempotent: %v", err)
-	}
-}
-
-func TestWorkspaceRejectsAmbiguousControlDirectories(t *testing.T) {
-	root := t.TempDir()
-	if _, err := app.Initialize(root, "en"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(root, ".forge"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := app.OpenWorkspace(root); err == nil || !strings.Contains(err.Error(), "both .pua and .forge") {
-		t.Fatalf("expected ambiguous control directory error, got %v", err)
 	}
 }

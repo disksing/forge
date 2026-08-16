@@ -53,37 +53,17 @@ func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 	}
 }
 
-func TestCreateForgeSessionUsesAgentHubLiveness(t *testing.T) {
-	workspace := t.TempDir()
-	if _, err := app.Initialize(workspace, "en"); err != nil {
-		t.Fatal(err)
-	}
-	manager := newAgentManager(&server{})
-	id, err := manager.createForgeSession(context.Background(), serveWorkspace{ID: "workspace-one", Path: workspace},
-		agentRun{ID: "run-one", SourceExternalID: "workspace-one/run-one"},
-		config{AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "forge-one"})
-	if err != nil || id == "" {
-		t.Fatalf("create Forge session: id=%q err=%v", id, err)
-	}
-	if !strings.HasPrefix(id, "legacy-session-") {
-		t.Fatalf("legacy compatibility id = %q", id)
-	}
-	if _, err := os.Stat(filepath.Join(workspace, "forge-sessions.json")); !os.IsNotExist(err) {
-		t.Fatalf("legacy Forge Session projection was created: %v", err)
-	}
-}
-
 func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := forgeWorkspace.CreateProject("Cwd project", "cwd")
+	project, err := puaWorkspace.CreateProject("Cwd project", "cwd")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Cwd task", Slug: "cwd"}); err != nil {
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Cwd task", Slug: "cwd"}); err != nil {
 		t.Fatal(err)
 	}
 	manager := newAgentManager(&server{})
@@ -91,23 +71,12 @@ func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	detail, err := forgeWorkspace.Resource("project1.task1")
+	detail, err := puaWorkspace.Resource("project1.task1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want, _ := filepath.Abs(filepath.Join(workspace, filepath.FromSlash(detail.Path)))
 	if got != want {
 		t.Fatalf("expected resource cwd %s, got %s", want, got)
-	}
-}
-
-func TestEndForgeSessionIgnoresAlreadyPrunedSession(t *testing.T) {
-	workspace := t.TempDir()
-	if _, err := app.Initialize(workspace, "en"); err != nil {
-		t.Fatal(err)
-	}
-	manager := newAgentManager(&server{})
-	if err := manager.endForgeSession(context.Background(), serveWorkspace{Path: workspace}, "session-pruned"); err != nil {
-		t.Fatalf("already-pruned session should be treated as ended: %v", err)
 	}
 }

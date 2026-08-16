@@ -153,7 +153,7 @@ func TestAgentHubPollerRetriesCompletionHistoryAfterTransientFailure(t *testing.
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	const sessionID = "ses_retry_completion"
-	source := &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: workspace.ID + "/run-retry"}
+	source := &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: workspace.ID + "/run-retry"}
 	fake.mu.Lock()
 	fake.sessions[sessionID] = agentHubSession{ID: sessionID, State: "ready", Source: source}
 	fake.appendLocked(sessionID, "session.created", map[string]any{"id": sessionID})

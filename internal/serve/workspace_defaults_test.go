@@ -13,14 +13,14 @@ import (
 
 func TestWorkspaceDefaultsAndProjectTaskDefaultHTTPAPI(t *testing.T) {
 	root := t.TempDir()
-	forgeWorkspace, err := app.Initialize(root, "en")
+	puaWorkspace, err := app.Initialize(root, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.EnsureResourceRuntime(); err != nil {
+	if _, err := puaWorkspace.EnsureResourceRuntime(); err != nil {
 		t.Fatal(err)
 	}
-	project, err := forgeWorkspace.CreateProject("Project", "project")
+	project, err := puaWorkspace.CreateProject("Project", "project")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestWorkspaceDefaultsAndProjectTaskDefaultHTTPAPI(t *testing.T) {
 		t.Fatalf("update Project Task default = %d %s", taskDefaultResponse.Code, taskDefaultResponse.Body.String())
 	}
 
-	task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Task"})
+	task, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Task"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,11 +11,9 @@ import (
 
 // This file owns the pua serve side of AgentHub session reconciliation for
 // the one case the session poller cannot see in a live list: archived
-// sessions. The plain PUA CLI never probes AgentHub, so serve is the only
-// owner that releases a transient PUA session for an AgentHub-managed run.
-// Release requires either a locally observed durable
-// stopped edge or a continuous durable event history proving the archived
-// session passed through stopped. Every doubt stays fail closed.
+// sessions. Retirement requires either a locally observed durable stopped
+// edge or a continuous durable event history proving the archived session
+// passed through stopped. Every doubt stays fail closed.
 
 // permanentArchivedProofError marks archived-after-stopped proof failures
 // that cannot heal on their own because archived event history is immutable
@@ -98,11 +96,10 @@ func agentHubSourceConflicts(cfg config, run agentRun, session agentHubSession) 
 }
 
 // reconcileArchivedAgentHubSession resolves a run whose AgentHub session is
-// archived. The PUA session is released only when a durable stopped edge
-// was already observed locally or the archived event history continuously
-// proves the session passed through stopped; in both cases the release is
-// idempotent. Every other outcome keeps the run in recovering, retains the
-// transient PUA session record, and publishes a diagnostic notice.
+// archived. The generation is retired only when a durable stopped edge was
+// already observed locally or archived event history continuously proves the
+// session passed through stopped. Every other outcome keeps the run in
+// recovering and publishes a diagnostic notice.
 func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client *agentHubClient, session agentHubSession) {
 	rt.mu.Lock()
 	run := rt.run
@@ -111,7 +108,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 
 	if run.AgentHubStoppedObserved {
 		// The durable stopped edge was observed before the archive, so the
-		// transient PUA session may be released without proving it again.
+		// generation may be retired without proving it again.
 		// Completion history still needs to be reconciled because a transient
 		// event read may have happened after the stopped projection was saved.
 		_, _ = rt.mutateRun(func(run *agentRun) {
@@ -124,11 +121,8 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 		if run.CompletionPending {
 			rt.recordTurnCompletion(session)
 		}
-		if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
-			return
-		}
 		if err := retireStoredAgentRun(rt, rt.snapshotRun(), "agenthub_archived"); err != nil {
-			rt.addForgeNotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
+			rt.addPUANotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
 		}
 		return
 	}
@@ -146,14 +140,14 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 			rt.archivedProofFailed = true
 			rt.mu.Unlock()
 		}
-		rt.setRecoveryError(m, fmt.Errorf("cannot prove archived AgentHub session %s passed through durable stopped: %v; transient PUA session retained", session.ID, err))
+		rt.setRecoveryError(m, fmt.Errorf("cannot prove archived AgentHub session %s passed through durable stopped: %v; generation retained", session.ID, err))
 		return
 	}
 	if !proven {
 		rt.mu.Lock()
 		rt.archivedProofFailed = true
 		rt.mu.Unlock()
-		rt.setRecoveryError(m, fmt.Errorf("archived AgentHub session %s has no continuous durable stopped history; transient PUA session retained", session.ID))
+		rt.setRecoveryError(m, fmt.Errorf("archived AgentHub session %s has no continuous durable stopped history; generation retained", session.ID))
 		return
 	}
 
@@ -165,14 +159,11 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 		runtime.agentHubState = session.State
 	})
 	// The archived projection is the recovery equivalent of the observed
-	// ready/stopped edge. Inspect the durable terminal event before releasing
-	// the PUA session.
+	// ready/stopped edge. Inspect the durable terminal event before retiring the
+	// generation.
 	rt.prepareTurnCompletion(session)
 	rt.recordTurnCompletionHistory(session, history, latestCursor)
-	if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
-		return
-	}
 	if err := retireStoredAgentRun(rt, rt.snapshotRun(), "agenthub_archived"); err != nil {
-		rt.addForgeNotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
+		rt.addPUANotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
 	}
 }

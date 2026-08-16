@@ -16,8 +16,8 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-live", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_live",
-		SourceExternalID: workspace.ID + "/run-live", ForgeSessionID: "session-live",
-		Status: "running", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SourceExternalID: workspace.ID + "/run-live",
+		Status:           "running", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_live", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-stopped", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_stopped",
@@ -71,7 +71,6 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	if response := closeRuntimeTestRun(t, manager, workspace, "run-live"); response.Code != http.StatusOK {
 		t.Fatalf("test cleanup close failed: %d %s", response.Code, response.Body.String())
 	}
-	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
 func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
@@ -93,7 +92,7 @@ func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
 		})
 		fake.sessions[sessionID] = agentHubSession{
 			ID: sessionID, State: "stopped", UpdatedAt: now,
-			Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: workspace.ID + "/" + id},
+			Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "pua-runtime-test", ExternalID: workspace.ID + "/" + id},
 		}
 	}
 	fake.mu.Unlock()
@@ -190,8 +189,8 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-live", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_live",
-		SourceExternalID: workspace.ID + "/run-live", ForgeSessionID: "session-live",
-		Status: "running", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SourceExternalID: workspace.ID + "/run-live",
+		Status:           "running", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_live", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -211,16 +210,7 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 		defer rt.mu.Unlock()
 		return rt.run.Status == "idle"
 	})
-	// Let the background recovery pass finish its Forge session bind and
-	// projection saves before the deferred cancel and TempDir cleanup race it.
-	waitForRuntimeTest(t, func() bool {
-		sessions := testForgeSessions(t, workspace.Path)
-		for _, session := range sessions {
-			if session.Liveness.AgentHubSessionID == "ses_live" {
-				return true
-			}
-		}
-		return false
-	})
+	// Let the background recovery pass finish projection saves before the
+	// deferred cancel and TempDir cleanup race it.
 	time.Sleep(100 * time.Millisecond)
 }

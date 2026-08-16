@@ -79,31 +79,20 @@ func upsertManagedBlock(content, block string) (string, error) {
 }
 
 func managedBlockBounds(content string) (int, int, bool, error) {
-	type markers struct{ start, end string }
-	sets := []markers{
-		{start: puaPromptStart, end: puaPromptEnd},
-		{start: legacyForgePromptStart, end: legacyForgePromptEnd},
+	startCount := strings.Count(content, puaPromptStart)
+	endCount := strings.Count(content, puaPromptEnd)
+	if startCount == 0 && endCount == 0 {
+		return -1, -1, false, nil
 	}
-	matched := false
-	startIndex, endIndex := -1, -1
-	for _, set := range sets {
-		startCount := strings.Count(content, set.start)
-		endCount := strings.Count(content, set.end)
-		if startCount == 0 && endCount == 0 {
-			continue
-		}
-		if matched || startCount != 1 || endCount != 1 {
-			return 0, 0, false, fmt.Errorf("AGENTS.md managed markers are duplicated, mixed, incomplete, or out of order")
-		}
-		startIndex = strings.Index(content, set.start)
-		endMarkerIndex := strings.Index(content, set.end)
-		if endMarkerIndex < startIndex {
-			return 0, 0, false, fmt.Errorf("AGENTS.md managed end marker appears before start marker")
-		}
-		endIndex = endMarkerIndex + len(set.end)
-		matched = true
+	if startCount != 1 || endCount != 1 {
+		return 0, 0, false, fmt.Errorf("AGENTS.md managed markers are duplicated or incomplete")
 	}
-	return startIndex, endIndex, matched, nil
+	startIndex := strings.Index(content, puaPromptStart)
+	endMarkerIndex := strings.Index(content, puaPromptEnd)
+	if endMarkerIndex < startIndex {
+		return 0, 0, false, fmt.Errorf("AGENTS.md managed end marker appears before start marker")
+	}
+	return startIndex, endMarkerIndex + len(puaPromptEnd), true, nil
 }
 
 func puaPromptBlock(language string) string {
@@ -128,10 +117,8 @@ func findEnclosingWorkspaceRoot(start string) (string, error) {
 }
 
 const (
-	puaPromptStart         = "<!-- managed by pua cli -->"
-	puaPromptEnd           = "<!-- end of pua cli prompt -->"
-	legacyForgePromptStart = "<!-- managed by forge cli -->"
-	legacyForgePromptEnd   = "<!-- end of forge cli prompt -->"
+	puaPromptStart = "<!-- managed by pua cli -->"
+	puaPromptEnd   = "<!-- end of pua cli prompt -->"
 )
 
 const defaultWikiIndex = `# Workspace Wiki
@@ -266,7 +253,7 @@ Files outside the Workspace are not additionally restricted by PUA, but work mus
 
 Normally run PUA CLI from the resource directory you own. When --project or --task is omitted, PUA selects from the working directory. Prefer explicit resource arguments for cross-resource operations.
 
-The status, history, and message commands automatically find the PUA Server that owns the current Workspace. There is normally no need to pass --server or edit the control-directory serve.lock (.pua/serve.lock, or legacy .forge/serve.lock).
+The status, history, and message commands automatically find the PUA Server that owns the current Workspace. There is normally no need to pass --server or edit .pua/serve.lock.
 
 ## 5. Managing PUA resources
 

@@ -44,12 +44,8 @@ type agentRun struct {
 	ManualStopRequested  bool   `json:"manualStopRequested,omitempty"`
 	AgentProfile         string `json:"agentProfile,omitempty"`
 	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
-	// ForgeSessionID is retained only for the unexposed legacy agent-run
-	// compatibility path. Resource generations leave it empty and therefore do
-	// not serialize a PUA Session address.
-	ForgeSessionID    string `json:"forgeSessionId,omitempty"`
-	AgentHubSessionID string `json:"agentHubSessionId,omitempty"`
-	AgentHubAgentName string `json:"agentHubAgentName,omitempty"`
+	AgentHubSessionID    string `json:"agentHubSessionId,omitempty"`
+	AgentHubAgentName    string `json:"agentHubAgentName,omitempty"`
 	// AgentHubProviderID, AgentHubProviderName, and AgentHubModel are immutable
 	// launch-time catalog snapshots. History must not re-resolve them from the
 	// current AgentHub catalog after a binding or provider configuration change.
@@ -143,14 +139,14 @@ const (
 	defaultResourceIdleSleepAfter = 30 * time.Minute
 )
 
-type forgeNotice struct {
-	Source string          `json:"source"`
-	Type   string          `json:"type"`
-	Time   string          `json:"time"`
-	Data   forgeNoticeData `json:"data"`
+type puaNotice struct {
+	Source string        `json:"source"`
+	Type   string        `json:"type"`
+	Time   string        `json:"time"`
+	Data   puaNoticeData `json:"data"`
 }
 
-type forgeNoticeData struct {
+type puaNoticeData struct {
 	Level      string `json:"level"`
 	Method     string `json:"method"`
 	Text       string `json:"text"`
@@ -160,7 +156,7 @@ type forgeNoticeData struct {
 }
 
 type agentStreamMessage struct {
-	Notice *forgeNotice
+	Notice *puaNotice
 }
 
 type agentUploadResponse struct {
@@ -182,7 +178,6 @@ type agentRuntime struct {
 	mu                    sync.Mutex
 	turnActionMu          sync.Mutex
 	retirementMu          sync.Mutex
-	forgeSessionReleaseMu sync.Mutex
 	workspace             serveWorkspace
 	manager               *agentManager
 	run                   agentRun
@@ -374,39 +369,6 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 	return run.ResourceID == resourceID
 }
 
-func (m *agentManager) createForgeSession(ctx context.Context, workspace serveWorkspace, run agentRun, cfg config) (string, error) {
-	// Resource generations are now the PUA-side lifecycle record. Legacy
-	// agent-run compatibility code still carries a synthetic identifier so its
-	// in-memory control flow can converge, but it never creates a PUA Session
-	// projection.
-	_ = ctx
-	_ = workspace
-	_ = cfg
-	if strings.TrimSpace(run.GenerationID) == "" && strings.TrimSpace(run.ID) != "" {
-		return "legacy-session-" + run.ID, nil
-	}
-	return "", nil
-}
-
-func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace serveWorkspace, forgeSessionID, agentHubSessionID string) error {
-	// AgentHubSessionID is persisted on the generation record itself. This
-	// compatibility hook intentionally has no filesystem side effect.
-	_ = ctx
-	_ = workspace
-	_ = forgeSessionID
-	_ = agentHubSessionID
-	return nil
-}
-
-func (m *agentManager) endForgeSession(ctx context.Context, workspace serveWorkspace, sessionID string) error {
-	// Kept as a no-op for the unregistered legacy control path. There is no
-	// PUA Session projection to release in the resource lifecycle.
-	_ = ctx
-	_ = workspace
-	_ = sessionID
-	return nil
-}
-
 func (m *agentManager) agentRunCwd(ctx context.Context, workspace serveWorkspace, resourceID, requested string) (string, error) {
 	if strings.TrimSpace(requested) != "" {
 		return agentCwd(workspace.Path, requested)
@@ -420,14 +382,14 @@ func (m *agentManager) agentRunCwd(ctx context.Context, workspace serveWorkspace
 func (m *agentManager) resourceDir(ctx context.Context, workspace serveWorkspace, resourceID string) (string, error) {
 	_ = ctx
 	resourceID = strings.TrimSpace(resourceID)
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return "", err
 	}
 	if resourceID == app.SchedulerResourceID {
 		return safeWorkspacePath(workspace.Path, app.SchedulerResourceID)
 	}
-	detail, err := forgeWorkspace.Resource(resourceID)
+	detail, err := puaWorkspace.Resource(resourceID)
 	if err != nil {
 		return "", err
 	}
@@ -504,7 +466,7 @@ func (m *agentManager) unsubscribe(runID string, ch chan agentStreamMessage) {
 	close(ch)
 }
 
-func (m *agentManager) publishNotice(runID string, notice forgeNotice) {
+func (m *agentManager) publishNotice(runID string, notice puaNotice) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for ch := range m.subscribers[runID] {
@@ -966,8 +928,8 @@ func newRunID() string {
 	return "run-" + hex.EncodeToString(b[:])
 }
 
-func writeForgeNoticeSSE(w http.ResponseWriter, notice forgeNotice) {
+func writePUANoticeSSE(w http.ResponseWriter, notice puaNotice) {
 	data, _ := json.Marshal(notice)
-	_, _ = fmt.Fprint(w, "event: forge.notice\n")
+	_, _ = fmt.Fprint(w, "event: pua.notice\n")
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }

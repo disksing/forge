@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/disksing/pua/internal/workspacepath"
@@ -225,44 +224,6 @@ func (w *Workspace) Migrate(language string) error {
 	return nil
 }
 
-// RenameControlDir atomically moves an existing .forge control directory to
-// .pua. The owning serve process must be stopped; old binaries must not write
-// the Workspace after this migration.
-func (w *Workspace) RenameControlDir() error {
-	if err := w.require(); err != nil {
-		return err
-	}
-	controlRoot, err := workspacepath.ResolveControlDir(w.root)
-	if err != nil {
-		return &APIError{Operation: "rename Workspace control directory", Kind: "workspace_control", Workspace: w.root, Err: err}
-	}
-	if filepath.Base(controlRoot) == workspacepath.CurrentControlDirName {
-		return nil
-	}
-	err = withWorkspaceMutationLock(w.root, func() error {
-		serveLockPath := filepath.Join(controlRoot, "serve.lock")
-		serveLock, openErr := os.OpenFile(serveLockPath, os.O_CREATE|os.O_RDWR, 0o600)
-		if openErr != nil {
-			return openErr
-		}
-		defer serveLock.Close()
-		if lockErr := syscall.Flock(int(serveLock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); lockErr != nil {
-			return fmt.Errorf("Workspace is owned by a running pua serve process; stop it before renaming %s", workspacepath.LegacyControlDirName)
-		}
-		defer syscall.Flock(int(serveLock.Fd()), syscall.LOCK_UN)
-
-		destination := filepath.Join(w.root, workspacepath.CurrentControlDirName)
-		if renameErr := os.Rename(controlRoot, destination); renameErr != nil {
-			return renameErr
-		}
-		return syncDirectory(w.root)
-	})
-	if err != nil {
-		return &APIError{Operation: "rename Workspace control directory", Kind: "workspace_control", Workspace: w.root, Err: err}
-	}
-	return nil
-}
-
 func (w *Workspace) migrate(language string) error {
 	if err := w.require(); err != nil {
 		return err
@@ -286,9 +247,6 @@ func (w *Workspace) migrate(language string) error {
 	}
 	if err := migrateLegacyLogs(w.root); err != nil {
 		return &APIError{Operation: "migrate legacy resource logs", Kind: "legacy_log", Workspace: w.root, Err: err}
-	}
-	if err := isolateLegacySessionProjection(w.root); err != nil {
-		return &APIError{Operation: "migrate Workspace", Kind: "session_projection", Workspace: w.root, Err: err}
 	}
 	if err := ensureWorkspaceWiki(w.root, language); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
@@ -576,7 +534,7 @@ func (w *Workspace) createProject(input CreateProjectInput) (Project, error) {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
 	path := filepath.Join(w.root, projectDirectoryName(id, slug))
-	staging := filepath.Join(w.root, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
+	staging := filepath.Join(w.root, fmt.Sprintf(".pua-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
 	defer os.RemoveAll(staging)
 	if err := createResourceFiles(staging, &project, language); err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
@@ -710,7 +668,7 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
 	}
 	path := filepath.Join(parentPath, taskDirectoryName(id, slug))
-	staging := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
+	staging := filepath.Join(parentPath, fmt.Sprintf(".pua-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
 	defer os.RemoveAll(staging)
 	task := newTask(id, parentID, title, "")
 	if strings.TrimSpace(input.AgentBinding.Name) != "" || strings.TrimSpace(input.AgentBinding.Kind) != "" {

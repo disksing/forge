@@ -2,15 +2,15 @@ import { EditorView } from "@codemirror/view";
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createForgeAppChannels } from "../../src/app-channels";
+import { createPUAAppChannels } from "../../src/app-channels";
 import DetailPanel from "../../src/components/DetailPanel.svelte";
 
 const mounted: Array<ReturnType<typeof mount>> = [];
 
 const managedBlock = [
-  "<!-- managed by forge cli -->",
+  "<!-- managed by pua cli -->",
   "Generated guidance.",
-  "<!-- end of forge cli prompt -->",
+  "<!-- end of pua cli prompt -->",
 ].join("\n");
 
 function json(value: unknown, status = 200): Response {
@@ -24,12 +24,12 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe("Workspace AGENTS save flow", () => {
-  let stopForgeApp: (() => void) | null = null;
+  let stopPUAApp: (() => void) | null = null;
 
   afterEach(async () => {
     while (mounted.length) await unmount(mounted.pop()!);
-    stopForgeApp?.();
-    stopForgeApp = null;
+    stopPUAApp?.();
+    stopPUAApp = null;
     document.body.replaceChildren();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -81,7 +81,7 @@ describe("Workspace AGENTS save flow", () => {
       throw new Error(`Unexpected ${method} ${url.pathname}${url.search}`);
     }));
 
-    const channels = createForgeAppChannels();
+    const channels = createPUAAppChannels();
     const publisher = {
       renderAppShell: vi.fn(),
       renderCreateDialog: vi.fn(),
@@ -94,10 +94,10 @@ describe("Workspace AGENTS save flow", () => {
       renderToast: vi.fn(),
     };
     const controller = await import("../../src/app-controller");
-    stopForgeApp = controller.stopForgeApp;
-    controller.startForgeApp(publisher);
+    stopPUAApp = controller.stopPUAApp;
+    controller.startPUAApp(publisher);
 
-    await vi.waitFor(() => expect(channels.detail.current().workspaceAgents?.content).toContain("managed by forge cli"));
+    await vi.waitFor(() => expect(channels.detail.current().workspaceAgents?.content).toContain("managed by pua cli"));
     const target = document.createElement("section");
     target.id = "detailsPanel";
     document.body.append(target);

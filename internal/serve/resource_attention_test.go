@@ -16,11 +16,11 @@ import (
 func attentionTestServer(t *testing.T) (*server, string) {
 	t.Helper()
 	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
+	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateProject("Attention project", "attention"); err != nil {
+	if _, err := puaWorkspace.CreateProject("Attention project", "attention"); err != nil {
 		t.Fatal(err)
 	}
 	server := &server{config: filepath.Join(t.TempDir(), "serve.json")}
@@ -160,13 +160,13 @@ func TestResourceAttentionPrefersAnActiveOlderGeneration(t *testing.T) {
 
 func TestResourceAttentionSortsByTurnBoundariesInsteadOfRuntimeUpdates(t *testing.T) {
 	server, workspace := attentionTestServer(t)
-	forgeWorkspace, err := app.OpenWorkspace(workspace)
+	puaWorkspace, err := app.OpenWorkspace(workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resourceIDs := []string{"project1"}
 	for _, title := range []string{"Running older", "Idle older", "Idle newer"} {
-		task, createErr := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: "project1", Title: title})
+		task, createErr := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: "project1", Title: title})
 		if createErr != nil {
 			t.Fatal(createErr)
 		}

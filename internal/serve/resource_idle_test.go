@@ -21,7 +21,7 @@ func idleTestRun(workspace serveWorkspace, resourceID, runID, sessionID string, 
 		ResourceID:        resourceID,
 		Generation:        1,
 		GenerationID:      "gen-" + runID,
-		SourceInstanceID:  "forge-runtime-test",
+		SourceInstanceID:  "pua-runtime-test",
 		BindingKind:       "profile",
 		BindingName:       "default",
 		ProfileRevision:   "test-revision",
@@ -313,11 +313,11 @@ func TestResourceIdleSleepSchedulerTickResumesCurrentGeneration(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.AddSchedule(app.CreateScheduleInput{
+	if _, err := puaWorkspace.AddSchedule(app.CreateScheduleInput{
 		Description: "Inspect the workspace",
 		Condition:   "when the workspace needs review",
 		Target:      "workspace",
@@ -698,12 +698,12 @@ func TestStoppedSessionBindingChangeWinsBeforeResume(t *testing.T) {
 	}
 	waitForIdleGenerationSuspended(t, manager, workspace.Path, run.ID)
 
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	binding := app.AgentBinding{Kind: "agent", Name: "replacement-agent"}
-	if _, err := forgeWorkspace.SetResourceAgentBinding(run.ResourceID, binding); err != nil {
+	if _, err := puaWorkspace.SetResourceAgentBinding(run.ResourceID, binding); err != nil {
 		t.Fatal(err)
 	}
 	if err := manager.resourceBindingChanged(context.Background(), workspace, run.ResourceID, binding); err != nil {

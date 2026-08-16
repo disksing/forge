@@ -24,21 +24,18 @@ import (
 )
 
 const (
-	puaWorkspaceRootEnvironment       = "PUA_WORKSPACE_ROOT"
-	puaWorkspaceInstanceEnvironment   = "PUA_WORKSPACE_INSTANCE_ID"
-	puaResourceIDEnvironment          = "PUA_RESOURCE_ID"
-	forgeWorkspaceRootEnvironment     = "FORGE_WORKSPACE_ROOT"
-	forgeWorkspaceInstanceEnvironment = "FORGE_WORKSPACE_INSTANCE_ID"
-	forgeResourceIDEnvironment        = "FORGE_RESOURCE_ID"
-	workspaceStatusUsage              = "usage: pua workspace status [--server=<url>]"
-	projectStatusUsage                = "usage: pua project status [--project=<project>] [--server=<url>]"
-	taskStatusUsage                   = "usage: pua task status [--project=<project>] [--task=<task>] [--server=<url>]"
-	messageSendUsage                  = "usage: pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
-	messageShowUsage                  = "usage: pua message show --id=<message-id> [--server=<url>]"
-	workspaceHistoryUsage             = "usage: pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	projectHistoryUsage               = "usage: pua project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	taskHistoryUsage                  = "usage: pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	historyShowUsage                  = "usage: pua history turn|event show --ref=<reference> [--server=<url>] [--json]"
+	puaWorkspaceRootEnvironment     = "PUA_WORKSPACE_ROOT"
+	puaWorkspaceInstanceEnvironment = "PUA_WORKSPACE_INSTANCE_ID"
+	puaResourceIDEnvironment        = "PUA_RESOURCE_ID"
+	workspaceStatusUsage            = "usage: pua workspace status [--server=<url>]"
+	projectStatusUsage              = "usage: pua project status [--project=<project>] [--server=<url>]"
+	taskStatusUsage                 = "usage: pua task status [--project=<project>] [--task=<task>] [--server=<url>]"
+	messageSendUsage                = "usage: pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
+	messageShowUsage                = "usage: pua message show --id=<message-id> [--server=<url>]"
+	workspaceHistoryUsage           = "usage: pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	projectHistoryUsage             = "usage: pua project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	taskHistoryUsage                = "usage: pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	historyShowUsage                = "usage: pua history turn|event show --ref=<reference> [--server=<url>] [--json]"
 )
 
 type resourceServerOptions struct {
@@ -222,7 +219,7 @@ func inferCurrentResourceID() (string, error) {
 	return "workspace", nil
 }
 
-func normalizeForgeServerURL(value string) (string, error) {
+func normalizePUAServerURL(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", errors.New("pua serve owner address is empty")
@@ -283,7 +280,7 @@ func newResourceServerClient(serverOverride string) (*resourceServerClient, stri
 		}
 		serverURL = metadata.Address
 	}
-	serverURL, err = normalizeForgeServerURL(serverURL)
+	serverURL, err = normalizePUAServerURL(serverURL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -442,18 +439,9 @@ func runMessageSend(args []string) error {
 }
 
 func resolveMessageSender() (string, string, error) {
-	root, err := senderEnvironmentValue(puaWorkspaceRootEnvironment, forgeWorkspaceRootEnvironment)
-	if err != nil {
-		return "", "", err
-	}
-	instanceID, err := senderEnvironmentValue(puaWorkspaceInstanceEnvironment, forgeWorkspaceInstanceEnvironment)
-	if err != nil {
-		return "", "", err
-	}
-	resourceID, err := senderEnvironmentValue(puaResourceIDEnvironment, forgeResourceIDEnvironment)
-	if err != nil {
-		return "", "", err
-	}
+	root := strings.TrimSpace(os.Getenv(puaWorkspaceRootEnvironment))
+	instanceID := strings.TrimSpace(os.Getenv(puaWorkspaceInstanceEnvironment))
+	resourceID := strings.TrimSpace(os.Getenv(puaResourceIDEnvironment))
 	if root != "" || instanceID != "" || resourceID != "" {
 		currentWorkspace, currentErr := openApplicationWorkspace()
 		contextMatchesCurrent := currentErr == nil && sameWorkspacePath(root, currentWorkspace.Root())
@@ -503,18 +491,6 @@ func resolveMessageSender() (string, string, error) {
 		return "", "", err
 	}
 	return senderID, runtime.InstanceID, nil
-}
-
-func senderEnvironmentValue(primary, legacy string) (string, error) {
-	primaryValue := strings.TrimSpace(os.Getenv(primary))
-	legacyValue := strings.TrimSpace(os.Getenv(legacy))
-	if primaryValue != "" && legacyValue != "" && primaryValue != legacyValue {
-		return "", fmt.Errorf("%s and legacy %s are both set to different values", primary, legacy)
-	}
-	if primaryValue != "" {
-		return primaryValue, nil
-	}
-	return legacyValue, nil
 }
 
 func sameWorkspacePath(left, right string) bool {

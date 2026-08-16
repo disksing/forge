@@ -104,7 +104,7 @@ func newProxyTestManager(t *testing.T, hubURL string) (*agentManager, serveWorks
 	configPath := filepath.Join(t.TempDir(), "serve.json")
 	data, err := json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
-		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-proxy-test",
+		AgentHubEndpoint: hubURL, AgentHubInstanceID: "pua-proxy-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
 	if err != nil {
@@ -385,7 +385,7 @@ func TestAgentHubProxyStreamForwardsFramesCursorAndCacheHeader(t *testing.T) {
 	}
 }
 
-func TestAgentHubProxyStreamInterleavesForgeNotice(t *testing.T) {
+func TestAgentHubProxyStreamInterleavesPUANotice(t *testing.T) {
 	fake := &proxyFakeAgentHub{
 		streamBlock:      true,
 		streamStarted:    make(chan struct{}, 1),
@@ -415,11 +415,11 @@ func TestAgentHubProxyStreamInterleavesForgeNotice(t *testing.T) {
 		t.Fatalf("upstream frame missing before notice: %q", got)
 	}
 
-	manager.publishNotice("run-one", forgeNotice{
-		Source: "forge", Type: "forge.notice", Time: "2026-08-01T00:00:00Z",
-		Data: forgeNoticeData{Level: "error", Method: "agenthub/recovery", Text: "synthetic proxy notice"},
+	manager.publishNotice("run-one", puaNotice{
+		Source: "pua", Type: "pua.notice", Time: "2026-08-01T00:00:00Z",
+		Data: puaNoticeData{Level: "error", Method: "agenthub/recovery", Text: "synthetic proxy notice"},
 	})
-	got := readStreamUntil(t, reader, "event: forge.notice")
+	got := readStreamUntil(t, reader, "event: pua.notice")
 	got += readStreamUntil(t, reader, "synthetic proxy notice")
 	if strings.Contains(got, "\nid:") {
 		t.Fatalf("notice must not carry an AgentHub event id: %q", got)

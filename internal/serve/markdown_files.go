@@ -28,12 +28,12 @@ func (s *server) saveResourceMarkdownFile(w http.ResponseWriter, r *http.Request
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	resource, err := forgeWorkspace.ResourceValue(resourceID)
+	resource, err := puaWorkspace.ResourceValue(resourceID)
 	if err != nil {
 		writeError(w, err, http.StatusNotFound)
 		return
@@ -186,7 +186,7 @@ func replaceMarkdownFile(path string, content []byte, expectedHash string) error
 		return err
 	}
 
-	temp, err := os.CreateTemp(filepath.Dir(path), ".forge-markdown-*.tmp")
+	temp, err := os.CreateTemp(filepath.Dir(path), ".pua-markdown-*.tmp")
 	if err != nil {
 		return err
 	}

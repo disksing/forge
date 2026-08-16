@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 )
 
 type agentHubSettingsResponse struct {
@@ -132,9 +133,7 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		return agentHubSettingsResponse{}, err
 	}
 	effective := configured
-	if override, overrideErr := environmentOverride("PUA_AGENTHUB_URL", "FORGE_AGENTHUB_URL"); overrideErr != nil {
-		return agentHubSettingsResponse{}, overrideErr
-	} else if override != "" {
+	if override := strings.TrimSpace(os.Getenv("PUA_AGENTHUB_URL")); override != "" {
 		effective, err = normalizeAgentHubEndpoint(override)
 		if err != nil {
 			return agentHubSettingsResponse{}, err
