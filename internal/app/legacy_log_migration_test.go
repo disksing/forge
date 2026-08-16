@@ -47,6 +47,12 @@ func TestMigrateLegacyLogsIsIdempotentAndPreservesSourceOrder(t *testing.T) {
 	if !legacyLogArtifactMatches(artifact, legacyLogDigest(source)) || !strings.Contains(string(artifact), "entry-count: 2") {
 		t.Fatalf("legacy artifact metadata is incomplete:\n%s", artifact)
 	}
+	if !strings.Contains(string(artifact), legacyLogMarker) || !strings.Contains(string(artifact), "<!-- "+legacyLogEntryMarker+":") {
+		t.Fatalf("legacy artifact should use pua-branded markers:\n%s", artifact)
+	}
+	if strings.Contains(string(artifact), forgeLegacyLogMarker) || strings.Contains(string(artifact), forgeLegacyLogEntryMarker) {
+		t.Fatalf("legacy artifact should not keep forge-branded markers:\n%s", artifact)
+	}
 	if _, err := os.Stat(filepath.Join(taskDir, legacyLogFileName)); !os.IsNotExist(err) {
 		t.Fatalf("legacy source was not removed after durable migration: %v", err)
 	}
@@ -65,6 +71,53 @@ func TestMigrateLegacyLogsIsIdempotentAndPreservesSourceOrder(t *testing.T) {
 	}
 	if !bytes.Equal(artifact, repeated) {
 		t.Fatal("matching legacy artifact was rewritten during an idempotent retry")
+	}
+}
+
+func TestMigrateLegacyLogsAcceptsForgeBrandedArtifact(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Forge artifact", "forge-artifact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := workspace.ResourceValue(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, filepath.FromSlash(result.Path))
+	source := []byte("{\"id\":\"entry\",\"time\":\"2025-01-01T00:00:00Z\",\"title\":\"Entry\"}\n")
+	sourcePath := filepath.Join(dir, legacyLogFileName)
+	if err := os.WriteFile(sourcePath, source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := parseLegacyLogEntries(sourcePath, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgeArtifact := []byte(formatLegacyLogArtifact(legacyLogDigest(source), entries, forgeLegacyLogMarker, forgeLegacyLogEntryMarker))
+	artifactDir := filepath.Join(dir, "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifactPath := filepath.Join(artifactDir, legacyLogArtifactName)
+	if err := os.WriteFile(artifactPath, forgeArtifact, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Migrate(""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("legacy source was not removed next to a forge-branded artifact: %v", err)
+	}
+	if got, readErr := os.ReadFile(artifactPath); readErr != nil || !bytes.Equal(got, forgeArtifact) {
+		t.Fatalf("forge-branded artifact was rewritten: %v", readErr)
+	}
+	if !legacyLogArtifactMatches(forgeArtifact, legacyLogDigest(source)) {
+		t.Fatal("forge-branded artifact was not recognized as migrated")
 	}
 }
 

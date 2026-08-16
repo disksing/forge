@@ -180,7 +180,7 @@ func TestLegacyTaskWorkMigrationIsDigestMarkedIdempotentAndScoped(t *testing.T) 
 		t.Fatalf("open migration did not preserve meaningful Markdown or strip only the known template:\n%s", openTaskMD)
 	}
 	defaultTaskMD := readFile(t, filepath.Join(defaultPath, "task.md"))
-	if strings.Contains(defaultTaskMD, "Historical work record") || strings.Contains(defaultTaskMD, "forge:migration:work-md:v1") {
+	if strings.Contains(defaultTaskMD, "Historical work record") || strings.Contains(defaultTaskMD, "migration:work-md:v1") {
 		t.Fatalf("default-only legacy content should not create a chapter:\n%s", defaultTaskMD)
 	}
 	archivedTaskMD := readFile(t, filepath.Join(archivedPath, "task.md"))
@@ -192,10 +192,10 @@ func TestLegacyTaskWorkMigrationIsDigestMarkedIdempotentAndScoped(t *testing.T) 
 	if err := workspace.Migrate("zh-CN"); err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(t, filepath.Join(openPath, "task.md")); got != beforeOpen || strings.Count(got, "forge:migration:work-md:v1") != 1 {
+	if got := readFile(t, filepath.Join(openPath, "task.md")); got != beforeOpen || strings.Count(got, "pua:migration:work-md:v1") != 1 || strings.Contains(got, "forge:migration:work-md:v1") {
 		t.Fatalf("repeated migration changed or duplicated open task chapter:\n%s", got)
 	}
-	if got := readFile(t, filepath.Join(archivedPath, "task.md")); got != beforeArchived || strings.Count(got, "forge:migration:work-md:v1") != 1 {
+	if got := readFile(t, filepath.Join(archivedPath, "task.md")); got != beforeArchived || strings.Count(got, "pua:migration:work-md:v1") != 1 || strings.Contains(got, "forge:migration:work-md:v1") {
 		t.Fatalf("repeated migration changed or duplicated archived task chapter:\n%s", got)
 	}
 }
@@ -221,7 +221,7 @@ func TestLegacyTaskWorkMigrationFailsClosedAndRecoversFromPreparedMarker(t *test
 		}
 	})
 
-	t.Run("prepared marker is recoverable", func(t *testing.T) {
+	t.Run("prepared forge marker is recoverable", func(t *testing.T) {
 		root := t.TempDir()
 		workspace, taskPath := createMigrationFixture(t, root, "prepared")
 		source := []byte("# Prepared record\n\nKeep it.\n")
@@ -236,6 +236,39 @@ func TestLegacyTaskWorkMigrationFailsClosedAndRecoversFromPreparedMarker(t *test
 		}
 		if got := strings.Count(readFile(t, taskMDPath), "forge:migration:work-md:v1"); got != 1 {
 			t.Fatalf("prepared marker should remain singular, count=%d", got)
+		}
+	})
+
+	t.Run("prepared pua marker is recoverable", func(t *testing.T) {
+		root := t.TempDir()
+		workspace, taskPath := createMigrationFixture(t, root, "prepared-pua")
+		source := []byte("# Prepared record\n\nKeep it.\n")
+		writeFile(t, filepath.Join(taskPath, "work.md"), string(source))
+		taskMDPath := filepath.Join(taskPath, "task.md")
+		appendFile(t, taskMDPath, fmt.Sprintf("\n<!-- pua:migration:work-md:v1 source=work.md digest=%s -->\n## Historical work record (migrated from work.md)\n\nKeep it.\n", digest(source)))
+		if err := workspace.Migrate("en"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(taskPath, "work.md")); !os.IsNotExist(err) {
+			t.Fatalf("prepared pua marker should allow source cleanup, err=%v", err)
+		}
+		if got := strings.Count(readFile(t, taskMDPath), "pua:migration:work-md:v1"); got != 1 {
+			t.Fatalf("prepared pua marker should remain singular, count=%d", got)
+		}
+	})
+
+	t.Run("pua marker digest conflict retains source", func(t *testing.T) {
+		root := t.TempDir()
+		workspace, taskPath := createMigrationFixture(t, root, "conflict-pua")
+		source := []byte("# User record\n")
+		writeFile(t, filepath.Join(taskPath, "work.md"), string(source))
+		taskMDPath := filepath.Join(taskPath, "task.md")
+		appendFile(t, taskMDPath, fmt.Sprintf("\n<!-- pua:migration:work-md:v1 source=work.md digest=%s -->\n", digest([]byte("different"))))
+		if err := workspace.Migrate("en"); err == nil || !strings.Contains(err.Error(), "digest conflict") {
+			t.Fatalf("expected pua marker digest conflict, got %v", err)
+		}
+		if got := readFile(t, filepath.Join(taskPath, "work.md")); got != string(source) {
+			t.Fatalf("conflict should retain source, got %q", got)
 		}
 	})
 

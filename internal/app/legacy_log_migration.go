@@ -17,7 +17,13 @@ import (
 const (
 	legacyLogFileName     = "log.jsonl"
 	legacyLogArtifactName = "legacy-log.md"
-	legacyLogMarker       = "<!-- forge legacy log v1 -->"
+	// legacyLogMarker and legacyLogEntryMarker are written by new
+	// migrations. The forge-branded markers are still recognized so
+	// artifacts written before the rebrand count as already migrated.
+	legacyLogMarker           = "<!-- pua legacy log v1 -->"
+	forgeLegacyLogMarker      = "<!-- forge legacy log v1 -->"
+	legacyLogEntryMarker      = "pua-legacy-entry-base64"
+	forgeLegacyLogEntryMarker = "forge-legacy-entry-base64"
 )
 
 // legacyLogEntry is deliberately private to the migration. The application
@@ -90,7 +96,8 @@ func migrateLegacyLogFile(resourceDir string) error {
 		return err
 	}
 	digest := legacyLogDigest(source)
-	expectedArtifact := []byte(formatLegacyLogArtifact(digest, entries))
+	expectedArtifact := []byte(formatLegacyLogArtifact(digest, entries, legacyLogMarker, legacyLogEntryMarker))
+	forgeArtifact := []byte(formatLegacyLogArtifact(digest, entries, forgeLegacyLogMarker, forgeLegacyLogEntryMarker))
 	artifactDir, err := ensureLegacyArtifactDir(resourceDir)
 	if err != nil {
 		return err
@@ -104,7 +111,13 @@ func migrateLegacyLogFile(resourceDir string) error {
 		return fmt.Errorf("legacy artifact must not be a symbolic link: %s", artifactPath)
 	}
 	if existing, readErr := os.ReadFile(artifactPath); readErr == nil {
-		if !bytes.Equal(existing, expectedArtifact) {
+		switch {
+		case bytes.Equal(existing, expectedArtifact):
+		case bytes.Equal(existing, forgeArtifact):
+			// The artifact was written before the rebrand; keep it as is and
+			// verify against the forge-branded format.
+			expectedArtifact = forgeArtifact
+		default:
 			return fmt.Errorf("legacy artifact already exists with different or altered content: %s", artifactPath)
 		}
 	} else if !os.IsNotExist(readErr) {
@@ -170,7 +183,7 @@ func ensureLegacyArtifactDir(resourceDir string) (string, error) {
 }
 
 func writeLegacyLogArtifact(dir, path, digest string, entries []legacyLogEntry) error {
-	data := []byte(formatLegacyLogArtifact(digest, entries))
+	data := []byte(formatLegacyLogArtifact(digest, entries, legacyLogMarker, legacyLogEntryMarker))
 	tmp, err := os.OpenFile(filepath.Join(dir, ".legacy-log.md.tmp"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		if os.IsExist(err) {
@@ -197,16 +210,16 @@ func writeLegacyLogArtifact(dir, path, digest string, entries []legacyLogEntry) 
 	return syncDirectory(dir)
 }
 
-func formatLegacyLogArtifact(digest string, entries []legacyLogEntry) string {
+func formatLegacyLogArtifact(digest string, entries []legacyLogEntry, marker, entryMarker string) string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "# Legacy history\n\n%s\n<!-- source: %s -->\n<!-- source-digest: %s -->\n<!-- entry-count: %d -->\n\n", legacyLogMarker, legacyLogFileName, digest, len(entries))
+	fmt.Fprintf(&builder, "# Legacy history\n\n%s\n<!-- source: %s -->\n<!-- source-digest: %s -->\n<!-- entry-count: %d -->\n\n", marker, legacyLogFileName, digest, len(entries))
 	for index, entry := range entries {
 		encoded, _ := json.Marshal(entry)
 		base64Entry := base64.RawStdEncoding.EncodeToString(encoded)
 		fmt.Fprintf(&builder, "## %d. %s\n\n", index+1, html.EscapeString(entry.Title))
 		fmt.Fprintf(&builder, "- **ID:** <code>%s</code>\n- **Time:** <code>%s</code>\n\n", html.EscapeString(entry.ID), html.EscapeString(entry.Time))
 		fmt.Fprintf(&builder, "<details><summary>Details</summary>\n\n<pre>%s</pre>\n\n</details>\n\n", html.EscapeString(entry.Details))
-		fmt.Fprintf(&builder, "<!-- forge-legacy-entry-base64: %s -->\n\n", base64Entry)
+		fmt.Fprintf(&builder, "<!-- %s: %s -->\n\n", entryMarker, base64Entry)
 	}
 	return builder.String()
 }
@@ -218,5 +231,6 @@ func legacyLogDigest(source []byte) string {
 
 func legacyLogArtifactMatches(data []byte, digest string) bool {
 	text := string(data)
-	return strings.Contains(text, legacyLogMarker) && strings.Contains(text, "<!-- source: "+legacyLogFileName+" -->") && strings.Contains(text, "<!-- source-digest: "+digest+" -->")
+	hasMarker := strings.Contains(text, legacyLogMarker) || strings.Contains(text, forgeLegacyLogMarker)
+	return hasMarker && strings.Contains(text, "<!-- source: "+legacyLogFileName+" -->") && strings.Contains(text, "<!-- source-digest: "+digest+" -->")
 }

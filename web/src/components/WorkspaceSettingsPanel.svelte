@@ -125,7 +125,7 @@
         {/if}
       </div>
     {:else}
-      <div class="settings-empty">No workspaces managed by PUA GUI.</div>
+      <div class="settings-empty">No workspaces managed by PUA.</div>
     {/each}
   </div>
 </div>
