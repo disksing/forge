@@ -216,6 +216,8 @@ Long-lived Workspace knowledge lives in wiki/. Read wiki/index.md first, then on
 - repos/ contains shared source checkouts used only for reading and creating worktrees; never modify them directly.
 - All code changes must be made in a Task-owned worktree/.
 - Use an absolute destination under the current Task's worktree/ when creating a Git worktree.
+- Create and check out a Task-specific branch when adding a worktree, for example: git worktree add -b taskN-description <absolute-path> master. Never check out a shared trunk branch such as master or main directly in a Task worktree: stale worktree metadata can keep that branch occupied even after the Task is archived or its directory is removed, blocking other Tasks.
+- If a removed or archived Task left stale worktree metadata, run git worktree prune in the corresponding shared repository before creating another worktree.
 - PUA discovers a Task's repositories, branches, and diffs directly from the worktrees under its worktree/ directory; no registration is needed.
 
 ### Other resources

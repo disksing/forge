@@ -234,6 +234,8 @@ Workspace 的长期知识保存在 wiki/。先读 wiki/index.md，再选择与�
 - repos/ 是共享源码目录，只用于查询和创建 worktree，不得直接修改；
 - 任何代码修改都必须在 Task 自己的 worktree/ 中进行；
 - 创建 worktree 时，目标使用当前 Task worktree/ 下的绝对路径；
+- 创建 worktree 时必须同时创建并检出 Task 专用分支，例如：git worktree add -b taskN-xxx <绝对路径> master；不得直接在 Task worktree 中检出共享主干（如 master 或 main），否则即使 Task 已归档或目录已删除，残留的 worktree 登记仍可能长期占用该分支并阻塞其他 Task；
+- 如果已删除或归档的 Task 留下失效的 worktree 登记，先在对应共享仓库运行 git worktree prune 清理，再创建新的 worktree；
 - PUA 会直接根据 Task worktree/ 目录下的 worktree 识别仓库、分支和差异，无需登记。
 
 ### 其他资源
