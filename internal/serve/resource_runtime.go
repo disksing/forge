@@ -500,7 +500,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource generation: %w", err))
 		return
 	}
-	if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+	if !agentHubSessionMatchesRetirementTarget(cfg, record, session) {
 		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, record.GenerationID))
 		return
 	}
@@ -608,7 +608,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 			rt.setRecoveryError(m, fmt.Errorf("retire resource generation: %w", err))
 			return
 		}
-		if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+		if !agentHubSessionMatchesRetirementTarget(cfg, record, session) {
 			rt.setRecoveryError(m, fmt.Errorf("Stop response for generation %s did not match its AgentHub source", record.GenerationID))
 			return
 		}
@@ -628,7 +628,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 				rt.setRecoveryError(m, fmt.Errorf("confirm retiring resource generation: %w", err))
 				return
 			}
-			if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+			if !agentHubSessionMatchesRetirementTarget(cfg, record, session) {
 				rt.setRecoveryError(m, fmt.Errorf("confirmation for generation %s did not match its AgentHub source", record.GenerationID))
 				return
 			}
@@ -668,7 +668,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.setRecoveryError(m, fmt.Errorf("archive retired resource generation: %w", err))
 		return
 	}
-	if !agentHubSessionExactlyMatchesGeneration(cfg, record, archived) || archived.State != "archived" {
+	if !agentHubSessionMatchesRetirementTarget(cfg, record, archived) || archived.State != "archived" {
 		rt.setRecoveryError(m, fmt.Errorf("Archive response for generation %s was not a matching archived Session", record.GenerationID))
 		return
 	}

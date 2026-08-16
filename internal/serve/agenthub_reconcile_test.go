@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -176,7 +177,7 @@ func TestAgentHubPollerRetriesArchivedProofAfterTransientFailure(t *testing.T) {
 	})
 }
 
-func TestAgentHubPollerRejectsArchivedSessionWithConflictingSource(t *testing.T) {
+func TestAgentHubPollerRetiresArchivedSessionWithConflictingSource(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -194,15 +195,15 @@ func TestAgentHubPollerRejectsArchivedSessionWithConflictingSource(t *testing.T)
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	updated := pollerGenerationState(manager.runtimeByID(record.ID))
-	if updated.Status != "recovering" {
-		t.Fatalf("conflicting source must fail closed: %#v", updated)
+	updated, err := loadGenerationRecord(workspace.Path, record.ID)
+	if err != nil || !updated.Retired || updated.Status != "stopped" || !strings.Contains(updated.RetireReason, "source is incompatible") {
+		t.Fatalf("conflicting archived Session did not retire: %#v err=%v", updated, err)
 	}
 	fake.mu.Lock()
 	eventsCalls := fake.eventsCalls
 	fake.mu.Unlock()
 	if eventsCalls != 0 {
-		t.Fatalf("conflicting source must not read event history, got %d event calls", eventsCalls)
+		t.Fatalf("already archived replacement must not replay event history, got %d event calls", eventsCalls)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -115,6 +116,188 @@ func TestAgentHubRecoverySingleListForManyStoppedGenerations(t *testing.T) {
 	if rt := manager.runtimeByID("gen-007"); rt == nil {
 		t.Fatal("stopped runs were not registered as lightweight runtimes")
 	}
+}
+
+func TestAgentHubRecoveryReplacesBoundSessionWithIncompatibleSource(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	record := generationRecord{
+		ID: "gen-old-source", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-old-source", AgentHubSessionID: "ses-old-source",
+		AgentHubAgentName: "fake-agent", SourceInstanceID: "pua-runtime-test", SourceExternalID: "project1.task1/1",
+		BindingKind: "profile", BindingName: "default", ResolvedProfile: "default",
+		Status: "recovering", ReplacementPending: true, IdleSleepStopRequested: true,
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}
+	seedPollerGeneration(t, fake, workspace, record, agentHubSession{
+		ID: record.AgentHubSessionID, State: "stopped", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: "forge", InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
+	})
+	message, err := acceptMailboxMessage(workspace.Path, record.ResourceID, resourceMessageRequest{Text: "replace old source", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, found, loadErr := currentResourceGeneration(workspace.Path, record.ResourceID)
+		if loadErr != nil || !found || current.Generation <= record.Generation || current.AgentHubSessionID == record.AgentHubSessionID {
+			return false
+		}
+		updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+		return messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID
+	})
+	fake.mu.Lock()
+	oldSession := fake.sessions[record.AgentHubSessionID]
+	var replacement agentHubSession
+	for id, session := range fake.sessions {
+		if id != record.AgentHubSessionID && session.Source != nil && session.Source.Metadata["resourceId"] == record.ResourceID {
+			replacement = session
+			break
+		}
+	}
+	fake.mu.Unlock()
+	if oldSession.State != "archived" {
+		t.Fatalf("old incompatible Session was not archived: %#v", oldSession)
+	}
+	if replacement.ID == "" || replacement.Source == nil || replacement.Source.App != agentHubSourceApp || replacement.State != "running" {
+		t.Fatalf("replacement Session mismatch: %#v", replacement)
+	}
+}
+
+func TestAgentHubRecoveryRotatesGenerationAfterCreateIdempotencyConflict(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	record := generationRecord{
+		ID: "gen-create-conflict", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-create-conflict", AgentHubAgentName: "fake-agent",
+		SourceInstanceID: "pua-runtime-test", SourceExternalID: "project1.task1/1",
+		BindingKind: "profile", BindingName: "default", ResolvedProfile: "default",
+		Status: "recovering", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}
+	if err := rewriteTestGenerationRecords(workspace.Path, []generationRecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	message, err := acceptMailboxMessage(workspace.Path, record.ResourceID, resourceMessageRequest{Text: "replace conflicting create", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	fake.rejectIdempotencyKey = record.GenerationID
+	fake.mu.Unlock()
+
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, found, loadErr := currentResourceGeneration(workspace.Path, record.ResourceID)
+		if loadErr != nil || !found || current.Generation <= record.Generation || current.GenerationID == record.GenerationID {
+			return false
+		}
+		updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+		return messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID
+	})
+	records, err := loadGenerationRecords(workspace.Path)
+	if err != nil || len(records) < 2 || records[1].RetireReason == "" || !strings.Contains(records[1].RetireReason, "idempotency_conflict") {
+		t.Fatalf("conflicting generation was not retired with its reason: records=%#v err=%v", records, err)
+	}
+}
+
+func TestAgentHubRecoveryDoesNotRotateWhenBoundSessionReadIsTransient(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	record := generationRecord{
+		ID: "gen-transient-read", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-transient-read", AgentHubSessionID: "ses-transient-read",
+		AgentHubAgentName: "fake-agent", SourceInstanceID: "pua-runtime-test", SourceExternalID: "project1.task1/1",
+		Status: "recovering", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}
+	seedPollerGeneration(t, fake, workspace, record, agentHubSession{
+		ID: record.AgentHubSessionID, State: "stopped", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: "forge", InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
+	})
+	fake.mu.Lock()
+	fake.failGetSessionID = record.AgentHubSessionID
+	fake.mu.Unlock()
+
+	err := manager.recoverAgentHubGenerations(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "transient Session read failure") {
+		t.Fatalf("transient bound Session read error = %v", err)
+	}
+	current, found, loadErr := currentResourceGeneration(workspace.Path, record.ResourceID)
+	if loadErr != nil || !found || current.GenerationID != record.GenerationID || current.Retired {
+		t.Fatalf("transient read rotated the generation: current=%#v found=%v err=%v", current, found, loadErr)
+	}
+	fake.mu.Lock()
+	nextSession, stopCalls, oldState := fake.nextSession, fake.stopCalls, fake.sessions[record.AgentHubSessionID].State
+	fake.mu.Unlock()
+	if nextSession != 0 || stopCalls != 0 || oldState != "stopped" {
+		t.Fatalf("transient read caused Session side effects: creates=%d stops=%d state=%s", nextSession, stopCalls, oldState)
+	}
+}
+
+func TestAgentHubRecoveryDoesNotReplaceAfterUnknownStopOutcome(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	record := generationRecord{
+		ID: "gen-ambiguous-stop", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-ambiguous-stop", AgentHubSessionID: "ses-ambiguous-stop",
+		AgentHubAgentName: "fake-agent", SourceInstanceID: "pua-runtime-test", SourceExternalID: "project1.task1/1",
+		BindingKind: "profile", BindingName: "default", ResolvedProfile: "default",
+		Status: "recovering", ReplacementPending: true,
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}
+	seedPollerGeneration(t, fake, workspace, record, agentHubSession{
+		ID: record.AgentHubSessionID, State: "ready", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: "forge", InstanceID: "pua-runtime-test", ExternalID: record.SourceExternalID},
+	})
+	message, err := acceptMailboxMessage(workspace.Path, record.ResourceID, resourceMessageRequest{Text: "wait for certain stop", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	fake.failNextStop = true
+	fake.mu.Unlock()
+
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	current, found, loadErr := currentResourceGeneration(workspace.Path, record.ResourceID)
+	if loadErr != nil || !found || current.GenerationID != record.GenerationID || current.Retired || !current.ReplacementPending {
+		t.Fatalf("unknown Stop outcome released the generation: current=%#v found=%v err=%v", current, found, loadErr)
+	}
+	updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+	if messageErr != nil || !messageFound || updated.Status != resourceMessageQueued {
+		t.Fatalf("unknown Stop outcome consumed the mailbox item: message=%#v found=%v err=%v", updated, messageFound, messageErr)
+	}
+	fake.mu.Lock()
+	nextSession, stopCalls, oldState := fake.nextSession, fake.stopCalls, fake.sessions[record.AgentHubSessionID].State
+	fake.mu.Unlock()
+	if nextSession != 0 || stopCalls != 1 || oldState != "ready" {
+		t.Fatalf("unknown Stop outcome created a concurrent Session: creates=%d stops=%d state=%s", nextSession, stopCalls, oldState)
+	}
+
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, found, loadErr := currentResourceGeneration(workspace.Path, record.ResourceID)
+		if loadErr != nil || !found || current.Generation <= record.Generation || current.AgentHubSessionID == record.AgentHubSessionID {
+			return false
+		}
+		updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+		return messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID
+	})
 }
 
 func TestAgentHubRecoveryDoesNotReplayConfirmedActiveTurnAfterDaemonRestart(t *testing.T) {

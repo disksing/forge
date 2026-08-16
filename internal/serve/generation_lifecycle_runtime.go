@@ -228,10 +228,6 @@ func (m *agentManager) retireUnresumableGenerationLocked(ctx context.Context, rt
 		return err
 	}
 
-	cfg, _, cfgErr := m.agentHubRuntimeConfig()
-	if cfgErr != nil {
-		return cfgErr
-	}
 	session, sessionErr := client.GetSession(ctx, latest.AgentHubSessionID)
 	if sessionErr != nil {
 		if !isMissingAgentHubSessionError(sessionErr) {
@@ -248,20 +244,8 @@ func (m *agentManager) retireUnresumableGenerationLocked(ctx context.Context, rt
 		}
 		return retireStoredGeneration(rt, updated, resumeRetireReason(reason))
 	}
-	if !agentHubSessionExactlyMatchesGeneration(cfg, latest, session) {
-		updated, persistErr := rt.mutateGeneration(func(record *generationRecord) {
-			record.Status = "stopped"
-			record.AgentHubStoppedObserved = true
-			record.ReplacementPending = false
-			record.RetireReason = resumeRetireReason(reason)
-		})
-		if persistErr != nil {
-			return persistErr
-		}
-		return retireStoredGeneration(rt, updated, resumeRetireReason(reason))
-	}
 	if session.State == "archived" {
-		// An archived exact Session is already a terminal AgentHub boundary for
+		// An archived bound Session is already a terminal AgentHub boundary for
 		// this Resume demand. Preserve the normal generation retirement path but
 		// do not attempt to Resume or wait for a second provider proof; the
 		// archived Session cannot accept a new Turn.
@@ -301,4 +285,29 @@ func resumeRetireReason(err error) string {
 		return "session_resume_unavailable"
 	}
 	return "session_resume_unavailable: " + strings.TrimSpace(err.Error())
+}
+
+// retireGenerationWithoutSession releases a generation after AgentHub has
+// proved that its persisted Session identity cannot be recovered. Mailbox
+// ownership remains durable and will create a fresh generation on demand.
+func retireGenerationWithoutSession(rt *agentRuntime, reason string) error {
+	if rt == nil {
+		return nil
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "session_unavailable"
+	}
+	updated, err := rt.mutateGeneration(func(record *generationRecord) {
+		record.Status = "stopped"
+		record.AgentHubStoppedObserved = true
+		record.SessionResumeUnavailable = true
+		record.ReplacementPending = false
+		record.IdleSleepStopRequested = false
+		record.RetireReason = reason
+	})
+	if err != nil {
+		return err
+	}
+	return retireStoredGeneration(rt, updated, reason)
 }

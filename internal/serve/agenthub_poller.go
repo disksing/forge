@@ -346,6 +346,19 @@ func agentHubSessionExactlyMatchesGeneration(cfg config, record generationRecord
 		session.Source.ExternalID == externalID
 }
 
+// agentHubSessionMatchesRetirementTarget keeps normal Turn and Resume actions
+// source-strict, but lets an explicit replacement clean up the Session id that
+// the durable generation record owns. A Session is a replaceable execution
+// container; source drift must not leave its mailbox permanently stuck.
+func agentHubSessionMatchesRetirementTarget(cfg config, record generationRecord, session agentHubSession) bool {
+	if agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
+		return true
+	}
+	sessionID := strings.TrimSpace(record.AgentHubSessionID)
+	return sessionID != "" && session.ID == sessionID &&
+		(record.ReplacementPending || record.SessionResumeUnavailable)
+}
+
 // reconcileAgentHubGeneration projects one AgentHub session onto a local
 // generation record. Records are matched by source external id, falling back
 // to the bound AgentHub session id. Sessions absent from the non-archived
@@ -378,7 +391,14 @@ func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cf
 		if id := strings.TrimSpace(record.AgentHubSessionID); id != "" {
 			if fetched, err := client.GetSession(ctx, id); err == nil {
 				if agentHubSourceConflicts(cfg, record, fetched) {
-					rt.setRecoveryError(m, fmt.Errorf("AgentHub session %s source does not match the persisted PUA run source; generation retained", id))
+					if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client,
+						fmt.Errorf("AgentHub Session %s source is incompatible with generation %s", id, record.GenerationID)); retireErr != nil {
+						rt.setRecoveryError(m, retireErr)
+						return
+					}
+					if mailboxErr := m.reconcileResourceMailboxLocked(ctx, workspace, record.ResourceID); mailboxErr != nil {
+						rt.addPUANotice(m, "warning", "resource/message", "Queued replacement delivery failed: "+mailboxErr.Error())
+					}
 					return
 				}
 				session, found = fetched, true
@@ -389,6 +409,8 @@ func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cf
 		if record.GenerationID != "" && isLiveAgentStatus(record.Status) {
 			if err := m.recoverAgentHubGenerationLocked(context.WithoutCancel(ctx), cfg, client, workspace, record, nil); err != nil {
 				rt.addPUANotice(m, "warning", "agenthub/recovery", "Recreate missing resource generation: "+err.Error())
+			} else if mailboxErr := m.reconcileResourceMailboxLocked(ctx, workspace, record.ResourceID); mailboxErr != nil {
+				rt.addPUANotice(m, "warning", "resource/message", "Queued recovery delivery failed: "+mailboxErr.Error())
 			}
 			return
 		}

@@ -21,43 +21,45 @@ import (
 )
 
 type runtimeFakeAgentHub struct {
-	mu                  sync.Mutex
-	sessions            map[string]agentHubSession
-	events              map[string][]agentHubEvent
-	turns               map[string]map[string]agentHubTurn
-	nextSession         int
-	abortNextCreate     bool
-	duplicateSource     bool
-	gapAfter            int64
-	failEvents          bool
-	stopAtStopping      bool
-	failNextStop        bool
-	failNextInterrupt   bool
-	failNextResume      bool
-	resumeBeforeFailure bool
-	resumeErrorStatus   int
-	resumeErrorCode     string
-	resumeErrorMessage  string
-	resumeUpdatesAt     bool
-	failNextMessage     bool
-	enforceMessageIDs   bool
-	rejectAgentName     string
-	extraAgents         []string
-	stopHook            func(string)
-	resumeHook          func(string)
-	messageHook         func(string, agentHubInboundMessage)
-	messageSteers       []bool
-	messageRoles        []string
-	messageSenders      []*agentHubMessageSender
-	messageIDs          []string
-	messageInputs       map[string]agentHubInboundMessage
-	actions             []string
-	resumeEnvironments  []map[string]string
-	listCalls           int
-	stopCalls           int
-	eventsAttempts      int
-	eventsCalls         int
-	streamCalls         int
+	mu                   sync.Mutex
+	sessions             map[string]agentHubSession
+	events               map[string][]agentHubEvent
+	turns                map[string]map[string]agentHubTurn
+	nextSession          int
+	abortNextCreate      bool
+	rejectIdempotencyKey string
+	duplicateSource      bool
+	gapAfter             int64
+	failEvents           bool
+	failGetSessionID     string
+	stopAtStopping       bool
+	failNextStop         bool
+	failNextInterrupt    bool
+	failNextResume       bool
+	resumeBeforeFailure  bool
+	resumeErrorStatus    int
+	resumeErrorCode      string
+	resumeErrorMessage   string
+	resumeUpdatesAt      bool
+	failNextMessage      bool
+	enforceMessageIDs    bool
+	rejectAgentName      string
+	extraAgents          []string
+	stopHook             func(string)
+	resumeHook           func(string)
+	messageHook          func(string, agentHubInboundMessage)
+	messageSteers        []bool
+	messageRoles         []string
+	messageSenders       []*agentHubMessageSender
+	messageIDs           []string
+	messageInputs        map[string]agentHubInboundMessage
+	actions              []string
+	resumeEnvironments   []map[string]string
+	listCalls            int
+	stopCalls            int
+	eventsAttempts       int
+	eventsCalls          int
+	streamCalls          int
 }
 
 func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
@@ -110,8 +112,16 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	id, _ := url.PathUnescape(parts[2])
 	if len(parts) == 3 && r.Method == http.MethodGet {
 		f.mu.Lock()
+		fail := f.failGetSessionID == id
 		session, ok := f.sessions[id]
 		f.mu.Unlock()
+		if fail {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+				"code": "runtime_unavailable", "message": "synthetic transient Session read failure", "retryable": true,
+			}})
+			return
+		}
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -377,6 +387,14 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 	var request agentHubCreateSessionRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
 	f.mu.Lock()
+	if f.rejectIdempotencyKey != "" && request.IdempotencyKey == f.rejectIdempotencyKey {
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusConflict)
+		writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+			"code": "idempotency_conflict", "message": "session idempotency key conflicts with an existing session",
+		}})
+		return
+	}
 	if f.rejectAgentName != "" && request.AgentName == f.rejectAgentName {
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusBadRequest)

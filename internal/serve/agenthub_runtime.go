@@ -172,6 +172,11 @@ func findAgentHubSourceSessions(ctx context.Context, client *agentHubClient, sou
 	return filtered, nil
 }
 
+func isAgentHubIdempotencyConflict(err error) bool {
+	var apiErr *agentHubAPIError
+	return errors.As(err, &apiErr) && strings.EqualFold(strings.TrimSpace(apiErr.Code), "idempotency_conflict")
+}
+
 func duplicateAgentHubSourceError(source agentHubSource, sessions []agentHubSession) error {
 	ids := make([]string, 0, len(sessions))
 	for _, session := range sessions {
@@ -521,6 +526,24 @@ func (m *agentManager) recoverAgentHubGeneration(ctx context.Context, cfg config
 func (m *agentManager) recoverAgentHubGenerationLocked(ctx context.Context, cfg config, client *agentHubClient, workspace serveWorkspace, record generationRecord, candidates []agentHubSession) error {
 	source := agentHubSource{App: agentHubSourceApp, InstanceID: generationSourceInstanceID(cfg, record), ExternalID: record.SourceExternalID}
 	live := isLiveAgentStatus(record.Status)
+	if len(candidates) == 0 && strings.TrimSpace(record.AgentHubSessionID) != "" {
+		bound, getErr := client.GetSession(ctx, record.AgentHubSessionID)
+		if getErr != nil {
+			if isMissingAgentHubSessionError(getErr) {
+				rt := m.ensureRuntime(workspace, record, client)
+				return m.retireUnresumableGenerationLocked(ctx, rt, client,
+					fmt.Errorf("AgentHub Session %s is no longer available", record.AgentHubSessionID))
+			}
+			m.markGenerationRecovering(workspace, record)
+			return fmt.Errorf("inspect bound AgentHub Session %s before recovery: %w", record.AgentHubSessionID, getErr)
+		}
+		if agentHubSourceConflicts(cfg, record, bound) {
+			rt := m.ensureRuntime(workspace, record, client)
+			return m.retireUnresumableGenerationLocked(ctx, rt, client,
+				fmt.Errorf("AgentHub Session %s source is incompatible with generation %s", bound.ID, record.GenerationID))
+		}
+		candidates = []agentHubSession{bound}
+	}
 	if len(candidates) == 0 && live {
 		request := agentHubCreateSessionRequest{
 			Title: record.Title, Cwd: record.Cwd, AgentName: record.AgentHubAgentName,
@@ -540,6 +563,10 @@ func (m *agentManager) recoverAgentHubGenerationLocked(ctx context.Context, cfg 
 		}
 		recovered, createErr := m.findOrCreateAgentHubSession(ctx, client, source, request)
 		if createErr != nil {
+			if isAgentHubIdempotencyConflict(createErr) && record.GenerationID != "" {
+				rt := m.ensureRuntime(workspace, record, client)
+				return retireGenerationWithoutSession(rt, "session_create_idempotency_conflict: "+createErr.Error())
+			}
 			m.markGenerationRecovering(workspace, record)
 			return createErr
 		}

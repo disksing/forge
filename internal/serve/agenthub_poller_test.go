@@ -486,7 +486,7 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 	}
 }
 
-func TestAgentHubPollerMissingSessionMarksLiveGenerationRecovering(t *testing.T) {
+func TestAgentHubPollerMissingSessionRetiresLiveGeneration(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -505,27 +505,20 @@ func TestAgentHubPollerMissingSessionMarksLiveGenerationRecovering(t *testing.T)
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// Records with generation IDs are current lifecycle state: the poller
-	// reconciles live generations whose sessions are gone, while the stopped
-	// generation stays untouched.
+	// Missing live Sessions are terminal generation failures. With no mailbox
+	// demand they retire without eagerly creating empty replacements; the
+	// already-stopped generation remains dormant until a message needs it.
 	current, err := loadCurrentGenerationRecords(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(current) != 3 {
-		t.Fatalf("generations with IDs must stay in current lifecycle state: %#v", current)
+	if len(current) != 1 || current[0].ID != "gen-stopped" {
+		t.Fatalf("missing live generations did not retire cleanly: %#v", current)
 	}
 	for _, recordID := range []string{"gen-live", "gen-recovering"} {
-		rt := manager.runtimeByID(recordID)
-		if rt == nil {
-			t.Fatalf("live generation %s was not reconciled by the poller", recordID)
-		}
-		record := pollerGenerationState(rt)
-		if record.AgentHubSessionID == "ses_gone_live" || record.AgentHubSessionID == "ses_gone_recovering" || record.AgentHubSessionID == "" {
-			t.Fatalf("generation %s kept its missing session: %#v", recordID, record)
-		}
-		if record.Status == "running" || record.Status == "recovering" {
-			t.Fatalf("generation %s was not projected to a reconciled state: %#v", recordID, record)
+		record, loadErr := loadGenerationRecord(workspace.Path, recordID)
+		if loadErr != nil || !record.Retired || record.Status != "stopped" || !strings.Contains(record.RetireReason, "no longer available") {
+			t.Fatalf("missing generation %s was not retired: %#v err=%v", recordID, record, loadErr)
 		}
 	}
 	if stopped := manager.runtimeByID("gen-stopped"); stopped != nil {
