@@ -323,6 +323,33 @@
   box-shadow: inset 0 -2px 0 0 #2980b9;
 }
 
+:where([data-component-owner="project-tree"]) .task-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+:where([data-component-owner="project-tree"]) .task-state-tooltip {
+  position: fixed;
+  z-index: 70;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 6px 8px;
+  border: 1px solid var(--ink-deep);
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font-size: calc(12px * var(--sidebar-font-scale, 1));
+  font-weight: 600;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: normal;
+  word-break: break-word;
+}
+
 @media (max-width:420px) {
   :where([data-component-owner="project-tree"]) .project-task-summary {
     max-width: 42%;

@@ -200,19 +200,34 @@ describe("AppShell responsibility components", () => {
       statuses: [{ key: "task-blocked", className: "task-state-blocked", iconName: "circle-alert", recentOutput: false }],
     };
     const project = { ...resource("project-a"), expanded: true, children: [task] };
+    const onSelect = vi.fn();
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
-      onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleAttention: vi.fn(), onToast: vi.fn(),
+      onCreate: vi.fn(), onToggle: vi.fn(), onSelect, onReorder: vi.fn(), onDragState: vi.fn(), onToggleAttention: vi.fn(), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
 
     const taskRow = target.querySelector<HTMLElement>(".task-item")!;
-    expect(taskRow.title).toBe("Blocked: Need approval");
+    expect(taskRow.title).toBe("");
     expect(taskRow.querySelectorAll('[data-lucide="circle-alert"]')).toHaveLength(1);
     expect(taskRow.querySelector('[data-lucide="file-text"]')).toBeNull();
     expect(target.querySelector(".project-tree > .tree-item [data-component-owner='status-presentation']")).toBeNull();
+    expect(target.querySelector(".task-state-tooltip")).toBeNull();
+
+    taskRow.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    await tick();
+    expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
+
+    taskRow.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+    await tick();
+    expect(target.querySelector(".task-state-tooltip")).toBeNull();
+
+    taskRow.querySelector<HTMLElement>(".task-state-icon")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+    expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("ProjectTree chevron keeps a stable icon and reflects expansion with its class", async () => {
