@@ -212,6 +212,7 @@
   background: transparent;
   outline: none;
   resize: none;
+  font-size: calc(13px * var(--chat-font-scale, 1));
   line-height: 20px;
   color: #2c3e50;
 }
