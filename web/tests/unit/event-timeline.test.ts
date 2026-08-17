@@ -676,6 +676,8 @@ describe("EventTimeline", () => {
       expect(value).not.toBeNull();
       return value!;
     });
+    // The digest groups both messages on a role-tinted background.
+    expect(target.querySelector(".turn-collapsed-digest")?.getAttribute("data-trigger-role")).toBe("agent");
     const triggerRow = target.querySelector<HTMLElement>(".agent-message-row.agent");
     expect(triggerRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("project1.task2");
     expect(triggerRow?.querySelector(".agent-message-role-tag")?.textContent).toBe("agent");
@@ -717,6 +719,7 @@ describe("EventTimeline", () => {
       return value!;
     });
     expect(gap.querySelector(".turn-collapsed-status")?.textContent).toBe("failed");
+    expect(target.querySelector(".turn-collapsed-digest")?.getAttribute("data-trigger-role")).toBe("system");
     const triggerRow = target.querySelector<HTMLElement>(".agent-message-row.system");
     expect(triggerRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("System");
     // No final reply preview: the digest renders only the trigger message.

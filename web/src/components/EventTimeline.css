@@ -126,6 +126,30 @@
   text-overflow: ellipsis;
 }
 
+/* The collapsed digest groups its two messages on a background tinted by the
+   trigger role's color (agent blue, system gray) so the pair reads as one
+   Turn instead of two unrelated messages. */
+:where([data-component-owner="event-timeline"]) .turn-collapsed-digest {
+  margin: 10px 0;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-digest[data-trigger-role="agent"] {
+  background: color-mix(in srgb, var(--blue) 7%, transparent);
+  border-color: color-mix(in srgb, var(--blue) 16%, transparent);
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-digest[data-trigger-role="system"] {
+  background: color-mix(in srgb, var(--faint) 10%, transparent);
+  border-color: color-mix(in srgb, var(--faint) 20%, transparent);
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-digest .agent-message-row {
+  margin: 10px 0;
+}
+
 :where([data-component-owner="event-timeline"]) .turn-collapsed-gap {
   display: flex;
   align-items: center;

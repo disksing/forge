@@ -379,9 +379,12 @@
                    notifications) render as a two-message conversation digest:
                    the trigger message and the final reply keep the normal
                    sender-and-time message rows, and an ellipsis row stands in
-                   for the elided middle. Clicking the ellipsis loads and
-                   renders the full Turn; open Turns stream live and fold back
-                   into this digest when they close. -->
+                   for the elided middle. The digest sits on a background tinted
+                   by the trigger role's color so the two messages read as one
+                   Turn. Clicking the ellipsis loads and renders the full Turn;
+                   open Turns stream live and fold back into this digest when
+                   they close. -->
+              <div class="turn-collapsed-digest" data-trigger-role={collapsedTriggerRole(block.turn)}>
               {#if block.turn.triggerPreview}
                 <div class={`agent-message-row ${collapsedTriggerRole(block.turn)}`}>
                   <div class="agent-message-main">
@@ -410,6 +413,7 @@
                   </div>
                 </div>
               {/if}
+              </div>
             {:else if block.turn.triggerPreview}
               <div class="turn-summary-preview">{block.turn.triggerPreview}</div>
             {/if}
