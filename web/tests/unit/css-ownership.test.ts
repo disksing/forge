@@ -187,13 +187,22 @@ describe("CSS ownership", () => {
 
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
-    const selector = ':where([data-component-owner="workspace-settings-panel"]) .settings-row-main strong';
-    const start = css.indexOf(selector);
-    expect(start).toBeGreaterThanOrEqual(0);
-    const body = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
-    expect(body).toContain("overflow: hidden;");
-    expect(body).toContain("text-overflow: ellipsis;");
-    expect(body).toContain("white-space: nowrap;");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    // The name itself ellipsizes like the path does.
+    const name = body(':where([data-component-owner="workspace-settings-panel"]) .settings-row-main strong');
+    expect(name).toContain("overflow: hidden;");
+    expect(name).toContain("text-overflow: ellipsis;");
+    expect(name).toContain("white-space: nowrap;");
+
+    // The row is a grid item, so it also needs min-width: 0 to shrink below its
+    // min-content instead of pushing the actions out of the viewport.
+    const row = body(':where([data-component-owner="workspace-settings-panel"]) .settings-list-row');
+    expect(row).toContain("min-width: 0;");
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
