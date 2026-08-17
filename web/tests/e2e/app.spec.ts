@@ -874,10 +874,10 @@ test("favorites a resource and always shows all Activity tab counts", async ({ p
   await projectRow.hover();
   await projectRow.locator('[aria-label="Add Migration project to favorites"]').click();
   await expect(page.getByRole("tab", { name: "Running 0", exact: true })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Favorites 1", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Favs 1", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Unread 0", exact: true })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Problems 0", exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Issues 0", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Favs 1", exact: true }).click();
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row');
   await expect(activityRow).toHaveCount(1);
   await expect(activityRow).toContainText("Migration project");
@@ -898,7 +898,7 @@ test("favorites a resource and always shows all Activity tab counts", async ({ p
   await activityRow.hover();
   await activityRow.locator('[aria-label="Remove Migration project from favorites"]').click();
   await expect(activityRow).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "Favorites 0", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Favs 0", exact: true })).toBeVisible();
   expect(harness.resourceStateBodies.map((entry) => entry.path)).toEqual([
     "/api/workspaces/ws-test/resources/project1/favorite",
     "/api/workspaces/ws-test/resources/project1/favorite",
@@ -915,7 +915,7 @@ test("uses Task workflow state in the tree while keeping the favorite presentati
   await expect(taskRow.locator('[data-lucide="message-square"]')).toHaveCount(0);
   await taskRow.hover();
   await taskRow.locator('[aria-label="Add Infrastructure task to favorites"]').click();
-  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
+  await page.getByRole("tab", { name: "Favs 1", exact: true }).click();
 
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
   await expect(activityRow).toContainText("Favorite");
@@ -933,7 +933,7 @@ test("keeps Task workflow state independent from a sleeping Session", async ({ p
   await expect(taskRow.locator('[data-lucide="pause-circle"]')).toHaveCount(0);
   await taskRow.hover();
   await taskRow.locator('[aria-label="Add Infrastructure task to favorites"]').click();
-  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
+  await page.getByRole("tab", { name: "Favs 1", exact: true }).click();
 
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
   await expect(activityRow).toContainText("Favorite");
@@ -955,7 +955,7 @@ test("highlights the selected Activity resource instead of every active turn", a
   await expect(runningActivity).toHaveAttribute("data-active-turn", "true");
   await expect(runningActivity).toContainText("Resource working");
 
-  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
+  await page.getByRole("tab", { name: "Favs 1", exact: true }).click();
   const selectedActivity = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Migration project" });
   await expect(selectedActivity).toHaveClass(/\bselected\b/);
   await expect(selectedActivity).toHaveAttribute("aria-current", "page");
@@ -966,7 +966,7 @@ test("keeps a newly created task Activity row aligned when its first turn starts
   const harness = await installMockApi(page, "project1.task1", false, false, true);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
+  await page.getByRole("tab", { name: "Favs 1", exact: true }).click();
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
   await expect(activityRow).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-status")).toHaveCount(1);

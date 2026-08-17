@@ -19,11 +19,13 @@
 
   type ActivityTab = keyof ShellActivityLists;
   let activeTab = $state<ActivityTab>("running");
-  const tabs: Array<{ key: ActivityTab; label: string }> = [
-    { key: "running", label: "Running" },
-    { key: "favorites", label: "Favorites" },
-    { key: "unread", label: "Unread" },
-    { key: "problems", label: "Problems" },
+  // Short labels keep every category visible within the narrow sidebar; the
+  // full name stays available via tooltip (title) and the tabpanel aria-label.
+  const tabs: Array<{ key: ActivityTab; label: string; fullLabel: string }> = [
+    { key: "running", label: "Running", fullLabel: "Running" },
+    { key: "favorites", label: "Favs", fullLabel: "Favorites" },
+    { key: "unread", label: "Unread", fullLabel: "Unread" },
+    { key: "problems", label: "Issues", fullLabel: "Problems" },
   ];
 
   function statusClass(status: ShellStatusPresentation): string {
@@ -85,10 +87,10 @@
 <section class="attention-section" data-component-owner="attention-list">
   <div class="activity-tabs" role="tablist" aria-label="Activity categories">
     {#each tabs as tab}
-      <button type="button" role="tab" aria-selected={activeTab === tab.key} aria-controls={`activity-panel-${tab.key}`} class:active={activeTab === tab.key} onclick={() => { activeTab = tab.key; }}>{tab.label} <span class="activity-tab-count">{activity[tab.key].length}</span></button>
+      <button type="button" role="tab" title={tab.fullLabel} aria-selected={activeTab === tab.key} aria-controls={`activity-panel-${tab.key}`} class:active={activeTab === tab.key} onclick={() => { activeTab = tab.key; }}>{tab.label} <span class="activity-tab-count">{activity[tab.key].length}</span></button>
     {/each}
   </div>
-  <div id={`activity-panel-${activeTab}`} class="attention-list" role="tabpanel" aria-label={`${tabs.find((tab) => tab.key === activeTab)?.label || "Activity"} resources`}>
+  <div id={`activity-panel-${activeTab}`} class="attention-list" role="tabpanel" aria-label={`${tabs.find((tab) => tab.key === activeTab)?.fullLabel || "Activity"} resources`}>
     {#if activity[activeTab].length === 0}
       <div class="activity-row empty-attention"><Icon name="message-square" /><div><strong>No items</strong><span>{emptyMessage(activeTab)}</span></div></div>
     {:else}

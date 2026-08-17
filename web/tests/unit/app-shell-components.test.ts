@@ -428,7 +428,7 @@ describe("AppShell responsibility components", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    expect([...target.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim())).toEqual(["Running 1", "Favorites 1", "Unread 2", "Problems 0"]);
+    expect([...target.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim())).toEqual(["Running 1", "Favs 1", "Unread 2", "Issues 0"]);
     const activeRow = target.querySelector<HTMLElement>('[aria-label^="Task B."]')!;
     expect(activeRow.classList.contains("selected")).toBe(false);
     expect(activeRow.getAttribute("data-active-turn")).toBe("true");
