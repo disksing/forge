@@ -115,6 +115,9 @@ export interface AgentTurnItem {
   endedAt?: string;
   durationMs?: number;
   count?: number;
+  thinkingCount?: number;
+  reasoningUpdateCount?: number;
+  toolCallCount?: number;
   data?: Record<string, unknown>;
 }
 
@@ -219,7 +222,11 @@ export interface TimelineItem {
   tone?: string;
   type?: string;
   preview?: string;
+  count?: number;
   calls?: Array<Record<string, unknown> & { key?: string | number; callId?: string; name?: string; summary?: string; status?: string; output?: string; error?: string; method?: string; rawPreview?: string }>;
+  items?: TimelineItem[];
+  thinkingCount?: number;
+  reasoningUpdateCount?: number;
   toolCallCount?: number;
   approvalId?: string;
   title?: string;

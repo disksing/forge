@@ -339,21 +339,19 @@ describe("EventTimeline", () => {
     await vi.waitFor(() => expect(target.textContent).toContain("final reply"));
     const section = target.querySelector<HTMLElement>("section.conversation-turn")!;
     const rows = [...section.querySelectorAll<HTMLElement>(":scope > [data-timeline-key]")];
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(3);
 
     // Reasoning and tool calls precede the reply: the run header introduces
-    // the thinking block, carrying both the agent's name and the run's
-    // start time.
+    // combined activity group, carrying both the agent's name and the run's
+    // start time while preserving the legacy compact input.
     const header = rows[1].querySelector<HTMLElement>(".agent-run-header");
     expect(header?.querySelector("strong")?.textContent).toBe("Test Agent");
     expect(header?.querySelector("span")?.textContent).toBe(formatClock(startedAt));
-    expect(rows[1].querySelector(".agent-reasoning-note")).not.toBeNull();
-    expect(rows[2].querySelector(".agent-run-header")).toBeNull();
-    expect(rows[2].querySelector(".agent-tool-group")).not.toBeNull();
+    expect(rows[1].querySelector(".agent-activity-group")).not.toBeNull();
 
     // The reply belongs to the same run but still renders its own meta row
     // with the agent's name and the message's timestamp.
-    const reply = rows[3].querySelector<HTMLElement>(".agent-message-row.assistant");
+    const reply = rows[2].querySelector<HTMLElement>(".agent-message-row.assistant");
     expect(reply?.querySelector(".agent-message-meta strong")?.textContent).toBe("Test Agent");
     expect(reply?.querySelector(".agent-message-meta span")?.textContent).toBe(formatClock(startedAt));
     expect(reply?.classList.contains("final")).toBe(true);
@@ -617,16 +615,17 @@ describe("EventTimeline", () => {
     chatTarget.className = "chat-timeline";
     const chat = mount(EventTimeline, { target: chatTarget, props: { channel: createModelChannel(model("task-a", status("task-a"), projectConversationEvents)) } });
     cleanups.push(() => unmount(chat));
-    await vi.waitFor(() => expect(chatTarget.querySelector(".agent-tool-group")).not.toBeNull());
-    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
-    expect(chatTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
+    await vi.waitFor(() => expect(chatTarget.querySelector(".agent-activity-group")).not.toBeNull());
+    expect(chatTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
+    expect(chatTarget.querySelector(".agent-activity-preview")?.textContent).toContain("2 tool calls");
     expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(1);
 
-    const chatGroup = chatTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    const chatGroup = chatTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")!;
     chatGroup.open = true;
     chatGroup.dispatchEvent(new Event("toggle"));
     await vi.waitFor(() => expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
-    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect([...chatTarget.querySelectorAll<HTMLDetailsElement>(".agent-tool-item")].every((tool) => !tool.open)).toBe(true);
+    expect(chatTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
     expect(chatTarget.textContent).toContain("Command");
     expect(chatTarget.textContent).toContain("MCP");
 
@@ -638,14 +637,15 @@ describe("EventTimeline", () => {
     cleanups.push(() => unmount(historyComponent));
     await vi.waitFor(() => expect(historyTarget.querySelector(".history-turn-header")).not.toBeNull());
     historyTarget.querySelector<HTMLButtonElement>(".history-turn-header")!.click();
-    await vi.waitFor(() => expect(historyTarget.querySelector(".agent-tool-group")).not.toBeNull());
-    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
-    expect(historyTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
-    const historyGroup = historyTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    await vi.waitFor(() => expect(historyTarget.querySelector(".agent-activity-group")).not.toBeNull());
+    expect(historyTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
+    expect(historyTarget.querySelector(".agent-activity-preview")?.textContent).toContain("2 tool calls");
+    const historyGroup = historyTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")!;
     historyGroup.open = true;
     historyGroup.dispatchEvent(new Event("toggle"));
     await vi.waitFor(() => expect(historyTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
-    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect([...historyTarget.querySelectorAll<HTMLDetailsElement>(".agent-tool-item")].every((tool) => !tool.open)).toBe(true);
+    expect(historyTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
   });
 
   it("renders closed non-user turns as a two-message digest that expands on click and collapses again", async () => {

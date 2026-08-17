@@ -31,7 +31,7 @@ const (
 	projectStatusUsage              = "usage: pua project status [--project=<project>] [--server=<url>]"
 	taskStatusUsage                 = "usage: pua task status [--project=<project>] [--task=<task>] [--server=<url>]"
 	taskStateUsage                  = "usage: pua task state [--project=<project>] [--task=<task>] [--server=<url>] | pua task state set <waiting|blocked|paused|completed> [--note=<text>] [--project=<project>] [--task=<task>] [--server=<url>]"
-	messageSendUsage                = "usage: pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
+	messageSendUsage                = "usage: pua message send --to=<resource|user> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
 	messageShowUsage                = "usage: pua message show --id=<message-id> [--server=<url>]"
 	workspaceHistoryUsage           = "usage: pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
 	projectHistoryUsage             = "usage: pua project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
@@ -42,6 +42,7 @@ const (
 type resourceServerOptions struct {
 	ID              string
 	Mode            string
+	ModeSet         bool
 	ServerURL       string
 	Text            string
 	SubscribeResult *bool
@@ -99,16 +100,18 @@ func parseMessageServerArgs(args []string, command string) (resourceServerOption
 			index++
 			options.ID = strings.TrimSpace(args[index])
 		case strings.HasPrefix(arg, "--mode=") && command == "send":
-			if options.Mode != "" {
+			if options.ModeSet {
 				return resourceServerOptions{}, errors.New(usage)
 			}
 			options.Mode = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(arg, "--mode=")))
+			options.ModeSet = true
 		case arg == "--mode" && command == "send":
-			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") || options.Mode != "" {
+			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") || options.ModeSet {
 				return resourceServerOptions{}, errors.New(usage)
 			}
 			index++
 			options.Mode = strings.ToLower(strings.TrimSpace(args[index]))
+			options.ModeSet = true
 		case strings.HasPrefix(arg, "--subscribe-result=") && command == "send":
 			if options.SubscribeResult != nil {
 				return resourceServerOptions{}, errors.New(usage)
@@ -483,6 +486,9 @@ func runMessageSend(args []string) error {
 	if err != nil {
 		return err
 	}
+	if !isStableResourceTarget(options.ID) {
+		return runUserMessageSend(client, options, senderID, senderInstanceID)
+	}
 	body := map[string]any{
 		"text": options.Text, "mode": options.Mode, "role": "agent",
 		"sender":                    map[string]string{"id": senderID, "name": senderID},
@@ -493,6 +499,65 @@ func runMessageSend(args []string) error {
 	}
 	var response map[string]any
 	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/messages", url.PathEscape(client.workspaceID), url.PathEscape(options.ID))
+	if err := client.request(context.Background(), http.MethodPost, path, body, &response); err != nil {
+		return err
+	}
+	return printJSON(response)
+}
+
+// isStableResourceTarget mirrors the Server's stable resource id vocabulary
+// (workspace, scheduler, projectN, projectN.taskM). Any other --to value is a
+// user name; reserved lookalike names are rejected at user registration, so
+// the two namespaces cannot collide.
+func isStableResourceTarget(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "workspace" || value == app.SchedulerResourceID {
+		return true
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) < 1 || len(parts) > 2 || !numberedResourcePart(parts[0], "project") {
+		return false
+	}
+	return len(parts) == 1 || numberedResourcePart(parts[1], "task")
+}
+
+func numberedResourcePart(value, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	digits := strings.TrimPrefix(value, prefix)
+	if digits == "" {
+		return false
+	}
+	for _, character := range digits {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// runUserMessageSend delivers an agent-to-user message into the target user's
+// durable inbox. Mode and result subscription are resource mailbox concepts
+// and do not apply to user delivery.
+func runUserMessageSend(client *resourceServerClient, options resourceServerOptions, senderID, senderInstanceID string) error {
+	userName := options.ID
+	if err := app.ValidateUserName(userName); err != nil {
+		return fmt.Errorf("invalid user target %q: %w", userName, err)
+	}
+	if options.ModeSet {
+		return errors.New("--mode applies only to resource targets")
+	}
+	if options.SubscribeResult != nil {
+		return errors.New("--subscribe-result applies only to resource targets")
+	}
+	body := map[string]any{
+		"text":                      options.Text,
+		"sender":                    map[string]string{"id": senderID, "name": senderID},
+		"senderWorkspaceInstanceId": senderInstanceID,
+	}
+	var response map[string]any
+	path := fmt.Sprintf("/api/workspaces/%s/users/%s/messages", url.PathEscape(client.workspaceID), url.PathEscape(userName))
 	if err := client.request(context.Background(), http.MethodPost, path, body, &response); err != nil {
 		return err
 	}

@@ -59,15 +59,21 @@ GET  /api/workspaces/{workspaceId}/users
 POST /api/workspaces/{workspaceId}/users
 PUT  /api/workspaces/{workspaceId}/users/{name}
 DELETE /api/workspaces/{workspaceId}/users/{name}
+GET  /api/workspaces/{workspaceId}/users/{name}/messages
+POST /api/workspaces/{workspaceId}/users/{name}/messages
+PUT  /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}/read
+POST /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}/reply
 ```
 
 手动结束当前 Task Turn 时，Server 会在 AgentHub Interrupt 成功后把持久化 Task state 设为 `paused`，并在同一个资源控制器临界区取消尚未送达的 steer；这样 terminal event 不会把用户刚停止的 Task 自动续推。Workspace、Project 和 Scheduler 的 End Turn 不写 Task state。响应中的 `taskState` / `taskStateError` 分别报告自动暂停结果和异常。
 
 `POST .../generation/end?generationId={currentGenerationId}` 只在没有活动 Turn/approval 时接受。它以 generation ID 防止过期页面误操作，随后沿统一 lifecycle 完成 Session Stop、stopped 确认、Archive 和 generation retire；不会立即创建空 successor，下一条 mailbox 消息会按资源当前绑定懒创建新 generation。
 
-`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `activity`，其中 `running`、`favorites`、`unread` 和 `problems` 是相互独立的四个列表，同一资源可同时出现在多个列表。资源树快照包含当前用户的 `userState.favorite`、`userState.readTurnNumber`、`latestTurnNumber` 与 `unreadCount`；其中 `latestTurnNumber` 只表示最新已完成 Turn，活动 Turn 仅出现在 `running`，不计入未读。收藏仅支持 Project 和 Task，且只由用户通过 `PUT .../favorite` 改变；创建资源、发送消息或阅读都不会自动收藏。`PUT .../read` 接收前端实际观察到的 `throughTurnNumber`，只单调推进当前用户的已读游标，且不允许超过资源当前已完成 Turn 高水位，因此活动 Turn 不能被提前标记已读。个人 UI/资源状态保存在 `<control-dir>/users/{name}/ui-state.json`；公共 Turn 编号高水位保存在 `<control-dir>/resource-state.json`。用户级请求通过 `X-PUA-User` 指定用户，未提供时兼容使用默认 `User`。归档 Project/Task 时会同步删除所有用户的收藏与阅读状态。ui-state 还保存侧栏虚拟目录（`folders` 与 `folderOrder`）：虚拟目录是纯 UI 层的 Task 分组，只挂在 Project 下、不支持嵌套，不影响磁盘上的真实任务目录；`taskOrder` 中混合记录项目根级的 Task 与目录 ID。归档 Task 时会将其从所属目录移除，归档 Project 时会连带删除其目录。
+`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `activity`，其中 `running`、`favorites`、`unread` 和 `problems` 是相互独立的四个列表，同一资源可同时出现在多个列表。资源树快照包含当前用户的 `userState.favorite`、`userState.readTurnNumber`、`latestTurnNumber` 与 `unreadCount`；其中 `latestTurnNumber` 只表示最新已完成 Turn，活动 Turn 仅出现在 `running`，不计入未读。收藏仅支持 Project 和 Task，且只由用户通过 `PUT .../favorite` 改变；创建资源、发送消息或阅读都不会自动收藏。`PUT .../read` 接收前端实际观察到的 `throughTurnNumber`，只单调推进当前用户的已读游标，且不允许超过资源当前已完成 Turn 高水位，因此活动 Turn 不能被提前标记已读。Scheduler 不参与未读计算，也不会出现在 `unread` 列表。用户通过 `POST .../messages` 发送 role 为 `user` 的消息时，服务端会自动把该资源的已读游标推进到当前最新已完成 Turn（即发消息隐式触发一次 read，新触发的 Turn 完成后重新计为 1 条未读）；Agent 消息不影响用户的已读游标。前端在 Project 或虚拟目录处于折叠状态时，会把其内部 Task 的未读数聚合到该行的未读胶囊上。个人 UI/资源状态保存在 `<control-dir>/users/{name}/ui-state.json`；公共 Turn 编号高水位保存在 `<control-dir>/resource-state.json`。用户级请求通过 `X-PUA-User` 指定用户，未提供时兼容使用默认 `User`。归档 Project/Task 时会同步删除所有用户的收藏与阅读状态。ui-state 还保存侧栏虚拟目录（`folders` 与 `folderOrder`）：虚拟目录是纯 UI 层的 Task 分组，只挂在 Project 下、不支持嵌套，不影响磁盘上的真实任务目录；`taskOrder` 中混合记录项目根级的 Task 与目录 ID。归档 Task 时会将其从所属目录移除，归档 Project 时会连带删除其目录。
 
-用户名只允许 ASCII 字母、数字、下划线和减号，最长 80 个字符。`POST .../users` 显式注册用户，`PUT .../users/{name}` 接收 `{ "preference": "..." }`，删除用户会级联删除该用户目录，但不会改写历史消息中的 sender。用户只是 Workspace 范围的身份标记，不构成认证或权限边界。
+用户名只允许 ASCII 字母、数字、下划线和减号，最长 80 个字符；`workspace`、`scheduler`、`project`、`task` 以及 `projectN`、`taskN` 这类与稳定资源 ID 相同或近似的名字（不区分大小写）被保留，不能注册为用户名，避免 `pua message send --to=` 目标产生歧义。`POST .../users` 显式注册用户，`PUT .../users/{name}` 接收 `{ "preference": "..." }`，删除用户会级联删除该用户目录，但不会改写历史消息中的 sender。用户只是 Workspace 范围的身份标记，不构成认证或权限边界。
+
+用户收件箱是资源 mailbox 的外向对应物：Agent 通过 `POST .../users/{name}/messages`（携带稳定 sender 资源 ID 与匹配的 Workspace instance ID 作为来源证明）把消息持久化到 `<control-dir>/users/{name}/inbox.json`；投递在用户在 Web GUI 的 Inbox 面板中阅读时完成（`PUT .../read` 逐条标记已读并保留首个已读时间戳）。用户的回复由 `POST .../reply` 转换为对来源资源的普通 role=user mailbox 消息，投递、generation 唤醒与 steer/enqueue 处理完全复用现有 mailbox 管线；回复成功后 inbox 条目记录 `repliedAt` 并同时视为已读。inbox 最多保留 200 条，超出时优先淘汰最旧的已读消息，未读消息不因保留策略丢失。
 
 `PUT .../generation-policy` 更新 `workspace.json` 中统一覆盖 Workspace、Project、Task 和 Scheduler 的自动轮换预算。缺少该配置的现有 Workspace 与新 Workspace 均默认启用 20 个已结束 Turn 或累计 120 分钟 Turn wall-clock 的 OR 阈值；Turn 之间的 idle 不计时。设置页可以整体关闭策略并保留预算值。
 
@@ -109,7 +115,7 @@ ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/appro
 
 资源历史接口以版本化 base64url opaque reference/cursor 绑定 Workspace instance、资源和 generation。列表跨 generation 反向分页，保留创建时标题、绑定与解析结果；缺失、损坏或暂时不可读的 AgentHub 历史形成显式 gap，单个 gap 不阻断更旧历史。浏览器先加载 Turn 摘要，由视口按需请求详情；只有当前 generation 的开放 Turn 通过资源级 `events` 补齐原始事件并接入 SSE，terminal 后替换为紧凑 Turn。跨 generation 的复合 key、滚动锚点、未读与草稿由 PUA 管理。
 
-AgentHub 的固定 revision `@agenthub/event-timeline` 仍只负责解释当前开放 Turn 的 canonical raw events 和 provider tool semantics；PUA 自己的 adapter 渲染已关闭 Turn 的紧凑 items，不制造伪 canonical events。AgentHub source app 与恢复诊断事件使用协议标识 `pua` / `pua.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。
+AgentHub 的固定 revision `@agenthub/event-timeline` 负责把当前开放 Turn 的 canonical raw events 投影为连续 `activity`（思考与工具调用）及其他可见条目；PUA 自己的 adapter 直接消费已关闭 Turn 的紧凑 `activity` items，不制造伪 canonical events。连接旧 AgentHub 时，PUA 只在内存中把相邻 `thinking`/`tool` 紧凑条目合并成同一形状。AgentHub source app 与恢复诊断事件使用协议标识 `pua` / `pua.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。
 
 资源 generation 向 AgentHub Session 注入 `PUA_WORKSPACE_ROOT`、`PUA_WORKSPACE_INSTANCE_ID` 和 `PUA_RESOURCE_ID`，供本地 CLI 验证 Agent sender provenance。创建仍由 CLI 或 Web 界面委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。每条输入的 `subscribeResult` 省略时默认为 true，实际 delivered 后按 generation+Turn+稳定 sender 建立订阅；同一 sender 在同一 Turn 的多条输入聚合为一条 `turn_result`，payload 带全部源 message IDs，其他 sender 独立投递。`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。两类系统通知在 durable accept 时请求 `steer` 且保持 `ModeFrozen=false`，交由普通 mailbox reconcile 按目标活动 Turn 与 steer capability 冻结为 `steer` 或降级为 `enqueue`（分别记录 `no_active_turn`/`steer_unsupported`）；已冻结模式重试不得漂移。结果和终态通知在源资源的独立 outbox 中保存可恢复 operation：目标 mailbox durable accepted 后清空生成正文，只保留 accepted/delivery 摘要，目标 delivery 进入明确终态后删除 operation 并把最小 notification 摘要写入源 receipt。目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息强制 `subscribeResult=false`，不会再生成通知。
 

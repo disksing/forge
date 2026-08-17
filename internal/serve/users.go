@@ -42,6 +42,10 @@ func (s *server) handleUsers(w http.ResponseWriter, r *http.Request, workspaceID
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	if len(parts) >= 2 && parts[0] != "" && parts[1] == "messages" {
+		s.agents.handleUserMessages(w, r, workspaceID, parts[0], parts[2:])
+		return
+	}
 	if len(parts) == 0 {
 		switch r.Method {
 		case http.MethodGet:

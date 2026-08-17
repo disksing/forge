@@ -963,7 +963,7 @@ const timeline = buildTimeline([
     }
   } }
 ]);
-const thinking = timeline.find((item) => item.kind === "thinking");
+const thinking = timeline.find((item) => item.kind === "activity")?.items.find((item) => item.kind === "thinking");
 const approval = timeline.find((item) => item.kind === "approval");
 if (thinking.startTime !== "2026-01-01T00:00:00Z" || thinking.time !== "2026-01-01T00:01:02Z") {
   throw new Error("thinking timestamps were not projected");
@@ -972,7 +972,7 @@ const folded = buildTimeline([
   { id: 10, time: "2026-01-01T00:02:03Z", startTime: "2026-01-01T00:02:00Z", type: "message.reasoning.delta", data: { text: "folded" } },
   { id: 11, time: "2026-01-01T00:02:04Z", type: "message.assistant.delta", data: { text: "answer" } },
 ]);
-const foldedThinking = folded.find((item) => item.kind === "thinking");
+const foldedThinking = folded.find((item) => item.kind === "activity")?.items.find((item) => item.kind === "thinking");
 if (foldedThinking.startTime !== "2026-01-01T00:02:00Z" || foldedThinking.time !== "2026-01-01T00:02:03Z") {
   throw new Error("folded thinking timestamps were not projected");
 }
@@ -1007,7 +1007,7 @@ func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
 	}
 	sum := sha256.Sum256(bundle)
 	actual := hex.EncodeToString(sum[:])
-	if source.Version != "1.0.0" || source.APIEventContractVersion != "agenthub.api.v1" ||
+	if source.Version != "2.0.0" || source.APIEventContractVersion != "agenthub.api.v1" ||
 		source.Revision == "" || source.SHA256 != actual {
 		t.Fatalf("unexpected vendored timeline source: source=%#v actualSHA=%s", source, actual)
 	}

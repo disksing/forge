@@ -137,6 +137,7 @@ describe("HistoryTimeline", () => {
     };
     const turn = {
       reference: "turn-toggle", turnId: "turn-toggle", status: "completed", closed: true,
+      triggerRole: "agent",
       startedAt: "2026-08-15T01:00:00Z", durationMs: 2000, triggerPreview: "hello",
       finalReplyPreview: "done", eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2,
       generation,

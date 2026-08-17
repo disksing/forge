@@ -4,6 +4,7 @@
   import { onDestroy, onMount, tick } from "svelte";
 
   import { ApiClient } from "../api/client";
+  import ActivityGroup from "./ActivityGroup.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController, turnIsCollapsedByPolicy } from "./chat-state";
   import { effectiveGenerationStatus } from "./generation-status";
@@ -12,12 +13,9 @@
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { ChatContextSnapshot, ConversationBlock, EventTimelineModel, FilePreviewModel, ResourceHistoryTurnSummary, TimelineItem } from "./models";
-  import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
-  import { formatClock, markTurnAgentRuns, markTurnFinalAssistant } from "./timeline-events";
-  import { toolGroupKey } from "./tool-group";
-  import ToolGroup from "./ToolGroup.svelte";
+  import { formatClock, groupTimelineActivities, markTurnAgentRuns, markTurnFinalAssistant } from "./timeline-events";
   import UnknownEvent from "./UnknownEvent.svelte";
 
   let { channel }: { channel: ModelChannel<EventTimelineModel> } = $props();
@@ -40,8 +38,6 @@
   let follow = true;
   let preview = $state<{ section: string; path: string } | null>(null);
   const client = new ApiClient();
-  const openCache = new Map<string, Map<string, boolean>>();
-  let openTools = $state(new Map<string, boolean>());
   // Viewport fill state. Collapsed Turns expand bottom-up one at a time until
   // the conversation overflows the viewport (FILL_STEP_LIMIT bounds a
   // pathological run of tiny Turns); visibility-triggered expansions arriving
@@ -79,7 +75,6 @@
         contextChanged = true;
         deferredSnapshot = null;
         preview = null;
-        openTools = new Map(openCache.get(next.identity) ?? []);
         fillArmed = false;
         deferredTurnExpands.clear();
       }
@@ -160,7 +155,7 @@
 
   function blockItems(block: ConversationBlock): TimelineItem[] {
     const items = block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
-    return markTurnAgentRuns(markTurnFinalAssistant(items));
+    return markTurnAgentRuns(groupTimelineActivities(markTurnFinalAssistant(items)));
   }
 
   function blockAgentName(block: ConversationBlock): string {
@@ -310,20 +305,9 @@
     else scroll.scrollTop = previousTop + (scroll.scrollHeight - previousHeight);
   }
 
-  function rememberToolOpen(item: TimelineItem, open: boolean): void {
-    const key = timelineKey(item);
-    openTools = new Map(openTools).set(key, open);
-    openCache.set(snapshot.identity, new Map(openTools));
-    if (open) void expandCompact(item);
-  }
-
   function expandCompact(item: TimelineItem): Promise<void> | undefined {
     if (!item.compact || !item.generationId || !item.rangeStartEventId || !item.rangeEndEventId) return;
     return controller?.expandRange(item.generationId, item.rangeStartEventId, item.rangeEndEventId);
-  }
-
-  function toolOpen(item: TimelineItem): boolean {
-    return openTools.get(timelineKey(item)) ?? false;
   }
 
   function openLinkedFile(path: string): void {
@@ -361,7 +345,9 @@
   }
 
   function timelineKey(item: TimelineItem): string {
-    const key = item.kind === "tools" ? toolGroupKey(item) : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
+    const key = item.kind === "activity" && item.rangeStartEventId
+      ? String(item.rangeStartEventId)
+      : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
     return `${item.generationId || snapshot.generationId}:${item.kind}:${key}`;
   }
 
@@ -440,10 +426,8 @@
               {/if}
               {#if item.kind === "message"}
                 <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} />
-              {:else if item.kind === "thinking"}
-                <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
-              {:else if item.kind === "tools"}
-                <ToolGroup {item} generationId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
+              {:else if item.kind === "activity"}
+                <ActivityGroup {item} onExpand={() => expandCompact(item)} />
               {:else if item.kind === "approval"}
                 <ApprovalCard {item} generationId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={model.onApproval} onToast={model.onToast} />
               {:else if item.kind === "lifecycle"}

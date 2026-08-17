@@ -198,18 +198,21 @@ type agentHubEvent struct {
 }
 
 type agentHubTurnItem struct {
-	Type         string                 `json:"type"`
-	Role         string                 `json:"role,omitempty"`
-	Sender       *agentHubMessageSender `json:"sender,omitempty"`
-	Steer        bool                   `json:"steer,omitempty"`
-	Text         string                 `json:"text,omitempty"`
-	StartEventID int64                  `json:"startEventId"`
-	EndEventID   int64                  `json:"endEventId"`
-	StartedAt    string                 `json:"startedAt"`
-	EndedAt      string                 `json:"endedAt"`
-	DurationMS   int64                  `json:"durationMs"`
-	Count        int                    `json:"count"`
-	Data         json.RawMessage        `json:"data,omitempty"`
+	Type                 string                 `json:"type"`
+	Role                 string                 `json:"role,omitempty"`
+	Sender               *agentHubMessageSender `json:"sender,omitempty"`
+	Steer                bool                   `json:"steer,omitempty"`
+	Text                 string                 `json:"text,omitempty"`
+	StartEventID         int64                  `json:"startEventId"`
+	EndEventID           int64                  `json:"endEventId"`
+	StartedAt            string                 `json:"startedAt"`
+	EndedAt              string                 `json:"endedAt"`
+	DurationMS           int64                  `json:"durationMs"`
+	Count                int                    `json:"count"`
+	ThinkingCount        int                    `json:"thinkingCount,omitempty"`
+	ReasoningUpdateCount int                    `json:"reasoningUpdateCount,omitempty"`
+	ToolCallCount        int                    `json:"toolCallCount,omitempty"`
+	Data                 json.RawMessage        `json:"data,omitempty"`
 }
 
 type agentHubTurn struct {

@@ -55,4 +55,14 @@ func TestWorkspaceUsersLifecycleAndValidation(t *testing.T) {
 			t.Fatalf("invalid user name %q was accepted", name)
 		}
 	}
+	for _, name := range []string{"workspace", "Workspace", "scheduler", "SCHEDULER", "project", "task", "project1", "task42", "Project0", "TASK7"} {
+		if err := app.ValidateUserName(name); err == nil {
+			t.Fatalf("reserved user name %q was accepted", name)
+		}
+	}
+	for _, name := range []string{"User", "disksing", "project-manager", "task_runner", "projection", "taskforce"} {
+		if err := app.ValidateUserName(name); err != nil {
+			t.Fatalf("valid user name %q was rejected: %v", name, err)
+		}
+	}
 }

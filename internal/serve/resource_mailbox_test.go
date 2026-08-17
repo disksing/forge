@@ -726,6 +726,87 @@ func TestResourceServerAPIStatusSendAndMessageQuery(t *testing.T) {
 	}
 }
 
+func TestUserMessageSendMarksResourceRead(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	now := "2026-08-13T00:00:00Z"
+	record := generationRecord{
+		ID: "gen-auto-read", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-auto-read", AgentHubSessionID: "session-auto-read",
+		Status: "idle", TurnNumber: 2, Title: "Auto read", Cwd: workspace.Path, CreatedAt: now, UpdatedAt: now, CompletionAt: now,
+	}
+	if err := rewriteTestGenerationRecords(workspace.Path, []generationRecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := manager.server.treeAt(context.Background(), workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Projects) != 1 || len(tree.Projects[0].Children) != 1 || tree.Projects[0].Children[0].UnreadCount != 2 {
+		t.Fatalf("task should start with two unread Turns: %#v", tree.Projects)
+	}
+
+	// Agent-to-agent messages leave the user's read cursor untouched.
+	agentRecorder := httptest.NewRecorder()
+	manager.server.handleWorkspace(agentRecorder, httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/messages", strings.NewReader(`{"text":"coordinate","role":"agent","sender":{"id":"project1.task2","name":"Task two"}}`)))
+	if agentRecorder.Code != http.StatusAccepted {
+		t.Fatalf("agent send failed: %d %s", agentRecorder.Code, agentRecorder.Body.String())
+	}
+	state, err := manager.server.resourceUserStateForResource(workspace.Path, "project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ReadTurnNumber != nil {
+		t.Fatalf("agent message moved the read cursor: %#v", state)
+	}
+
+	// A user message marks the resource read through the latest completed Turn.
+	userRecorder := httptest.NewRecorder()
+	manager.server.handleWorkspace(userRecorder, httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/messages", strings.NewReader(`{"text":"hello","role":"user","sender":{"name":"User"}}`)))
+	if userRecorder.Code != http.StatusAccepted {
+		t.Fatalf("user send failed: %d %s", userRecorder.Code, userRecorder.Body.String())
+	}
+	state, err = manager.server.resourceUserStateForResource(workspace.Path, "project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ReadTurnNumber == nil || *state.ReadTurnNumber != 2 {
+		t.Fatalf("user message did not mark the resource read: %#v", state)
+	}
+	tree, err = manager.server.treeAt(context.Background(), workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task := tree.Projects[0].Children[0]; task.UnreadCount != 0 || len(tree.Activity.Unread) != 0 {
+		t.Fatalf("resource stayed unread after user send: task=%#v unread=%#v", task, tree.Activity.Unread)
+	}
+
+	// The Turn the sends triggered becomes the next unread one once done.
+	manager.waitBackground()
+	current, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
+	if err != nil || !found {
+		t.Fatalf("triggered generation missing: found=%v err=%v", found, err)
+	}
+	current.TurnNumber = 3
+	current.Status = "idle"
+	current.CurrentTurnID = ""
+	current.CompletionAt = "2026-08-13T00:10:00Z"
+	current.UpdatedAt = "2026-08-13T00:10:00Z"
+	if err := saveGenerationRecord(workspace.Path, current); err != nil {
+		t.Fatal(err)
+	}
+	tree, err = manager.server.treeAt(context.Background(), workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task := tree.Projects[0].Children[0]; task.UnreadCount != 1 {
+		t.Fatalf("next completed Turn did not become unread: %#v", task)
+	}
+}
+
 func TestResourceServerAPIListsAndSteersWaitingMessageInPlace(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)

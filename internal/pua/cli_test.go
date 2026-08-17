@@ -284,6 +284,72 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	})
 }
 
+func TestMessageSendToUserTarget(t *testing.T) {
+	t.Setenv(puaWorkspaceRootEnvironment, "")
+	t.Setenv(puaWorkspaceInstanceEnvironment, "")
+	t.Setenv(puaResourceIDEnvironment, "")
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Mailbox project")
+		if err := os.Chdir(filepath.Join(root, "project1")); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "task", "create", "Mailbox task")
+		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
+			t.Fatal(err)
+		}
+		var requestBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/users/disksing/messages") {
+				if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+					t.Error(err)
+				}
+				_, _ = io.WriteString(w, `{"messageId":"umsg-test","user":"disksing","sourceResourceId":"project1.task1","unread":true}`)
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		defer server.Close()
+		lock := map[string]any{"pid": os.Getpid(), "address": server.URL, "workspacePath": root}
+		data, err := json.Marshal(lock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".pua", "serve.lock"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		sent := run(t, "message", "send", "--to=disksing", "hello user")
+		if !strings.Contains(sent, `"messageId": "umsg-test"`) {
+			t.Fatalf("unexpected user send response: %s", sent)
+		}
+		if requestBody["text"] != "hello user" {
+			t.Fatalf("unexpected user message request: %#v", requestBody)
+		}
+		if _, exists := requestBody["mode"]; exists {
+			t.Fatalf("user target carried resource mailbox mode: %#v", requestBody)
+		}
+		sender, _ := requestBody["sender"].(map[string]any)
+		if sender["id"] != "project1.task1" {
+			t.Fatalf("sender provenance did not use current resource: %#v", sender)
+		}
+		var config app.Config
+		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
+			t.Fatal(err)
+		}
+		if requestBody["senderWorkspaceInstanceId"] != config.InstanceID {
+			t.Fatalf("sender Workspace provenance = %#v, want %q", requestBody["senderWorkspaceInstanceId"], config.InstanceID)
+		}
+
+		if _, err := runErr(t, "message", "send", "--to=disksing", "--mode=enqueue", "hello"); err == nil || !strings.Contains(err.Error(), "--mode applies only to resource targets") {
+			t.Fatalf("user target accepted --mode: %v", err)
+		}
+		if _, err := runErr(t, "message", "send", "--to=project1", "hello"); err == nil {
+			t.Fatal("resource-lookalike user name was treated as a user target")
+		}
+	})
+}
+
 func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
 		t.Fatalf("expected pua start to be unknown, got %v", err)
