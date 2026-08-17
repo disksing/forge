@@ -4,7 +4,7 @@ import type {
   ResourceHistoryGeneration, ResourceHistoryPage, ResourceHistorySegment,
   ResourceHistoryTurnDetail, ResourceHistoryTurnSummary, ResourceMessageStatus, TimelineItem,
 } from "./models";
-import { compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
+import { applyPUAMessagePayload, compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
 import { formatToolCallCount, normalizeToolCallCount } from "./tool-group";
 
 // A small summary page keeps the initial history read cheap: the Chat view
@@ -805,7 +805,7 @@ function compactTurnItem(item: AgentTurnItem, generationId: string): TimelineIte
   const base = { key, time: item.endedAt || item.startedAt, startTime: item.startedAt, generationId };
   const data = item.data && typeof item.data === "object" ? item.data : {};
   switch (item.type) {
-    case "message": return [{ ...base, kind: "message", role: item.role || "user", sender: item.sender, steer: item.steer, text: item.text || "" }];
+    case "message": return [applyPUAMessagePayload({ ...base, kind: "message", role: item.role || "user", sender: item.sender, steer: item.steer, text: item.text || "" }, item.payload)];
     case "thinking": {
       const count = Math.max(1, Number(item.count) || 1);
       return [{ ...base, kind: "thinking", count, text: `Reasoning details omitted from compact history · ${count} update(s)`, compact: true, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId }];

@@ -109,6 +109,7 @@ export interface AgentTurnItem {
   sender?: { name?: string; id?: string; sessionId?: string };
   steer?: boolean;
   text?: string;
+  payload?: unknown;
   startEventId: number;
   endEventId: number;
   startedAt?: string;
@@ -219,6 +220,7 @@ export interface TimelineItem {
   active?: boolean;
   steer?: boolean;
   sender?: { name?: string; id?: string; sessionId?: string };
+  payload?: unknown;
   tone?: string;
   type?: string;
   preview?: string;

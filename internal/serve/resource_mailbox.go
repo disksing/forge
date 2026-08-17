@@ -992,10 +992,7 @@ func findCanonicalAgentHubMessage(ctx context.Context, client *agentHubClient, s
 			if json.Unmarshal(event.Data, &canonical) != nil || canonical.MessageID != expected.ID {
 				continue
 			}
-			if canonical.Role == "" {
-				canonical.Role = "user"
-			}
-			if canonical.Text != expected.Text || canonical.Role != expected.Role || !reflect.DeepEqual(canonical.Sender, expected.Sender) {
+			if !canonicalAgentHubMessageMatches(canonical, expected) {
 				return agentHubInboundMessage{}, false, &resourceAPIError{Code: "message_conflict", Message: "stable message id conflicts with a different canonical AgentHub input"}
 			}
 			canonical.TurnID = event.TurnID
@@ -1631,10 +1628,11 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		if err != nil {
 			return err
 		}
-		delivered, deliveryErr := client.Message(ctx, session.ID, agentHubInboundMessage{
-			Text: message.Text, Role: message.Role, Sender: message.Sender,
-			Steer: message.ActualMode == resourceMessageModeSteer, MessageID: message.ID,
-		})
+		outbound, outboundErr := agentHubMailboxMessage(message)
+		if outboundErr != nil {
+			return outboundErr
+		}
+		delivered, deliveryErr := client.Message(ctx, session.ID, outbound)
 		if deliveryErr != nil {
 			stillCurrent, guardErr := legacyLifecyclePlanStillCurrent(workspace, deliveryPlan, &session)
 			if guardErr != nil {

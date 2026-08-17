@@ -111,8 +111,8 @@ func normalizeAgentHubUserName(value string) string {
 	return name
 }
 
-// agentHubMessageProvenance maps browser-local user identity onto AgentHub's
-// provenance envelope. The role records provenance only, never a privilege level.
+// agentHubMessageProvenance maps browser-local identity into PUA's opaque
+// message payload. AgentHub never interprets the returned values.
 func agentHubMessageProvenance(userName string) (string, *agentHubMessageSender) {
 	return "user", &agentHubMessageSender{Name: normalizeAgentHubUserName(userName)}
 }
@@ -122,7 +122,12 @@ func agentHubInitialMessage(text string, userName string) *agentHubInboundMessag
 		return nil
 	}
 	role, sender := agentHubMessageProvenance(userName)
-	return &agentHubInboundMessage{Text: text, Role: role, Sender: sender}
+	message := resourceMailboxMessage{Text: text, Role: role, Sender: sender, ActualMode: resourceMessageModeEnqueue}
+	input, err := agentHubMailboxMessage(message)
+	if err != nil {
+		return nil
+	}
+	return &input
 }
 
 func (m *agentManager) findOrCreateAgentHubSession(ctx context.Context, client *agentHubClient, source agentHubSource, request agentHubCreateSessionRequest) (agentHubSession, error) {

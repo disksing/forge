@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTimeline as buildAgentHubTimeline } from "../../vendor/agenthub-event-timeline";
 import type { AgentEvent, TimelineItem } from "../../src/components/models";
-import { compactTimelineEvents, groupTimelineActivities, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
+import { compactTimelineEvents, groupTimelineActivities, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, projectConversationEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
@@ -82,6 +82,33 @@ describe("timeline event algorithms", () => {
     expect(items.find((item) => item.kind === "message")?.text).toBe("hello");
     expect(items.find((item) => item.kind === "activity")?.items?.find((item) => item.kind === "tools")?.calls?.[0].status).toBe("completed");
     expect(items.find((item) => item.kind === "lifecycle")?.text).toBe("Session stopped · provider completed");
+  });
+
+  it("uses PUA's opaque payload for presentation while preserving provider text", () => {
+    const events: AgentEvent[] = [{
+      id: 1,
+      type: "message.input",
+      data: {
+        schemaVersion: 2,
+        text: "Message from agent \"Review Agent\":\noriginal request",
+        payload: {
+          schema: "pua.resource-message.v1",
+          text: "original request",
+          role: "agent",
+          sender: { id: "project1.task2", name: "Review Agent", sessionId: "ses-worker" },
+        },
+      },
+    }];
+
+    const [item] = projectConversationEvents(events);
+
+    expect(item).toMatchObject({
+      kind: "message",
+      text: "original request",
+      role: "agent",
+      sender: { id: "project1.task2", name: "Review Agent", sessionId: "ses-worker" },
+    });
+    expect(events[0].data?.text).toBe("Message from agent \"Review Agent\":\noriginal request");
   });
 
   it("hides raw lifecycle names returned by compact history", () => {
