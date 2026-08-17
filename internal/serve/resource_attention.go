@@ -95,6 +95,7 @@ func loadUIStateFile(path string) (uiState, error) {
 func saveUIStateFile(path string, state uiState) error {
 	state.Version = 2
 	state.ExpandedProjects = uniqueNonEmpty(state.ExpandedProjects)
+	state.Folders, state.FolderOrder = normalizeUIStateFolders(state.Folders, state.FolderOrder)
 	if state.ResourceStates == nil {
 		state.ResourceStates = map[string]resourceUserState{}
 	}
@@ -297,11 +298,64 @@ func prunedUIState(state uiState, archived map[string]bool) (uiState, bool) {
 			changed = true
 		}
 	}
+	keptFolders := state.Folders[:0]
+	for _, folder := range state.Folders {
+		if archived[folder.ProjectID] {
+			delete(state.FolderOrder, folder.ID)
+			changed = true
+			continue
+		}
+		keptFolders = append(keptFolders, folder)
+	}
+	if len(keptFolders) != len(state.Folders) {
+		state.Folders = keptFolders
+		changed = true
+	}
+	for folderID, order := range state.FolderOrder {
+		if kept, dropped := dropArchivedResourceIDs(order, archived); dropped {
+			state.FolderOrder[folderID] = kept
+			changed = true
+		}
+	}
 	if archived[state.LastResourceID] {
 		state.LastResourceID = ""
 		changed = true
 	}
 	return state, changed
+}
+
+// uiStateFolderNameMaxLength caps persisted virtual folder names.
+const uiStateFolderNameMaxLength = 80
+
+// normalizeUIStateFolders keeps the persisted folder list well-formed: folder
+// IDs are unique and non-empty, names are trimmed and capped, and folderOrder
+// only references folders that still exist.
+func normalizeUIStateFolders(folders []uiStateFolder, order map[string][]string) ([]uiStateFolder, map[string][]string) {
+	seen := make(map[string]bool, len(folders))
+	kept := make([]uiStateFolder, 0, len(folders))
+	for _, folder := range folders {
+		folder.ID = strings.TrimSpace(folder.ID)
+		folder.ProjectID = strings.TrimSpace(folder.ProjectID)
+		folder.Name = strings.TrimSpace(folder.Name)
+		if folder.ID == "" || folder.ProjectID == "" || seen[folder.ID] {
+			continue
+		}
+		seen[folder.ID] = true
+		if len(folder.Name) > uiStateFolderNameMaxLength {
+			folder.Name = folder.Name[:uiStateFolderNameMaxLength]
+		}
+		kept = append(kept, folder)
+	}
+	if len(order) > 0 {
+		cleaned := make(map[string][]string, len(order))
+		for folderID, ids := range order {
+			if seen[folderID] {
+				cleaned[folderID] = ids
+			}
+		}
+		order = cleaned
+	}
+	return kept, order
 }
 
 func dropArchivedResourceIDs(ids []string, archived map[string]bool) ([]string, bool) {

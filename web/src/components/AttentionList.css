@@ -7,6 +7,7 @@
   margin: 0 12px;
   padding: 6px 0 14px;
   overflow: auto;
+  container-type: inline-size;
 }
 
 :where([data-component-owner="attention-list"]) .activity-tabs {
@@ -28,12 +29,14 @@
   flex: 1 1 0;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 5px 2px;
+  gap: 4px;
+  padding: 5px 4px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
   color: var(--faint-on-dark);
-  font-size: calc(9.5px * var(--sidebar-font-scale, 1));
-  font-weight: 700;
+  font-size: calc(12px * var(--sidebar-font-scale, 1));
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -45,10 +48,29 @@
   color: #fff;
 }
 
+:where([data-component-owner="attention-list"]) .activity-tab-icon {
+  display: none;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
 :where([data-component-owner="attention-list"]) .activity-tab-count {
-  font-size: calc(9px * var(--sidebar-font-scale, 1));
+  font-size: calc(10px * var(--sidebar-font-scale, 1));
   font-weight: 600;
   opacity: .75;
+}
+
+/* Narrow sidebars cannot fit the full-size labels; fall back to icons so all
+   four tabs stay visible. The full name remains in the tooltip/aria-label. */
+@container (max-width: 240px) {
+  :where([data-component-owner="attention-list"]) .activity-tab-label {
+    display: none;
+  }
+
+  :where([data-component-owner="attention-list"]) .activity-tab-icon {
+    display: block;
+  }
 }
 
 :where([data-component-owner="attention-list"]) .attention-list {

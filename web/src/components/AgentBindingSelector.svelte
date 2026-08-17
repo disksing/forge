@@ -40,6 +40,10 @@
     secondary: string;
   }
 
+  interface MenuOption extends BindingOption {
+    key: string;
+  }
+
   const profileOptions = $derived(profileSelections());
   const agentOptions = $derived(agentSelections());
   const inheritSelected = $derived(allowInherit && !value.name);
@@ -47,6 +51,7 @@
   const selectedLabel = $derived(
     inheritSelected ? inheritLabel : [...profileOptions, ...agentOptions].find((option) => serialize(option.value) === selectedValue)?.label || value.name || "Unavailable"
   );
+  const menuOptions = $derived(buildMenuOptions());
 
   // The composer sits at the bottom of the viewport, where a native select
   // popup anchors on the selected option and clips everything below it. Use a
@@ -54,6 +59,8 @@
   let open = $state(false);
   let root: HTMLSpanElement | undefined = $state();
   let menu: HTMLDivElement | undefined = $state();
+  let button: HTMLButtonElement | undefined = $state();
+  let activeKey = $state("");
 
   $effect(() => {
     if (!open || !menu) return;
@@ -190,6 +197,16 @@
     return `${binding.kind}:${encodeURIComponent(binding.name)}`;
   }
 
+  function buildMenuOptions(): MenuOption[] {
+    const options: MenuOption[] = [];
+    if (allowInherit) {
+      options.push({ key: "inherit", value: { kind: "profile", name: "" }, label: inheritLabel, primary: inheritLabel, secondary: "" });
+    }
+    for (const option of profileOptions) options.push({ key: serialize(option.value), ...option });
+    for (const option of agentOptions) options.push({ key: serialize(option.value), ...option });
+    return options;
+  }
+
   function choose(option: BindingOption): void {
     open = false;
     const optionKey = allowInherit && !option.value.name ? "inherit" : serialize(option.value);
@@ -197,15 +214,67 @@
     onSelect(option.value);
   }
 
+  function optionElements(): HTMLButtonElement[] {
+    return Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="option"]:not([disabled])') ?? []);
+  }
+
+  function commitOption(key: string): void {
+    const option = menuOptions.find((candidate) => candidate.key === key);
+    if (option) choose(option);
+  }
+
   function keydown(event: KeyboardEvent): void {
-    if (event.key !== "Escape") return;
+    const options = optionElements();
+    if (!options.length) return;
+    let index = options.findIndex((el) => el.dataset.binding === activeKey);
+    if (index < 0) index = options.findIndex((el) => el.dataset.binding === selectedValue);
+    if (index < 0) index = 0;
+
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        index = (index + 1) % options.length;
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        index = (index - 1 + options.length) % options.length;
+        break;
+      case "Home":
+        event.preventDefault();
+        index = 0;
+        break;
+      case "End":
+        event.preventDefault();
+        index = options.length - 1;
+        break;
+      case "Enter":
+      case " ": {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = options[index]?.dataset.binding;
+        if (key !== undefined) commitOption(key);
+        return;
+      }
+      case "Escape":
+        event.preventDefault();
+        event.stopPropagation();
+        open = false;
+        button?.focus();
+        return;
+      default:
+        return;
+    }
     event.stopPropagation();
-    open = false;
+    const option = options[index];
+    if (option) {
+      activeKey = option.dataset.binding ?? selectedValue;
+      option.focus();
+    }
   }
 </script>
 
 <span class="agent-binding" data-component-owner="agent-binding-selector" data-placement={openUp ? "up" : "down"} bind:this={root}>
-  <button type="button" class="agent-binding-button" {disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onclick={() => { open = !open; }}>
+  <button type="button" class="agent-binding-button" bind:this={button} {disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onclick={() => { open = !open; if (open) activeKey = selectedValue; }}>
     <span class="agent-binding-label">{selectedLabel}</span>
     <Icon name="chevrons-up-down" className="agent-binding-icon" />
   </button>
@@ -213,10 +282,10 @@
     <div class="agent-binding-menu" role="listbox" aria-label={ariaLabel} tabindex="-1" bind:this={menu} onkeydown={keydown}>
       {#if allowInherit}
         <div class="agent-binding-group" role="group" aria-label="Inherit">
-          <button type="button" class="agent-binding-option" role="option" aria-selected={inheritSelected} data-binding="inherit" onclick={() => choose({ value: { kind: "profile", name: "" }, label: inheritLabel, primary: inheritLabel, secondary: "" })}>
+          <button type="button" class="agent-binding-option" role="option" aria-selected={activeKey === "inherit"} tabindex={activeKey === "inherit" ? 0 : -1} data-binding="inherit" onclick={() => choose({ value: { kind: "profile", name: "" }, label: inheritLabel, primary: inheritLabel, secondary: "" })}>
             <span class="agent-binding-option-primary">{inheritLabel}</span>
             <span class="agent-binding-option-secondary"></span>
-            <Icon name="check" className={inheritSelected ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
+            <Icon name="check" className={activeKey === "inherit" ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
           </button>
         </div>
         {#if profileOptions.length || agentOptions.length}<div class="agent-binding-divider"></div>{/if}
@@ -225,10 +294,10 @@
         <div class="agent-binding-group" role="group" aria-label="Profiles">
           <div class="agent-binding-group-title">Profiles</div>
           {#each profileOptions as option (serialize(option.value))}
-            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
+            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === activeKey} tabindex={serialize(option.value) === activeKey ? 0 : -1} data-binding={serialize(option.value)} onclick={() => choose(option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
               <span class="agent-binding-option-secondary">{option.secondary}</span>
-              <Icon name="check" className={serialize(option.value) === selectedValue ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
+              <Icon name="check" className={serialize(option.value) === activeKey ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
             </button>
           {/each}
         </div>
@@ -238,10 +307,10 @@
         <div class="agent-binding-group" role="group" aria-label="Agents">
           <div class="agent-binding-group-title">Agents</div>
           {#each agentOptions as option (serialize(option.value))}
-            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
+            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === activeKey} tabindex={serialize(option.value) === activeKey ? 0 : -1} data-binding={serialize(option.value)} onclick={() => choose(option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
               <span class="agent-binding-option-secondary">{option.secondary}</span>
-              <Icon name="check" className={serialize(option.value) === selectedValue ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
+              <Icon name="check" className={serialize(option.value) === activeKey ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
             </button>
           {/each}
         </div>

@@ -189,9 +189,15 @@
   text-align: left;
 }
 
-:where([data-component-owner="workspace-switcher"]) .workspace-menu-row:hover {
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-row:hover,
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-row:focus-visible,
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-row[aria-selected="true"] {
   background: #e8eaee;
   color: #2c3e50;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-row:focus-visible {
+  outline: none;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-main {
