@@ -34,7 +34,8 @@
   } = $props();
   let drag = $state<ShellDragTarget | null>(null);
   let drop = $state<{ id: string; after: boolean } | null>(null);
-  let stateTooltip = $state<{ text: string; left: number; top: number; pinned: boolean } | null>(null);
+  let treeRoot = $state<HTMLElement | null>(null);
+  let stateTooltip = $state<{ resourceId: string; text: string; left: number; top: number; pinned: boolean } | null>(null);
   // svelte-ignore state_referenced_locally
   let previousIdentity = $state(identity);
 
@@ -43,6 +44,22 @@
     previousIdentity = identity;
     hideStateTooltip();
     finishDrag();
+  });
+
+  $effect(() => {
+    const current = stateTooltip;
+    const items = projects;
+    if (!current) return;
+    const item = findTask(items, current.resourceId);
+    queueMicrotask(() => {
+      if (stateTooltip?.resourceId !== current.resourceId || stateTooltip.pinned !== current.pinned) return;
+      const anchor = taskRow(current.resourceId);
+      if (!item?.statusLabel || !anchor) {
+        hideStateTooltip();
+        return;
+      }
+      positionStateTooltip(anchor, item.statusLabel, current.pinned, current.resourceId);
+    });
   });
 
   onMount(() => {
@@ -130,7 +147,23 @@
     stateTooltip = null;
   }
 
-  function positionStateTooltip(anchor: Element, text: string, pinned: boolean): void {
+  function findTask(items: ShellResourceItem[], resourceId: string): ShellResourceItem | null {
+    for (const project of items) {
+      const task = project.children.find((candidate) => candidate.id === resourceId);
+      if (task) return task;
+    }
+    return null;
+  }
+
+  function taskRow(resourceId: string): HTMLElement | null {
+    if (!treeRoot) return null;
+    for (const row of treeRoot.querySelectorAll<HTMLElement>("[data-task-id]")) {
+      if (row.dataset.taskId === resourceId) return row;
+    }
+    return null;
+  }
+
+  function positionStateTooltip(anchor: Element, text: string, pinned: boolean, resourceId: string): void {
     const rect = anchor.getBoundingClientRect();
     const margin = 8;
     const maxWidth = Math.min(280, window.innerWidth - margin * 2);
@@ -140,24 +173,38 @@
     const top = below + estimatedHeight > window.innerHeight - margin
       ? Math.max(margin, rect.top - estimatedHeight - 6)
       : below;
-    stateTooltip = { text, left, top, pinned };
+    if (stateTooltip?.resourceId === resourceId && stateTooltip.text === text && stateTooltip.left === left && stateTooltip.top === top && stateTooltip.pinned === pinned) return;
+    stateTooltip = { resourceId, text, left, top, pinned };
   }
 
   function showStateTooltip(event: MouseEvent, item: ShellResourceItem): void {
     if (!item.statusLabel || drag) return;
-    positionStateTooltip(event.currentTarget as Element, item.statusLabel, false);
+    positionStateTooltip(event.currentTarget as Element, item.statusLabel, false, item.id);
+  }
+
+  function leaveStateTooltip(item: ShellResourceItem): void {
+    if (stateTooltip?.pinned || stateTooltip?.resourceId !== item.id) return;
+    queueMicrotask(() => {
+      if (stateTooltip?.pinned || stateTooltip?.resourceId !== item.id) return;
+      const row = taskRow(item.id);
+      if (row?.matches(":hover")) {
+        positionStateTooltip(row, item.statusLabel, false, item.id);
+        return;
+      }
+      hideStateTooltip();
+    });
   }
 
   function toggleStateTooltip(event: MouseEvent, item: ShellResourceItem): void {
     event.preventDefault();
     event.stopPropagation();
     if (!item.statusLabel) return;
-    const alreadyPinned = stateTooltip?.pinned && stateTooltip.text === item.statusLabel;
+    const alreadyPinned = stateTooltip?.pinned && stateTooltip.resourceId === item.id;
     if (alreadyPinned) {
       hideStateTooltip();
       return;
     }
-    positionStateTooltip(event.currentTarget as Element, item.statusLabel, true);
+    positionStateTooltip(event.currentTarget as Element, item.statusLabel, true, item.id);
   }
 
   async function activate(event: MouseEvent, item: ShellResourceItem): Promise<void> {
@@ -207,7 +254,7 @@
 
 <section class="tree-section" data-component-owner="project-tree">
   <div class="section-title"><span class="section-label">Projects</span><button id="newProjectButton" type="button" title="New project" onclick={onCreate}><Icon name="plus" /></button></div>
-  <nav id="projectTree" class="project-tree" data-navigation-identity={identity}>
+  <nav id="projectTree" class="project-tree" data-navigation-identity={identity} bind:this={treeRoot}>
     {#if loading}
       <div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading workspace</strong><span>Refreshing navigation...</span></div>
     {:else if error}
@@ -228,7 +275,7 @@
         {#if project.expanded}
           <div class="task-group">
             {#each project.children as task (task.id)}
-              <button type="button" class={`tree-item task-item ${statusClass(task.status)} ${task.active ? "active" : ""} ${drag?.id === task.id ? "drag-source" : ""} ${rowDropClass(task.id)}`} aria-label={task.ariaLabel || undefined} onmouseenter={(event) => showStateTooltip(event, task)} onmouseleave={() => { if (!stateTooltip?.pinned) hideStateTooltip(); }} onclick={(event) => activate(event, task)} ondragover={(event) => updateDrop(event, { kind: "task", id: task.id, projectId: project.id })} ondrop={(event) => commitDrop(event, { kind: "task", id: task.id, projectId: project.id })}>
+              <button type="button" class={`tree-item task-item ${statusClass(task.status)} ${task.active ? "active" : ""} ${drag?.id === task.id ? "drag-source" : ""} ${rowDropClass(task.id)}`} data-task-id={task.id} aria-label={task.ariaLabel || undefined} onmouseenter={(event) => showStateTooltip(event, task)} onmouseleave={() => leaveStateTooltip(task)} onclick={(event) => activate(event, task)} ondragover={(event) => updateDrop(event, { kind: "task", id: task.id, projectId: project.id })} ondrop={(event) => commitDrop(event, { kind: "task", id: task.id, projectId: project.id })}>
                 <span class="chevron"></span>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->

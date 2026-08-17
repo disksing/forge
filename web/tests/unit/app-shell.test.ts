@@ -125,6 +125,43 @@ describe("AppShell", () => {
     expect(projectA.classList.contains("active")).toBe(true);
   });
 
+  it("keeps a hovered Task state tooltip open across unrelated Tree updates", async () => {
+    const blockedStatus: ShellStatusPresentation = {
+      hasTaskState: true,
+      className: "task-state-blocked",
+      layoutClassName: "has-task-status",
+      slotClassName: "task-status-single",
+      statuses: [{ key: "task-blocked", className: "task-state-blocked", iconName: "circle-alert", recentOutput: false }],
+    };
+    const taskA = { ...resource("task-a", "Task A", "task"), statusLabel: "Blocked: Need approval", status: blockedStatus };
+    const taskB = { ...resource("task-b", "Task B", "task"), statusLabel: "Waiting: CI", status: blockedStatus };
+    const project = { ...resource("project-a", "Project A"), expanded: true, children: [taskA, taskB] };
+    const initial = model({ projects: [project] });
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AppShell, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const taskRow = target.querySelector<HTMLElement>('[data-task-id="task-a"]')!;
+    taskRow.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    await tick();
+    expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
+
+    const nativeMatches = taskRow.matches.bind(taskRow);
+    const matches = vi.spyOn(taskRow, "matches").mockImplementation((selector) => selector === ":hover" || nativeMatches(selector));
+    channel.publish({
+      ...initial,
+      projects: [{ ...project, children: [taskA, { ...taskB, statusLabel: "Completed elsewhere" }] }],
+    });
+    await tick();
+    taskRow.dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));
+    await Promise.resolve();
+
+    expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
+    matches.mockRestore();
+  });
+
   it("keeps the Activity grid stable when a new resource starts its first turn", async () => {
     const initial = model({ attentionList: [activity()] });
     const channel = createModelChannel(initial);
