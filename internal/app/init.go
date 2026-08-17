@@ -315,6 +315,14 @@ An Agent message that actually opens a Turn subscribes to that Turn's result by 
 
 When the Turn ends, PUA automatically delivers its final response to the opening Agent. Do not also send the same result with pua message send. Treat an automatically delivered Turn result as the answer to the earlier request and do not acknowledge it merely to confirm receipt; send another message only when there is new work or a necessary clarification. Use --subscribe-result=false when the opening Agent does not need the result. Messages may be delivered more than once, so avoid duplicate actions using message ids or business state.
 
+To reach the user directly, send to a registered Workspace user name instead of a resource id:
+
+~~~sh
+pua message send --to=<username> '<message>'
+~~~
+
+The message lands in the user's Inbox panel in the Web GUI; the user's reply arrives as an ordinary role=user message to the current resource. Use this for proactive questions or results the user should not miss; keep routine Turn output in the ordinary final response.
+
 ## 7. Scheduler
 
 Scheduler is useful for timed triggers, conditional triggers, and work that needs to wait a long time for an external event.

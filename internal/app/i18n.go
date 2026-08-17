@@ -335,6 +335,14 @@ pua message show --id=<message-id>
 
 Turn 结束后，PUA 会自动把 final response 投递给开启 Turn 的 Agent，不要再用 pua message send 发送同一结果。收到自动投递的 Turn result 时，应把它视为此前请求的答复，不要仅为确认收到而回复；只有出现新工作或确需澄清时才发送新消息。开启方不需要结果时使用 --subscribe-result=false。消息可能重复投递，发送方和接收方都应结合 message ID 或业务状态避免重复操作。
 
+需要直接联系用户时，把 --to 换成已注册的 Workspace 用户名而不是资源 ID：
+
+~~~sh
+pua message send --to=<username> '<message>'
+~~~
+
+消息会出现在 Web GUI 的用户 Inbox 面板中；用户的回复会作为普通的 role=user 消息送达当前资源。适合主动提问或用户不应错过的结果；例行的 Turn 输出仍写在普通的 final response 中。
+
 ## 7. Scheduler
 
 Scheduler 适合定时触发、条件触发，以及需要长时间等待外部事件的工作。

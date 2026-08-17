@@ -248,3 +248,143 @@
     max-height: 42%;
   }
 }
+
+/* Inbox tab: durable agent-to-user messages with inline reply. */
+
+:where([data-component-owner="attention-list"]) .inbox-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  color: #c7d0da;
+  font-size: calc(13px * var(--sidebar-font-scale, 1));
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-row:hover {
+  background: var(--ink-row);
+}
+
+:where([data-component-owner="attention-list"]) .inbox-row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-unread-slot {
+  width: 10px;
+  min-width: 10px;
+  display: inline-flex;
+  justify-content: center;
+  padding-top: 5px;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-unread-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #4f9cf9);
+}
+
+:where([data-component-owner="attention-list"]) .inbox-source {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-source strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-replied-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 8%);
+  color: var(--faint-on-dark);
+  font-size: calc(10px * var(--sidebar-font-scale, 1));
+  font-weight: 600;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-text {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #e3e9f0;
+  font-size: calc(12px * var(--sidebar-font-scale, 1));
+  line-height: 1.45;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-actions {
+  display: flex;
+  gap: 6px;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 6px;
+  background: transparent;
+  color: #c7d0da;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
+  cursor: pointer;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-action:hover:not(:disabled) {
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-action:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-action svg {
+  width: 12px;
+  height: 12px;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: default;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-reply-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 6px;
+  background: var(--ink-deep);
+  color: #e3e9f0;
+  font-size: calc(12px * var(--sidebar-font-scale, 1));
+  font-family: inherit;
+  resize: vertical;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-reply-input:focus {
+  outline: 1px solid var(--accent, #4f9cf9);
+}
+
+:where([data-component-owner="attention-list"]) .inbox-reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+:where([data-component-owner="attention-list"]) .inbox-send {
+  border-color: var(--accent, #4f9cf9);
+  color: var(--accent, #4f9cf9);
+}
