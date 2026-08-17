@@ -73,7 +73,7 @@ func TestWorkspaceUsersAPIRegistersUpdatesListsAndDeletes(t *testing.T) {
 	}
 }
 
-func TestUIAndAttentionStateAreIsolatedByUser(t *testing.T) {
+func TestUIAndResourceStateAreIsolatedByUser(t *testing.T) {
 	server, workspace := userTestServer(t)
 	puaWorkspace, err := app.OpenWorkspace(workspace)
 	if err != nil {
@@ -91,9 +91,9 @@ func TestUIAndAttentionStateAreIsolatedByUser(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("Alice UI update returned %d: %s", recorder.Code, recorder.Body.String())
 	}
-	recorder = userRequest(t, server, http.MethodPut, "/api/workspaces/workspace-one/resources/"+project.ID+"/attention", `{"followed":true}`, "Alice")
+	recorder = userRequest(t, server, http.MethodPut, "/api/workspaces/workspace-one/resources/"+project.ID+"/favorite", `{"favorite":true}`, "Alice")
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("Alice attention update returned %d: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("Alice favorite update returned %d: %s", recorder.Code, recorder.Body.String())
 	}
 
 	alice, err := server.loadUIState("workspace-one", "Alice")
@@ -104,10 +104,10 @@ func TestUIAndAttentionStateAreIsolatedByUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(alice.ExpandedProjects) != 1 || !alice.Attention[project.ID].Followed {
+	if len(alice.ExpandedProjects) != 1 || !alice.ResourceStates[project.ID].Favorite {
 		t.Fatalf("Alice state = %#v", alice)
 	}
-	if len(defaultUser.ExpandedProjects) != 0 || defaultUser.Attention[project.ID].Followed {
+	if len(defaultUser.ExpandedProjects) != 0 || defaultUser.ResourceStates[project.ID].Favorite {
 		t.Fatalf("default User inherited Alice state: %#v", defaultUser)
 	}
 }
@@ -115,9 +115,16 @@ func TestUIAndAttentionStateAreIsolatedByUser(t *testing.T) {
 func TestLegacyUIStateMigratesToDefaultUserAndResourceState(t *testing.T) {
 	server, workspace := userTestServer(t)
 	read := 2
+	shared := resourceState{Version: 1, TurnNumbers: map[string]int{"project1": 4, "workspace": 3}}
+	if err := saveResourceStateFile(resourceStatePath(workspace), shared); err != nil {
+		t.Fatal(err)
+	}
 	legacy := uiState{
 		Version: 1, ExpandedProjects: []string{"project1"},
-		Attention: map[string]resourceAttentionState{"project1": {Followed: true, DismissedTurn: &read, TurnNumber: 4}},
+		Attention: map[string]resourceAttentionState{
+			"project1":  {Followed: true, DismissedTurn: &read, TurnNumber: 4},
+			"workspace": {TurnNumber: 3},
+		},
 	}
 	if err := saveJSONStateFile(uiStatePath(workspace), ".legacy-ui-*.tmp", legacy); err != nil {
 		t.Fatal(err)
@@ -129,16 +136,20 @@ func TestLegacyUIStateMigratesToDefaultUserAndResourceState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attention := migrated.Attention["project1"]
-	if !attention.Followed || attention.ReadTurnNumber == nil || *attention.ReadTurnNumber != 2 || attention.TurnNumber != 0 {
-		t.Fatalf("migrated attention = %#v", attention)
+	resourceState := migrated.ResourceStates["project1"]
+	if !resourceState.Favorite || resourceState.ReadTurnNumber == nil || *resourceState.ReadTurnNumber != 2 {
+		t.Fatalf("migrated resource state = %#v", resourceState)
 	}
-	shared, err := loadResourceStateFile(resourceStatePath(workspace))
+	workspaceState := migrated.ResourceStates["workspace"]
+	if workspaceState.Favorite || workspaceState.ReadTurnNumber == nil || *workspaceState.ReadTurnNumber != 3 {
+		t.Fatalf("untracked resource did not receive migration baseline: %#v", workspaceState)
+	}
+	loadedShared, err := loadResourceStateFile(resourceStatePath(workspace))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shared.TurnNumbers["project1"] != 4 {
-		t.Fatalf("resource state = %#v", shared)
+	if loadedShared.TurnNumbers["project1"] != 4 {
+		t.Fatalf("resource state = %#v", loadedShared)
 	}
 	if _, err := os.Stat(uiStatePath(workspace)); !os.IsNotExist(err) {
 		t.Fatalf("legacy UI state was not removed after migration: %v", err)
@@ -148,5 +159,37 @@ func TestLegacyUIStateMigratesToDefaultUserAndResourceState(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workspace, ".pua", "users", "User", "profile.json")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNewWorkspaceUserStartsAtCurrentTurnBaseline(t *testing.T) {
+	server, workspace := userTestServer(t)
+	puaWorkspace, err := app.OpenWorkspace(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := puaWorkspace.CreateProject("Existing project", "existing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{{
+		ID: "gen-user-baseline", WorkspaceID: "workspace-one", ResourceID: project.ID,
+		Generation: 1, GenerationID: "gen-user-baseline", AgentHubSessionID: "session-user-baseline",
+		Status: "idle", TurnNumber: 5, Title: project.Title, Cwd: workspace,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := userRequest(t, server, http.MethodPost, "/api/workspaces/workspace-one/users", `{"name":"Alice"}`, "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("register returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	state, err := loadUIStateFile(userUIStatePath(workspace, "Alice"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := state.ResourceStates[project.ID].ReadTurnNumber
+	if baseline == nil || *baseline != 5 {
+		t.Fatalf("new user baseline = %#v, want Turn 5", state.ResourceStates[project.ID])
 	}
 }

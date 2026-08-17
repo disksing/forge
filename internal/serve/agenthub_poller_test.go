@@ -126,8 +126,8 @@ func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T
 		ID: "ses_activity_turn", State: "running", CurrentTurnID: "turn-activity",
 		UpdatedAt: "2026-08-01T00:00:10Z",
 	})
-	if _, err := manager.server.mutateResourceAttentionAtPath(workspace.Path, "project1", func(state *resourceAttentionState) {
-		state.Followed = true
+	if _, err := manager.server.mutateResourceUserStateAtPath(workspace.Path, "project1", func(state *resourceUserState) {
+		state.Favorite = true
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T
 
 	// AgentHub may return to ready before clearing currentTurnId from its
 	// session projection. PUA must treat ready as authoritative so Activity
-	// stops presenting the resource as active and restores its dismiss action.
+	// stops presenting the resource as active.
 	fake.mu.Lock()
 	session := fake.sessions["ses_activity_turn"]
 	session.State = "ready"
@@ -170,8 +170,8 @@ func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tree.AttentionList) != 1 || tree.AttentionList[0].Runtime == nil || tree.AttentionList[0].Runtime.ActiveTurn {
-		t.Fatalf("Activity did not converge to an idle dismissible row: %#v", tree.AttentionList)
+	if len(tree.Activity.Running) != 0 || len(tree.Activity.Favorites) != 1 || tree.Activity.Favorites[0].Runtime == nil || tree.Activity.Favorites[0].Runtime.ActiveTurn {
+		t.Fatalf("Activity did not converge to an idle favorite row: %#v", tree.Activity)
 	}
 }
 

@@ -91,6 +91,22 @@
   text-overflow: ellipsis;
 }
 
+:where([data-component-owner="project-tree"]) .unread-badge {
+  min-width: 18px;
+  height: 16px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #2f80ed;
+  color: #fff;
+  font-size: calc(10px * var(--sidebar-font-scale, 1));
+  font-weight: 700;
+  line-height: 1;
+}
+
 :where([data-component-owner="project-tree"]) .project-task-summary {
   min-width: 0;
   max-width: min(48%, 148px);
@@ -277,7 +293,7 @@
   visibility: visible;
 }
 
-:where([data-component-owner="project-tree"]) .attention-star {
+:where([data-component-owner="project-tree"]) .favorite-star {
   width: 18px;
   height: 18px;
   display: grid;
@@ -288,26 +304,26 @@
   opacity: 0;
 }
 
-:where([data-component-owner="project-tree"]) .attention-star:hover,
-:where([data-component-owner="project-tree"]) .attention-star:focus-visible,
-:where([data-component-owner="project-tree"]) .attention-star.followed,
-:where([data-component-owner="project-tree"]) .tree-item:hover .attention-star,
-:where([data-component-owner="project-tree"]) .tree-item:focus-within .attention-star {
+:where([data-component-owner="project-tree"]) .favorite-star:hover,
+:where([data-component-owner="project-tree"]) .favorite-star:focus-visible,
+:where([data-component-owner="project-tree"]) .favorite-star.favorite,
+:where([data-component-owner="project-tree"]) .tree-item:hover .favorite-star,
+:where([data-component-owner="project-tree"]) .tree-item:focus-within .favorite-star {
   opacity: 1;
 }
 
-:where([data-component-owner="project-tree"]) .attention-star:hover,
-:where([data-component-owner="project-tree"]) .attention-star:focus-visible {
+:where([data-component-owner="project-tree"]) .favorite-star:hover,
+:where([data-component-owner="project-tree"]) .favorite-star:focus-visible {
   background: var(--ink-row);
   color: #fff;
 }
 
-:where([data-component-owner="project-tree"]) .attention-star svg {
+:where([data-component-owner="project-tree"]) .favorite-star svg {
   width: 14px;
   height: 14px;
 }
 
-:where([data-component-owner="project-tree"]) .attention-star.followed svg {
+:where([data-component-owner="project-tree"]) .favorite-star.favorite svg {
   fill: currentColor;
 }
 

@@ -14,11 +14,8 @@ import (
 	"github.com/disksing/pua/internal/app"
 )
 
-// resourceAttentionState is the per-user, per-resource focus state. A nil read
-// turn means the user has never marked the resource as read, so a newly
-// followed resource is visible even before its first turn. DismissedTurn and
-// TurnNumber are read-only legacy fields used while migrating the old shared
-// ui-state.json.
+// resourceAttentionState is the version 1 persisted shape. It is read only
+// while migrating Follow/Dismiss state to the version 2 resource state model.
 type resourceAttentionState struct {
 	Followed       bool `json:"followed"`
 	ReadTurnNumber *int `json:"readTurnNumber,omitempty"`
@@ -26,13 +23,25 @@ type resourceAttentionState struct {
 	TurnNumber     int  `json:"turnNumber,omitempty"`
 }
 
-type resourceAttentionSnapshot struct {
-	Followed       bool `json:"followed"`
+type resourceUserState struct {
+	Favorite       bool `json:"favorite,omitempty"`
 	ReadTurnNumber *int `json:"readTurnNumber,omitempty"`
 }
 
-func resourceAttentionSnapshotForState(state resourceAttentionState) *resourceAttentionSnapshot {
-	return &resourceAttentionSnapshot{Followed: state.Followed, ReadTurnNumber: cloneIntPointer(state.ReadTurnNumber)}
+type resourceUserStateSnapshot struct {
+	Favorite       bool `json:"favorite"`
+	ReadTurnNumber *int `json:"readTurnNumber,omitempty"`
+}
+
+type resourceActivityLists struct {
+	Running   []resourceSnapshot `json:"running"`
+	Favorites []resourceSnapshot `json:"favorites"`
+	Unread    []resourceSnapshot `json:"unread"`
+	Problems  []resourceSnapshot `json:"problems"`
+}
+
+func resourceUserStateSnapshotForState(state resourceUserState) *resourceUserStateSnapshot {
+	return &resourceUserStateSnapshot{Favorite: state.Favorite, ReadTurnNumber: cloneIntPointer(state.ReadTurnNumber)}
 }
 
 type resourceState struct {
@@ -52,7 +61,7 @@ func loadUIStateFile(path string) (uiState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return uiState{Version: 1, ExpandedProjects: []string{}, Attention: map[string]resourceAttentionState{}}, nil
+			return uiState{Version: 2, ExpandedProjects: []string{}, ResourceStates: map[string]resourceUserState{}}, nil
 		}
 		return uiState{}, err
 	}
@@ -66,29 +75,35 @@ func loadUIStateFile(path string) (uiState, error) {
 	if state.ExpandedProjects == nil {
 		state.ExpandedProjects = []string{}
 	}
-	if state.Attention == nil {
-		state.Attention = map[string]resourceAttentionState{}
+	if state.ResourceStates == nil {
+		state.ResourceStates = map[string]resourceUserState{}
 	}
 	for resourceID, attention := range state.Attention {
 		if attention.ReadTurnNumber == nil && attention.DismissedTurn != nil {
 			attention.ReadTurnNumber = cloneIntPointer(attention.DismissedTurn)
 		}
 		state.Attention[resourceID] = attention
+		if _, exists := state.ResourceStates[resourceID]; !exists && (attention.Followed || attention.ReadTurnNumber != nil) {
+			state.ResourceStates[resourceID] = resourceUserState{
+				Favorite: attention.Followed, ReadTurnNumber: cloneIntPointer(attention.ReadTurnNumber),
+			}
+		}
 	}
 	return state, nil
 }
 
 func saveUIStateFile(path string, state uiState) error {
-	state.Version = 1
+	state.Version = 2
 	state.ExpandedProjects = uniqueNonEmpty(state.ExpandedProjects)
-	if state.Attention == nil {
-		state.Attention = map[string]resourceAttentionState{}
+	if state.ResourceStates == nil {
+		state.ResourceStates = map[string]resourceUserState{}
 	}
-	for resourceID, attention := range state.Attention {
-		attention.DismissedTurn = nil
-		attention.TurnNumber = 0
-		state.Attention[resourceID] = attention
+	for resourceID, resourceState := range state.ResourceStates {
+		if !resourceState.Favorite && resourceState.ReadTurnNumber == nil {
+			delete(state.ResourceStates, resourceID)
+		}
 	}
+	state.Attention = nil
 	return saveJSONStateFile(path, ".ui-state-*.tmp", state)
 }
 
@@ -162,39 +177,43 @@ func selectedUserName(userNames []string) string {
 	return app.DefaultUserName
 }
 
-func (s *server) loadAttentionAtPath(path string, userNames ...string) (map[string]resourceAttentionState, error) {
+func (s *server) loadResourceStatesAtPath(path string, userNames ...string) (map[string]resourceUserState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
 	state, err := loadUIStateFile(userUIStatePath(path, selectedUserName(userNames)))
 	if err != nil {
 		return nil, err
 	}
-	return state.Attention, nil
+	return state.ResourceStates, nil
 }
 
-func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate func(*resourceAttentionState), userNames ...string) (resourceAttentionState, error) {
+func (s *server) mutateResourceUserStateAtPath(path, resourceID string, mutate func(*resourceUserState), userNames ...string) (resourceUserState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
 	statePath := userUIStatePath(path, selectedUserName(userNames))
 	state, err := loadUIStateFile(statePath)
 	if err != nil {
-		return resourceAttentionState{}, err
+		return resourceUserState{}, err
 	}
-	if state.Attention == nil {
-		state.Attention = map[string]resourceAttentionState{}
+	if state.ResourceStates == nil {
+		state.ResourceStates = map[string]resourceUserState{}
 	}
 	resourceID = normalizedResourceID(resourceID)
-	attention := state.Attention[resourceID]
-	mutate(&attention)
-	state.Attention[resourceID] = attention
-	if err := saveUIStateFile(statePath, state); err != nil {
-		return resourceAttentionState{}, err
+	resourceState := state.ResourceStates[resourceID]
+	mutate(&resourceState)
+	if !resourceState.Favorite && resourceState.ReadTurnNumber == nil {
+		delete(state.ResourceStates, resourceID)
+	} else {
+		state.ResourceStates[resourceID] = resourceState
 	}
-	return attention, nil
+	if err := saveUIStateFile(statePath, state); err != nil {
+		return resourceUserState{}, err
+	}
+	return resourceState, nil
 }
 
 // pruneUIStateForArchivedResources removes persisted UI state entries that
-// reference resources removed by an archive, so follow stars, expansion state
+// reference resources removed by an archive, so favorite stars, expansion state
 // and custom ordering cannot leak into a resource that later reuses the ID.
 func (s *server) pruneUIStateForArchivedResources(workspacePath string, resourceIDs []string) error {
 	if len(resourceIDs) == 0 {
@@ -247,6 +266,12 @@ func (s *server) pruneUIStateForArchivedResources(workspacePath string, resource
 
 func prunedUIState(state uiState, archived map[string]bool) (uiState, bool) {
 	changed := false
+	for id := range state.ResourceStates {
+		if archived[id] {
+			delete(state.ResourceStates, id)
+			changed = true
+		}
+	}
 	for id := range state.Attention {
 		if archived[id] {
 			delete(state.Attention, id)
@@ -297,7 +322,7 @@ func dropArchivedResourceIDs(ids []string, archived map[string]bool) ([]string, 
 
 // allocateResourceTurnNumber advances the resource-wide turn ordinal. It is
 // separate from the generation record because a replacement generation must
-// not reset the dismiss boundary of the resource.
+// not reset the read boundary of the resource.
 func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
@@ -325,7 +350,7 @@ func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error
 	return state.TurnNumbers[resourceID], nil
 }
 
-func (s *server) handleResourceAttention(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+func (s *server) handleResourceFavorite(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
 	workspace, err := s.workspace(workspaceID)
 	if err != nil {
 		writeError(w, err, http.StatusNotFound)
@@ -337,49 +362,46 @@ func (s *server) handleResourceAttention(w http.ResponseWriter, r *http.Request,
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	if err := validateAttentionResource(workspace.Path, resourceID); err != nil {
+	if err := validateFavoriteResource(workspace.Path, resourceID); err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		attention, err := s.attentionForResource(workspace.Path, resourceID, userName)
+		resourceState, err := s.resourceUserStateForResource(workspace.Path, resourceID, userName)
 		if err != nil {
 			writeError(w, err, http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, resourceAttentionSnapshotForState(attention))
+		writeJSON(w, resourceUserStateSnapshotForState(resourceState))
 	case http.MethodPut:
 		var body struct {
-			Followed *bool `json:"followed"`
+			Favorite *bool `json:"favorite"`
 		}
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil || body.Followed == nil {
+		if err := decoder.Decode(&body); err != nil || body.Favorite == nil {
 			if err == nil {
-				err = errors.New("followed is required")
+				err = errors.New("favorite is required")
 			}
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
-		attention, err := s.mutateResourceAttentionAtPath(workspace.Path, resourceID, func(state *resourceAttentionState) {
-			state.Followed = *body.Followed
-			if *body.Followed {
-				state.ReadTurnNumber = nil
-			}
+		resourceState, err := s.mutateResourceUserStateAtPath(workspace.Path, resourceID, func(state *resourceUserState) {
+			state.Favorite = *body.Favorite
 		}, userName)
 		if err != nil {
 			writeError(w, err, http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, resourceAttentionSnapshotForState(attention))
+		writeJSON(w, resourceUserStateSnapshotForState(resourceState))
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *server) handleResourceAttentionDismiss(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
-	if r.Method != http.MethodPost {
+func (s *server) handleResourceRead(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+	if r.Method != http.MethodPut {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -398,29 +420,49 @@ func (s *server) handleResourceAttentionDismiss(w http.ResponseWriter, r *http.R
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	turnNumber, err := s.currentResourceTurnNumber(workspace.Path, resourceID)
+	var body struct {
+		ThroughTurnNumber *int `json:"throughTurnNumber"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil || body.ThroughTurnNumber == nil {
+		if err == nil {
+			err = errors.New("throughTurnNumber is required")
+		}
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if *body.ThroughTurnNumber < 0 {
+		writeError(w, errors.New("throughTurnNumber must not be negative"), http.StatusBadRequest)
+		return
+	}
+	currentTurnNumber, err := s.currentResourceTurnNumber(workspace.Path, resourceID)
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	attention, err := s.mutateResourceAttentionAtPath(workspace.Path, resourceID, func(state *resourceAttentionState) {
-		if state.ReadTurnNumber == nil || *state.ReadTurnNumber < turnNumber {
-			state.ReadTurnNumber = cloneIntPointer(&turnNumber)
+	if *body.ThroughTurnNumber > currentTurnNumber {
+		writeError(w, fmt.Errorf("throughTurnNumber %d exceeds current Turn %d", *body.ThroughTurnNumber, currentTurnNumber), http.StatusBadRequest)
+		return
+	}
+	resourceState, err := s.mutateResourceUserStateAtPath(workspace.Path, resourceID, func(state *resourceUserState) {
+		if state.ReadTurnNumber == nil || *state.ReadTurnNumber < *body.ThroughTurnNumber {
+			state.ReadTurnNumber = cloneIntPointer(body.ThroughTurnNumber)
 		}
 	}, userName)
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, resourceAttentionSnapshotForState(attention))
+	writeJSON(w, resourceUserStateSnapshotForState(resourceState))
 }
 
-func (s *server) attentionForResource(path, resourceID string, userNames ...string) (resourceAttentionState, error) {
-	attention, err := s.loadAttentionAtPath(path, userNames...)
+func (s *server) resourceUserStateForResource(path, resourceID string, userNames ...string) (resourceUserState, error) {
+	resourceStates, err := s.loadResourceStatesAtPath(path, userNames...)
 	if err != nil {
-		return resourceAttentionState{}, err
+		return resourceUserState{}, err
 	}
-	return attention[normalizedResourceID(resourceID)], nil
+	return resourceStates[normalizedResourceID(resourceID)], nil
 }
 
 func validateAttentionResource(path, resourceID string) error {
@@ -437,43 +479,30 @@ func validateAttentionResource(path, resourceID string) error {
 	return nil
 }
 
-func selectLatestAgentHubResourceGenerations(records []generationRecord) map[string]generationRecord {
+func validateFavoriteResource(path, resourceID string) error {
+	resourceID = normalizedResourceID(resourceID)
+	if resourceID == "workspace" || resourceID == app.SchedulerResourceID {
+		return fmt.Errorf("resource %s cannot be favorited", resourceID)
+	}
+	return validateAttentionResource(path, resourceID)
+}
+
+func latestTurnGenerationByResource(records []generationRecord) map[string]generationRecord {
 	byResourceID := make(map[string]generationRecord)
 	for _, record := range records {
-		if strings.TrimSpace(record.GenerationID) == "" || !isAgentHubGeneration(record) {
+		if strings.TrimSpace(record.GenerationID) == "" || !isAgentHubGeneration(record) || record.TurnNumber <= 0 {
 			continue
 		}
 		resourceID := normalizedResourceID(record.ResourceID)
 		if resourceID == "" {
 			resourceID = "workspace"
 		}
-		if current, ok := byResourceID[resourceID]; !ok || resourceRuntimeGenerationNewer(record, current) {
+		if current, ok := byResourceID[resourceID]; !ok || record.TurnNumber > current.TurnNumber ||
+			record.TurnNumber == current.TurnNumber && resourceRuntimeGenerationNewer(record, current) {
 			byResourceID[resourceID] = record
 		}
 	}
 	return byResourceID
-}
-
-func attentionAgentHubResourceGenerations(workspacePath string) (map[string]generationRecord, error) {
-	records, err := loadCurrentGenerationRecords(workspacePath)
-	if err != nil {
-		return nil, fmt.Errorf("load resource generations for active attention turns: %w", err)
-	}
-	latest := selectLatestAgentHubResourceGenerations(records)
-	active := make(map[string]generationRecord)
-	for _, record := range records {
-		if strings.TrimSpace(record.GenerationID) == "" || !isAgentHubGeneration(record) || !generationHasActiveTurn(record) {
-			continue
-		}
-		resourceID := normalizedResourceID(record.ResourceID)
-		if current, ok := active[resourceID]; !ok || resourceRuntimeGenerationNewer(record, current) {
-			active[resourceID] = record
-		}
-	}
-	for resourceID, record := range active {
-		latest[resourceID] = record
-	}
-	return latest, nil
 }
 
 func (s *server) currentResourceTurnNumber(workspacePath, resourceID string) (int, error) {
@@ -509,31 +538,7 @@ func resourceRuntimeSnapshotForGeneration(record generationRecord) *resourceRunt
 	}
 }
 
-func resourceAttentionVisible(item resourceSnapshot) bool {
-	if item.Archived {
-		return false
-	}
-	attention := item.Attention
-	if attention == nil || !attention.Followed {
-		return item.Runtime != nil && item.Runtime.ActiveTurn
-	}
-	if item.Runtime == nil {
-		return attention.ReadTurnNumber == nil
-	}
-	if item.Runtime.ActiveTurn {
-		return true
-	}
-	return attention.ReadTurnNumber == nil || item.Runtime.TurnNumber > *attention.ReadTurnNumber
-}
-
-func resourceAttentionSortTime(item resourceSnapshot) time.Time {
-	if item.Runtime == nil {
-		return time.Time{}
-	}
-	value := item.Runtime.CompletionAt
-	if item.Runtime.ActiveTurn {
-		value = item.Runtime.TurnStartedAt
-	}
+func resourceActivitySortTime(value string) time.Time {
 	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
 	if err != nil {
 		return time.Time{}
@@ -541,19 +546,58 @@ func resourceAttentionSortTime(item resourceSnapshot) time.Time {
 	return parsed
 }
 
-func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspaceTree, userNames ...string) error {
-	attention, err := s.loadAttentionAtPath(workspacePath, userNames...)
+func sortResourceActivity(items []resourceSnapshot, timestamp func(resourceSnapshot) string) {
+	sort.SliceStable(items, func(i, j int) bool {
+		leftTime := resourceActivitySortTime(timestamp(items[i]))
+		rightTime := resourceActivitySortTime(timestamp(items[j]))
+		if !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
+		}
+		if items[i].Title != items[j].Title {
+			return items[i].Title < items[j].Title
+		}
+		return items[i].ID < items[j].ID
+	})
+}
+
+func (s *server) enrichTreeResourceActivity(workspacePath string, tree *workspaceTree, userNames ...string) error {
+	resourceStates, err := s.loadResourceStatesAtPath(workspacePath, userNames...)
 	if err != nil {
-		return fmt.Errorf("load resource attention for tree: %w", err)
+		return fmt.Errorf("load user resource state for tree: %w", err)
 	}
-	records, err := attentionAgentHubResourceGenerations(workspacePath)
+	records, err := loadGenerationRecords(workspacePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("load resource generations for activity: %w", err)
+	}
+	latestRecords := latestTurnGenerationByResource(records)
+	sharedState, err := loadResourceStateFile(resourceStatePath(workspacePath))
+	if err != nil {
+		return fmt.Errorf("load resource Turn state for activity: %w", err)
 	}
 	var applyState func(*resourceSnapshot)
 	applyState = func(item *resourceSnapshot) {
-		if state, ok := attention[normalizedResourceID(item.ID)]; ok {
-			item.Attention = resourceAttentionSnapshotForState(state)
+		resourceID := normalizedResourceID(item.ID)
+		state, hasState := resourceStates[resourceID]
+		if hasState {
+			item.UserState = resourceUserStateSnapshotForState(state)
+		}
+		item.LatestTurnNumber = sharedState.TurnNumbers[resourceID]
+		if record, ok := latestRecords[resourceID]; ok {
+			if record.TurnNumber > item.LatestTurnNumber {
+				item.LatestTurnNumber = record.TurnNumber
+			}
+			item.LatestTurnAt = record.CompletionAt
+			if item.LatestTurnAt == "" {
+				item.LatestTurnAt = record.TurnStartedAt
+			}
+			item.LatestAgentName = record.AgentHubAgentName
+		}
+		readTurnNumber := 0
+		if state.ReadTurnNumber != nil {
+			readTurnNumber = *state.ReadTurnNumber
+		}
+		if item.LatestTurnNumber > readTurnNumber {
+			item.UnreadCount = item.LatestTurnNumber - readTurnNumber
 		}
 		for i := range item.Children {
 			applyState(&item.Children[i])
@@ -564,53 +608,43 @@ func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspa
 	for i := range tree.Projects {
 		applyState(&tree.Projects[i])
 	}
-	var applyRuntime func(*resourceSnapshot)
-	applyRuntime = func(item *resourceSnapshot) {
-		if record, ok := records[normalizedResourceID(item.ID)]; ok {
-			item.Runtime = resourceRuntimeSnapshotForGeneration(record)
-		}
-		for i := range item.Children {
-			applyRuntime(&item.Children[i])
-		}
-	}
-	applyRuntime(&tree.Workspace)
-	applyRuntime(&tree.Scheduler)
-	for i := range tree.Projects {
-		applyRuntime(&tree.Projects[i])
-	}
-
-	workspaceItem := tree.Workspace
-
 	candidates := make([]resourceSnapshot, 0, 2+len(tree.Projects))
-	candidates = append(candidates, workspaceItem, tree.Scheduler)
+	candidates = append(candidates, tree.Workspace, tree.Scheduler)
 	for _, project := range tree.Projects {
 		project.Children = append([]resourceSnapshot(nil), project.Children...)
 		candidates = append(candidates, project)
 		candidates = append(candidates, project.Children...)
 	}
-	tree.AttentionList = make([]resourceSnapshot, 0, len(candidates))
+	tree.Activity = resourceActivityLists{
+		Running: make([]resourceSnapshot, 0), Favorites: make([]resourceSnapshot, 0),
+		Unread: make([]resourceSnapshot, 0), Problems: make([]resourceSnapshot, 0),
+	}
 	for _, item := range candidates {
-		if !resourceAttentionVisible(item) {
+		if item.Archived {
 			continue
 		}
 		item.Children = nil
-		tree.AttentionList = append(tree.AttentionList, item)
+		if item.Runtime != nil && item.Runtime.ActiveTurn {
+			tree.Activity.Running = append(tree.Activity.Running, item)
+		}
+		if (item.Type == "project" || item.Type == "task") && item.UserState != nil && item.UserState.Favorite {
+			tree.Activity.Favorites = append(tree.Activity.Favorites, item)
+		}
+		if item.UnreadCount > 0 {
+			tree.Activity.Unread = append(tree.Activity.Unread, item)
+		}
+		if item.Type == "task" && (item.State == app.TaskStateBlocked || item.State == app.TaskStateError) {
+			tree.Activity.Problems = append(tree.Activity.Problems, item)
+		}
 	}
-	sort.SliceStable(tree.AttentionList, func(i, j int) bool {
-		left, right := tree.AttentionList[i], tree.AttentionList[j]
-		leftActive := left.Runtime != nil && left.Runtime.ActiveTurn
-		rightActive := right.Runtime != nil && right.Runtime.ActiveTurn
-		if leftActive != rightActive {
-			return leftActive
+	sortResourceActivity(tree.Activity.Running, func(item resourceSnapshot) string {
+		if item.Runtime != nil {
+			return item.Runtime.TurnStartedAt
 		}
-		leftTime, rightTime := resourceAttentionSortTime(left), resourceAttentionSortTime(right)
-		if !leftTime.Equal(rightTime) {
-			return leftTime.After(rightTime)
-		}
-		if left.Title != right.Title {
-			return left.Title < right.Title
-		}
-		return left.ID < right.ID
+		return ""
 	})
+	sortResourceActivity(tree.Activity.Favorites, func(item resourceSnapshot) string { return item.LatestTurnAt })
+	sortResourceActivity(tree.Activity.Unread, func(item resourceSnapshot) string { return item.LatestTurnAt })
+	sortResourceActivity(tree.Activity.Problems, func(item resourceSnapshot) string { return item.StateUpdatedAt })
 	return nil
 }

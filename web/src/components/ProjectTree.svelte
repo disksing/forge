@@ -17,7 +17,7 @@
     onSelect,
     onReorder,
     onDragState,
-    onToggleAttention,
+    onToggleFavorite,
     onToast,
   }: {
     identity: string;
@@ -29,7 +29,7 @@
     onSelect: (id: string) => Promise<void>;
     onReorder: (drag: ShellDragTarget, target: ShellDragTarget, after: boolean) => Promise<void>;
     onDragState: (drag: ShellDragTarget | null) => void;
-    onToggleAttention: (id: string, followed: boolean) => Promise<void>;
+    onToggleFavorite: (id: string, favorite: boolean) => Promise<void>;
     onToast: (message: string) => void;
   } = $props();
   let drag = $state<ShellDragTarget | null>(null);
@@ -214,14 +214,14 @@
     try {
       if (item.type === "project" && target?.closest("[data-project-toggle]")) {
         // Pointer clicks on the chevron focus the row button, and the
-        // tree-item:focus-within rule would then pin the follow star
+        // tree-item:focus-within rule would then pin the favorite star
         // visible even after the pointer leaves the row. Drop that focus.
         (event.currentTarget as HTMLElement | null)?.blur();
         await onToggle(item.id);
       }
       else {
         // Pointer clicks on the row itself focus the row button, and the
-        // tree-item:focus-within rule would then pin the follow star
+        // tree-item:focus-within rule would then pin the favorite star
         // visible even after the pointer leaves the row. Drop that focus;
         // keyboard activation (detail === 0) keeps it.
         if (event.detail > 0) (event.currentTarget as HTMLElement | null)?.blur();
@@ -232,7 +232,7 @@
     }
   }
 
-  async function toggleAttention(event: Event, item: ShellResourceItem): Promise<void> {
+  async function toggleFavorite(event: Event, item: ShellResourceItem): Promise<void> {
     event.preventDefault();
     event.stopPropagation();
     // Pointer clicks focus the star (tabindex="0"), and the
@@ -240,15 +240,15 @@
     // pointer leaves the row. Drop that focus; keyboard toggles keep it.
     if (event instanceof MouseEvent) (event.currentTarget as HTMLElement | null)?.blur();
     try {
-      await onToggleAttention(item.id, !item.followed);
+      await onToggleFavorite(item.id, !item.favorite);
     } catch (reason) {
       onToast(reason instanceof Error ? reason.message : String(reason));
     }
   }
 
-  function attentionKeydown(event: KeyboardEvent, item: ShellResourceItem): void {
+  function favoriteKeydown(event: KeyboardEvent, item: ShellResourceItem): void {
     if (event.key !== "Enter" && event.key !== " ") return;
-    void toggleAttention(event, item);
+    void toggleFavorite(event, item);
   }
 </script>
 
@@ -266,9 +266,9 @@
         <button type="button" class={`tree-item ${statusClass(project.status)} ${project.active ? "active" : ""} ${drag?.id === project.id ? "drag-source" : ""} ${rowDropClass(project.id)}`} aria-label={project.ariaLabel || undefined} onclick={(event) => activate(event, project)} ondragover={(event) => updateDrop(event, { kind: "project", id: project.id, projectId: "" })} ondrop={(event) => commitDrop(event, { kind: "project", id: project.id, projectId: "" })}>
           <span class="chevron" class:expanded={project.expanded} data-project-toggle={project.children.length ? project.id : undefined}>{#if project.children.length}<Icon name="chevron-right" />{/if}</span>
           {#if project.status.hasTaskState}<StatusPresentation status={project.status} />{:else}<Icon name="folder" className="tree-icon" />{/if}
-          <span class="name"><span class="name-text">{project.title}</span><span class="resource-ref">{project.ref}</span>{#if project.summary && !project.expanded}<span class="project-task-summary" aria-hidden="true"><span class="project-task-summary-count">{project.summary.taskLabel}</span><span class="project-task-summary-separator">·</span><span class="project-task-summary-running">{project.summary.runningLabel}</span></span>{/if}</span>
+          <span class="name"><span class="name-text">{project.title}</span>{#if project.unreadCount > 0}<span class="unread-badge" aria-label={`${project.unreadCount} unread ${project.unreadCount === 1 ? "Turn" : "Turns"}`}>{project.unreadCount > 99 ? "99+" : project.unreadCount}</span>{/if}<span class="resource-ref">{project.ref}</span>{#if project.summary && !project.expanded}<span class="project-task-summary" aria-hidden="true"><span class="project-task-summary-count">{project.summary.taskLabel}</span><span class="project-task-summary-separator">·</span><span class="project-task-summary-running">{project.summary.runningLabel}</span></span>{/if}</span>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <span class:followed={project.followed} class="attention-star" role="checkbox" aria-checked={project.followed} tabindex="0" aria-label={project.followed ? `Unfollow ${project.title}` : `Follow ${project.title}`} title={project.followed ? "Unfollow" : "Follow"} onclick={(event) => toggleAttention(event, project)} onkeydown={(event) => attentionKeydown(event, project)}><Icon name="star" /></span>
+          <span class:favorite={project.favorite} class="favorite-star" role="checkbox" aria-checked={project.favorite} tabindex="0" aria-label={project.favorite ? `Remove ${project.title} from favorites` : `Add ${project.title} to favorites`} title={project.favorite ? "Remove from favorites" : "Add to favorites"} onclick={(event) => toggleFavorite(event, project)} onkeydown={(event) => favoriteKeydown(event, project)}><Icon name="star" /></span>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <span class="drag-handle" draggable="true" title="Drag to reorder" ondragstart={(event) => beginDrag(event, { kind: "project", id: project.id, projectId: "" })} ondragend={finishDrag}><Icon name="grip-vertical" className="drag-handle-icon" /></span>
         </button>
@@ -280,9 +280,9 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <span class="task-state-icon" onclick={(event) => toggleStateTooltip(event, task)}><StatusPresentation status={task.status} /></span>
-                <span class="name"><span class="name-text">{task.title}</span><span class="resource-ref">{task.ref}</span></span>
+                <span class="name"><span class="name-text">{task.title}</span>{#if task.unreadCount > 0}<span class="unread-badge" aria-label={`${task.unreadCount} unread ${task.unreadCount === 1 ? "Turn" : "Turns"}`}>{task.unreadCount > 99 ? "99+" : task.unreadCount}</span>{/if}<span class="resource-ref">{task.ref}</span></span>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <span class:followed={task.followed} class="attention-star" role="checkbox" aria-checked={task.followed} tabindex="0" aria-label={task.followed ? `Unfollow ${task.title}` : `Follow ${task.title}`} title={task.followed ? "Unfollow" : "Follow"} onclick={(event) => toggleAttention(event, task)} onkeydown={(event) => attentionKeydown(event, task)}><Icon name="star" /></span>
+                <span class:favorite={task.favorite} class="favorite-star" role="checkbox" aria-checked={task.favorite} tabindex="0" aria-label={task.favorite ? `Remove ${task.title} from favorites` : `Add ${task.title} to favorites`} title={task.favorite ? "Remove from favorites" : "Add to favorites"} onclick={(event) => toggleFavorite(event, task)} onkeydown={(event) => favoriteKeydown(event, task)}><Icon name="star" /></span>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <span class="drag-handle" draggable="true" title="Drag to reorder" ondragstart={(event) => beginDrag(event, { kind: "task", id: task.id, projectId: project.id })} ondragend={finishDrag}><Icon name="grip-vertical" className="drag-handle-icon" /></span>
               </button>

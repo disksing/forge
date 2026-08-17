@@ -94,7 +94,7 @@ describe("Archive resource flow", () => {
           children: [],
         },
       ],
-      attentionList: [],
+	      activity: { running: [], favorites: [], unread: [], problems: [] },
       wiki: { exists: false },
     };
     const state = {

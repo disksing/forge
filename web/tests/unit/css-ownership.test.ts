@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "../..");
 const components = [
   "AgentPanelHeader",
   "AppearanceSettingsPanel",
-  "AttentionList",
+  "ActivityPanel",
   "ApprovalCard",
   "AppShell",
   "AgentHubSettingsPanel",
@@ -53,7 +53,7 @@ const components = [
 const owners: Record<(typeof components)[number], string> = {
   AgentPanelHeader: "agent-panel-header",
   AppearanceSettingsPanel: "appearance-settings-panel",
-  AttentionList: "attention-list",
+  ActivityPanel: "attention-list",
   ApprovalCard: "event-timeline",
   AppShell: "app-shell",
   AgentHubSettingsPanel: "agenthub-settings-panel",
@@ -140,11 +140,12 @@ describe("CSS ownership", () => {
     expect(selectorHeaders(read("src/styles/base.css"))).not.toEqual(expect.arrayContaining([expect.stringMatching(/\.[a-z]/)]));
   });
 
-  it.each(components)("keeps %s selectors inside its component boundary", (component) => {
-    const owner = owners[component];
-    const componentSource = read(`src/components/${component}.svelte`);
-    const css = read(`src/components/${component}.css`);
-    expect(componentSource).toContain(`import "./${component}.css";`);
+	  it.each(components)("keeps %s selectors inside its component boundary", (component) => {
+	    const owner = owners[component];
+	    const componentSource = read(`src/components/${component}.svelte`);
+	    const cssName = component === "ActivityPanel" ? "AttentionList" : component;
+	    const css = read(`src/components/${cssName}.css`);
+	    expect(componentSource).toContain(`import "./${cssName}.css";`);
     for (const header of selectorHeaders(css)) {
       for (const selector of header.split(",")) {
         const normalized = selector.trim();
@@ -185,7 +186,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskWizard", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
+	    for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "ActivityPanel", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskWizard", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

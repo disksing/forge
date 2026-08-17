@@ -5,7 +5,7 @@
 
   import Icon from "./Icon.svelte";
   import DoctorDialog from "./DoctorDialog.svelte";
-  import AttentionList from "./AttentionList.svelte";
+  import ActivityPanel from "./ActivityPanel.svelte";
   import MobileToolbar from "./MobileToolbar.svelte";
   import type { ModelChannel } from "./model-channel";
   import type { AppShellModel } from "./models";
@@ -127,9 +127,9 @@
     <WorkspaceSwitcher identity={model.identity} mobileSidebarOpen={model.mobile.sidebarOpen} activeWorkspaceId={model.activeWorkspaceId} workspaces={model.workspaces} onSwitch={model.onSwitchWorkspace} onOpen={() => model.onSelectResource("workspace")} onAdd={model.onAddWorkspace} onToast={model.onToast} />
     <SchedulerNav item={model.scheduler || null} onSelect={model.onSelectResource} onToast={model.onToast} />
   </div>
-  <ProjectTree identity={model.identity} loading={model.loading} error={model.error} projects={model.projects} onCreate={model.onCreateProject} onToggle={model.onToggleProject} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToggleAttention={model.onToggleAttention} onToast={model.onToast} />
+  <ProjectTree identity={model.identity} loading={model.loading} error={model.error} projects={model.projects} onCreate={model.onCreateProject} onToggle={model.onToggleProject} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToggleFavorite={model.onToggleFavorite} onToast={model.onToast} />
   <PaneResizeHandle id="activityResize" kind="sidebarAttentionHeight" className="horizontal-resize sidebar-activity-resize" label="Resize activity panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
-  <AttentionList items={model.attentionList} onSelect={model.onSelectResource} onToggleAttention={model.onToggleAttention} onDismiss={model.onDismissAttention} onToast={model.onToast} />
+  <ActivityPanel activity={model.activity} onSelect={model.onSelectResource} onToggleFavorite={model.onToggleFavorite} onToast={model.onToast} />
 </aside>
 <PaneResizeHandle id="sidebarResize" kind="sidebarWidth" className="sidebar-resize" label="Resize sidebar" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
 <main class="workspace-panel">

@@ -2,12 +2,12 @@ import { mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import MobileToolbar from "../../src/components/MobileToolbar.svelte";
-import AttentionList from "../../src/components/AttentionList.svelte";
+import ActivityPanel from "../../src/components/ActivityPanel.svelte";
 import ProjectTree from "../../src/components/ProjectTree.svelte";
 import PaneResizeHandle from "../../src/components/PaneResizeHandle.svelte";
 import SchedulerNav from "../../src/components/SchedulerNav.svelte";
 import WorkspaceSwitcher from "../../src/components/WorkspaceSwitcher.svelte";
-import type { ShellAttentionItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
+import type { ShellActivityItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -31,7 +31,7 @@ const emptyStatus: ShellStatusPresentation = {
 function resource(id: string, type: "project" | "task" = "project"): ShellResourceItem {
   return {
     id, type, title: id, ref: `#${id}`, active: false, expanded: false, ariaLabel: id, statusLabel: "",
-    status: emptyStatus, summary: null, children: [],
+    status: emptyStatus, summary: null, children: [], unreadCount: 0,
   };
 }
 
@@ -165,12 +165,12 @@ describe("AppShell responsibility components", () => {
     const onSelect = vi.fn(async () => undefined);
     const onReorder = vi.fn(async () => undefined);
     const onDragState = vi.fn();
-    const onToggleAttention = vi.fn(async () => undefined);
+    const onToggleFavorite = vi.fn(async () => undefined);
     const projectA = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [projectA, resource("project-b")],
-      onCreate: vi.fn(), onToggle, onSelect, onReorder, onDragState, onToggleAttention, onToast: vi.fn(),
+      onCreate: vi.fn(), onToggle, onSelect, onReorder, onDragState, onToggleFavorite, onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -179,8 +179,8 @@ describe("AppShell responsibility components", () => {
     target.querySelector<HTMLButtonElement>('[aria-label="task-a"]')!.click();
     await vi.waitFor(() => expect(onToggle).toHaveBeenCalledWith("project-a"));
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("task-a"));
-    target.querySelector<HTMLElement>('[aria-label="Follow project-a"]')!.click();
-    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledWith("project-a", true));
+    target.querySelector<HTMLElement>('[aria-label="Add project-a to favorites"]')!.click();
+    await vi.waitFor(() => expect(onToggleFavorite).toHaveBeenCalledWith("project-a", true));
 
     const rows = target.querySelectorAll<HTMLElement>(".project-tree > .tree-item");
     rows[0].querySelector<HTMLElement>(".drag-handle")!.dispatchEvent(dragEvent("dragstart"));
@@ -200,7 +200,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [resource("project-a")],
       onCreate, onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
-      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -210,6 +210,25 @@ describe("AppShell responsibility components", () => {
     expect(target.querySelector("#workspaceTitle")).toBeNull();
     target.querySelector<HTMLButtonElement>("#newProjectButton")!.click();
     expect(onCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("ProjectTree shows each resource's own unread count and caps the visible badge at 99+", async () => {
+    const task = { ...resource("task-a", "task"), unreadCount: 120 };
+    const project = { ...resource("project-a"), expanded: true, unreadCount: 2, children: [task] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleFavorite: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const badges = target.querySelectorAll<HTMLElement>(".unread-badge");
+    expect(badges).toHaveLength(2);
+    expect(badges[0].textContent).toBe("2");
+    expect(badges[0].getAttribute("aria-label")).toBe("2 unread Turns");
+    expect(badges[1].textContent).toBe("99+");
+    expect(badges[1].getAttribute("aria-label")).toBe("120 unread Turns");
   });
 
   it("ProjectTree replaces the Task file icon with exactly one workflow state icon", async () => {
@@ -224,7 +243,7 @@ describe("AppShell responsibility components", () => {
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
-      onCreate: vi.fn(), onToggle: vi.fn(), onSelect, onReorder: vi.fn(), onDragState: vi.fn(), onToggleAttention: vi.fn(), onToast: vi.fn(),
+      onCreate: vi.fn(), onToggle: vi.fn(), onSelect, onReorder: vi.fn(), onDragState: vi.fn(), onToggleFavorite: vi.fn(), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -260,7 +279,7 @@ describe("AppShell responsibility components", () => {
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
-      onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleAttention: vi.fn(), onToast: vi.fn(),
+      onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleFavorite: vi.fn(), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -294,7 +313,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [expandedProject, collapsedProject],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
-      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -317,7 +336,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle, onSelect,
-      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -341,7 +360,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect,
-      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -364,75 +383,64 @@ describe("AppShell responsibility components", () => {
     expect(document.activeElement).toBe(row);
   });
 
-  it("ProjectTree follow star drops pointer focus but keeps keyboard focus", async () => {
-    const onToggleAttention = vi.fn(async () => undefined);
+  it("ProjectTree favorite star drops pointer focus but keeps keyboard focus", async () => {
+    const onToggleFavorite = vi.fn(async () => undefined);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [resource("project-a")],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
-      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention, onToast: vi.fn(),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite, onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
 
     // A pointer click must blur the star: a focused star keeps the row's
     // focus-within rule active, pinning it visible after the pointer leaves.
-    const star = target.querySelector<HTMLElement>('[aria-label="Follow project-a"]')!;
+    const star = target.querySelector<HTMLElement>('[aria-label="Add project-a to favorites"]')!;
     star.focus();
     star.click();
-    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledWith("project-a", true));
+    await vi.waitFor(() => expect(onToggleFavorite).toHaveBeenCalledWith("project-a", true));
     expect(document.activeElement).not.toBe(star);
 
     // Keyboard toggles keep focus so the visible focus ring is not lost.
     star.focus();
     star.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(onToggleFavorite).toHaveBeenCalledTimes(2));
     expect(document.activeElement).toBe(star);
   });
 
-  it("AttentionList exposes follow and dismiss controls without selecting the row", async () => {
+  it("ActivityPanel shows tab counts and favorites without a dismiss control", async () => {
     const onSelect = vi.fn(async () => undefined);
-    const onToggleAttention = vi.fn(async () => undefined);
-    const onDismiss = vi.fn(async () => undefined);
-    const item: ShellAttentionItem = {
-      id: "project-a", type: "project", title: "Project A", ref: "#1", selected: true, activeTurn: false, followed: true,
-      turnNumber: 2, agentName: "Codex", statusLabel: "Focused resource", status: emptyStatus,
+    const onToggleFavorite = vi.fn(async () => undefined);
+    const item: ShellActivityItem = {
+      id: "project-a", type: "project", title: "Project A", ref: "#1", selected: true, activeTurn: false, favorite: true, unreadCount: 2,
+      turnNumber: 2, agentName: "Codex", statusLabel: "2 unread", status: emptyStatus,
     };
-    const activeItem: ShellAttentionItem = {
-      id: "task-b", type: "task", title: "Task B", ref: "#2", selected: false, activeTurn: true, followed: false,
+    const activeItem: ShellActivityItem = {
+      id: "task-b", type: "task", title: "Task B", ref: "#2", selected: false, activeTurn: true, favorite: false, unreadCount: 1,
       turnNumber: 3, agentName: "Codex", statusLabel: "Resource working", status: emptyStatus,
     };
     const target = document.body.appendChild(document.createElement("div"));
-    const component = mount(AttentionList, { target, props: { items: [item, activeItem], onSelect, onToggleAttention, onDismiss, onToast: vi.fn() } });
+    const activity = { running: [activeItem], favorites: [item], unread: [activeItem, item], problems: [] };
+    const component = mount(ActivityPanel, { target, props: { activity, onSelect, onToggleFavorite, onToast: vi.fn() } });
     cleanups.push(() => unmount(component));
     await tick();
 
-    const unfollow = target.querySelector<HTMLElement>('[aria-label="Unfollow Project A"]')!;
-    unfollow.focus();
-    unfollow.click();
-    target.querySelector<HTMLElement>('[aria-label="Dismiss Project A"]')!.click();
-    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledWith("project-a", false));
-    await vi.waitFor(() => expect(onDismiss).toHaveBeenCalledWith("project-a"));
-    // Pointer clicks blur the star so focus-within does not pin it visible.
-    expect(document.activeElement).not.toBe(unfollow);
-    expect(onSelect).not.toHaveBeenCalled();
-    expect(target.querySelector(".section-title")?.textContent).toBe("Activity");
-    expect(target.querySelector(".activity-title")?.textContent).toContain("#1 · Agent Codex · Turn 2 · Focused resource");
-    const selectedRow = target.querySelector<HTMLElement>('[aria-label^="Project A."]')!;
+    expect([...target.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim())).toEqual(["Running 1", "Favorites 1", "Unread 2", "Problems 0"]);
     const activeRow = target.querySelector<HTMLElement>('[aria-label^="Task B."]')!;
-    expect(selectedRow.classList.contains("selected")).toBe(true);
-    expect(selectedRow.getAttribute("aria-current")).toBe("page");
-    expect(selectedRow.hasAttribute("data-active-turn")).toBe(false);
     expect(activeRow.classList.contains("selected")).toBe(false);
-    expect(activeRow.hasAttribute("aria-current")).toBe(false);
     expect(activeRow.getAttribute("data-active-turn")).toBe("true");
-    expect(activeRow.querySelector('[aria-label="Dismiss Task B"]')).toBeNull();
-    expect([...selectedRow.children].map((child) => child.className)).toEqual([
-      "activity-status", "activity-title", "activity-actions",
-    ]);
-    expect([...activeRow.children].map((child) => child.className)).toEqual([
-      "activity-status", "activity-title", "activity-actions",
-    ]);
+    expect(target.querySelector('[aria-label^="Dismiss "]')).toBeNull();
+
+    target.querySelector<HTMLElement>('[role="tab"]:nth-child(2)')!.click();
+    await tick();
+    const favorite = target.querySelector<HTMLElement>('[aria-label="Remove Project A from favorites"]')!;
+    favorite.focus();
+    favorite.click();
+    await vi.waitFor(() => expect(onToggleFavorite).toHaveBeenCalledWith("project-a", false));
+    expect(document.activeElement).not.toBe(favorite);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(target.querySelector(".activity-title")?.textContent).toContain("#1 · Agent Codex · Turn 2 · 2 unread");
   });
 
   it("PaneResizeHandle resizes and commits the Activity panel height", async () => {
