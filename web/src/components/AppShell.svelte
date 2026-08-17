@@ -126,7 +126,7 @@
     <WorkspaceSwitcher identity={model.identity} mobileSidebarOpen={model.mobile.sidebarOpen} activeWorkspaceId={model.activeWorkspaceId} workspaces={model.workspaces} onSwitch={model.onSwitchWorkspace} onOpen={() => model.onSelectResource("workspace")} onAdd={model.onAddWorkspace} onToast={model.onToast} />
     <SchedulerNav item={model.scheduler || null} onSelect={model.onSelectResource} onToast={model.onToast} />
   </div>
-  <ProjectTree identity={model.identity} loading={model.loading} error={model.error} projects={model.projects} onCreate={model.onCreateProject} onToggle={model.onToggleProject} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToggleFavorite={model.onToggleFavorite} onToast={model.onToast} />
+  <ProjectTree identity={model.identity} loading={model.loading} error={model.error} projects={model.projects} editing={model.treeEditing} onCreate={model.onCreateProject} onToggle={model.onToggleProject} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToggleEditing={model.onToggleTreeEditing} onCreateFolder={model.onCreateFolder} onRenameFolder={model.onRenameFolder} onDeleteFolder={model.onDeleteFolder} onToggleFolder={model.onToggleFolder} onToggleFavorite={model.onToggleFavorite} onToast={model.onToast} />
   <PaneResizeHandle id="activityResize" kind="sidebarAttentionHeight" className="horizontal-resize sidebar-activity-resize" label="Resize activity panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
   <ActivityPanel activity={model.activity} onSelect={model.onSelectResource} onToggleFavorite={model.onToggleFavorite} onToast={model.onToast} />
 </aside>

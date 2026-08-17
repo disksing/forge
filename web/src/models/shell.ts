@@ -23,7 +23,7 @@ export interface ShellProjectSummary {
 
 export interface ShellResourceItem {
   id: string;
-  type: "scheduler" | "project" | "task";
+  type: "scheduler" | "project" | "task" | "folder";
   title: string;
   ref: string;
   active: boolean;
@@ -96,9 +96,12 @@ export interface DoctorSnapshotModel {
 }
 
 export interface ShellDragTarget {
-  kind: "project" | "task";
+  kind: "project" | "task" | "folder";
   id: string;
   projectId: string;
+  // containerId is the virtual folder holding a Task row, or "" for rows at
+  // the Project root. Folders only ever live at the root.
+  containerId?: string;
 }
 
 export interface AppShellModel {
@@ -111,6 +114,7 @@ export interface AppShellModel {
   workspaces: ShellWorkspaceItem[];
   scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];
+  treeEditing: boolean;
   activity: ShellActivityLists;
   doctor: DoctorSnapshotModel;
   paneSizes: { sidebarWidth: number; chatWidth: number; sidebarAttentionHeight: number };
@@ -126,6 +130,11 @@ export interface AppShellModel {
   onSelectResource: (id: string) => Promise<void>;
   onReorder: (drag: ShellDragTarget, target: ShellDragTarget, after: boolean) => Promise<void>;
   onDragState: (drag: ShellDragTarget | null) => void;
+  onToggleTreeEditing: () => void;
+  onCreateFolder: (projectId: string) => Promise<string>;
+  onRenameFolder: (id: string, name: string) => Promise<void>;
+  onDeleteFolder: (id: string) => Promise<void>;
+  onToggleFolder: (id: string) => Promise<void>;
   onToggleFavorite: (id: string, favorite: boolean) => Promise<void>;
   onPanePreview: (name: keyof AppShellModel["paneSizes"], value: number) => void;
   onPaneCommit: (name: keyof AppShellModel["paneSizes"]) => void;

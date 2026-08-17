@@ -148,12 +148,24 @@ type diffResponse struct {
 	HasChanges bool   `json:"hasChanges"`
 }
 
+// uiStateFolder is a virtual sidebar folder. Folders are a pure UI-layer
+// grouping device: they only nest Tasks visually inside their Project and
+// never affect the real resource directories on disk.
+type uiStateFolder struct {
+	ID        string `json:"id"`
+	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
+	Expanded  bool   `json:"expanded"`
+}
+
 type uiState struct {
 	Version          int                               `json:"version"`
 	ExpandedProjects []string                          `json:"expandedProjects"`
 	LastResourceID   string                            `json:"lastResourceId,omitempty"`
 	ProjectOrder     []string                          `json:"projectOrder,omitempty"`
 	TaskOrder        map[string][]string               `json:"taskOrder,omitempty"`
+	Folders          []uiStateFolder                   `json:"folders,omitempty"`
+	FolderOrder      map[string][]string               `json:"folderOrder,omitempty"`
 	ResourceStates   map[string]resourceUserState      `json:"resourceStates,omitempty"`
 	Attention        map[string]resourceAttentionState `json:"attention,omitempty"`
 }

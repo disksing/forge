@@ -1159,3 +1159,139 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 		t.Fatalf("expected ui-state.json to persist custom order fields, got %s", data)
 	}
 }
+
+func TestUIStateRoundTripsFolders(t *testing.T) {
+	workspace := t.TempDir()
+	if _, err := app.Initialize(workspace, "en"); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	put := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/ui-state", strings.NewReader(`{"version":1,"expandedProjects":[],"taskOrder":{"project1":["project1.task1","vf-one"]},"folders":[{"id":"vf-one","projectId":"project1","name":"  Grouped  ","expanded":true},{"id":"vf-one","projectId":"project1","name":"duplicate"},{"id":"","projectId":"project1","name":"no id"}],"folderOrder":{"vf-one":["project1.task2"],"vf-missing":["project1.task3"]}}`))
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, put)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ui-state PUT to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/ui-state", nil)
+	rec = httptest.NewRecorder()
+	s.handleWorkspace(rec, get)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ui-state GET to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var loaded uiState
+	if err := json.Unmarshal(rec.Body.Bytes(), &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Folders) != 1 {
+		t.Fatalf("expected only the valid folder to persist, got %+v", loaded.Folders)
+	}
+	folder := loaded.Folders[0]
+	if folder.ID != "vf-one" || folder.ProjectID != "project1" || folder.Name != "Grouped" || !folder.Expanded {
+		t.Fatalf("expected normalized folder, got %+v", folder)
+	}
+	if _, ok := loaded.FolderOrder["vf-missing"]; ok {
+		t.Fatalf("expected folderOrder for unknown folder to be dropped, got %+v", loaded.FolderOrder)
+	}
+	if got := strings.Join(loaded.FolderOrder["vf-one"], ","); got != "project1.task2" {
+		t.Fatalf("expected persisted folder order, got %+v", loaded.FolderOrder)
+	}
+	if got := strings.Join(loaded.TaskOrder["project1"], ","); got != "project1.task1,vf-one" {
+		t.Fatalf("expected task order with folder id, got %+v", loaded.TaskOrder)
+	}
+}
+
+func TestArchiveResourcePrunesPersistedFolders(t *testing.T) {
+	workspace := t.TempDir()
+	puaWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := puaWorkspace.CreateProject("Folder project", "folder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Folder A", Slug: "folder-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Folder B", Slug: "folder-b"}); err != nil {
+		t.Fatal(err)
+	}
+	keep, err := puaWorkspace.CreateProject("Keep project", "keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.CreateTask(app.CreateTaskInput{ProjectID: keep.ID, Title: "Keep A", Slug: "keep-a"}); err != nil {
+		t.Fatal(err)
+	}
+	seed := uiState{
+		Version:          2,
+		ExpandedProjects: []string{"project1", "project2"},
+		TaskOrder: map[string][]string{
+			"project1": {"project1.task1", "vf-one"},
+			"project2": {"project2.task1", "vf-two"},
+		},
+		Folders: []uiStateFolder{
+			{ID: "vf-one", ProjectID: "project1", Name: "One", Expanded: true},
+			{ID: "vf-two", ProjectID: "project2", Name: "Two"},
+		},
+		FolderOrder: map[string][]string{
+			"vf-one": {"project1.task2", "project1.task1"},
+			"vf-two": {"project2.task1"},
+		},
+		ResourceStates: map[string]resourceUserState{},
+	}
+	if err := saveUIStateFile(userUIStatePath(workspace, app.DefaultUserName), seed); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	archive := func(resourceID string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/archive", strings.NewReader(`{"resourceId":"`+resourceID+`"}`))
+		rec := httptest.NewRecorder()
+		s.archiveResource(rec, req, "workspace-one")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("archive %s: expected OK, got %d: %s", resourceID, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Archiving a single task removes it from its folder but keeps the folder.
+	archive("project1.task1")
+	state, err := loadUIStateFile(userUIStatePath(workspace, app.DefaultUserName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(state.FolderOrder["vf-one"], ","); got != "project1.task2" {
+		t.Fatalf("archived task retained in folder order: %v", state.FolderOrder)
+	}
+	if got := strings.Join(state.TaskOrder["project1"], ","); got != "vf-one" {
+		t.Fatalf("archived task retained in task order: %v", state.TaskOrder)
+	}
+	if len(state.Folders) != 2 {
+		t.Fatalf("folders lost on task archive: %+v", state.Folders)
+	}
+
+	// Archiving a project removes its folders and their order entries.
+	archive("project1")
+	state, err = loadUIStateFile(userUIStatePath(workspace, app.DefaultUserName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Folders) != 1 || state.Folders[0].ID != "vf-two" {
+		t.Fatalf("folders for archived project retained: %+v", state.Folders)
+	}
+	if _, ok := state.FolderOrder["vf-one"]; ok {
+		t.Fatalf("folder order for archived project retained: %v", state.FolderOrder)
+	}
+	if got := strings.Join(state.FolderOrder["vf-two"], ","); got != "project2.task1" {
+		t.Fatalf("folder order for surviving project lost: %v", state.FolderOrder)
+	}
+}

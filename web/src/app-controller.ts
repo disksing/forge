@@ -17,6 +17,17 @@ import { createResourceDetailController } from "./controllers/resource-detail-co
 import { createRouteController } from "./controllers/route-controller";
 import { createSettingsController, type AgentHubData } from "./controllers/settings-controller";
 import { createShellProjection } from "./controllers/shell-projection";
+import {
+	createSidebarFolderId,
+	foldersForProject,
+	moveSidebarItem,
+	sanitizeSidebarFolderName,
+	sidebarFolderById,
+	sidebarFolderTaskIds,
+	sidebarProjectRootIds,
+	SIDEBAR_FOLDER_DEFAULT_NAME,
+	type SidebarFolder,
+} from "./controllers/sidebar-folders";
 import { createUserSettingsController } from "./controllers/user-settings-controller";
 import { ApiError } from "./api/client";
 import { errorMessage } from "./runtime/errors";
@@ -55,6 +66,9 @@ interface ControllerState {
 	expandedProjects: Set<string>;
 	projectOrder: string[];
 	taskOrder: Record<string, string[]>;
+	folders: SidebarFolder[];
+	folderOrder: Record<string, string[]>;
+	treeEditing: boolean;
 	listDrag: ShellDragTarget | null;
 	expandedPaths: Set<string>;
 	diff: DiffRecord | null;
@@ -111,6 +125,9 @@ const controllerState: ControllerState = {
 	expandedProjects: /* @__PURE__ */ new Set<string>(),
 	projectOrder: [] as string[],
 	taskOrder: {} as Record<string, string[]>,
+	folders: [] as SidebarFolder[],
+	folderOrder: {} as Record<string, string[]>,
+	treeEditing: false,
 	listDrag: null as ShellDragTarget | null,
 	expandedPaths: /* @__PURE__ */ new Set<string>(),
 	diff: null,
@@ -629,13 +646,30 @@ async function loadWorkspaceAgents(options: WorkspaceAgentsOptions = {}) {
 	return controllerState.workspaceAgents;
 }
 async function loadUIState(workspaceId = controllerState.activeWorkspaceId, navigationVersion = controllerState.navigationVersion) {
-	const uiState = await api<{ expandedProjects?: string[]; lastResourceId?: string; projectOrder?: string[]; taskOrder?: Record<string, string[]> }>(`/api/workspaces/${workspaceId}/ui-state`);
+	const uiState = await api<{ expandedProjects?: string[]; lastResourceId?: string; projectOrder?: string[]; taskOrder?: Record<string, string[]>; folders?: SidebarFolder[]; folderOrder?: Record<string, string[]> }>(`/api/workspaces/${workspaceId}/ui-state`);
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion)) return false;
 	controllerState.expandedProjects = new Set(uiState.expandedProjects || []);
 	controllerState.lastResourceId = uiState.lastResourceId || "";
 	controllerState.projectOrder = Array.isArray(uiState.projectOrder) ? uiState.projectOrder : [];
 	controllerState.taskOrder = uiState.taskOrder && typeof uiState.taskOrder === "object" ? uiState.taskOrder : {};
+	controllerState.folders = sanitizeStoredFolders(uiState.folders);
+	controllerState.folderOrder = uiState.folderOrder && typeof uiState.folderOrder === "object" ? uiState.folderOrder : {};
 	return true;
+}
+function sanitizeStoredFolders(folders: unknown): SidebarFolder[] {
+	if (!Array.isArray(folders)) return [];
+	const seen = new Set<string>();
+	const kept: SidebarFolder[] = [];
+	for (const candidate of folders) {
+		if (!candidate || typeof candidate !== "object") continue;
+		const raw = candidate as Partial<SidebarFolder>;
+		const id = String(raw.id || "");
+		const projectId = String(raw.projectId || "");
+		if (!id || !projectId || seen.has(id)) continue;
+		seen.add(id);
+		kept.push({ id, projectId, name: sanitizeSidebarFolderName(raw.name) || SIDEBAR_FOLDER_DEFAULT_NAME, expanded: Boolean(raw.expanded) });
+	}
+	return kept;
 }
 async function saveUIState() {
 	if (!controllerState.activeWorkspaceId) return;
@@ -649,7 +683,9 @@ async function saveUIState() {
 			expandedProjects: [...controllerState.expandedProjects],
 			lastResourceId: selectedId,
 			projectOrder: controllerState.projectOrder,
-			taskOrder: controllerState.taskOrder
+			taskOrder: controllerState.taskOrder,
+			folders: controllerState.folders,
+			folderOrder: controllerState.folderOrder
 		})
 	});
 	if (isCurrentWorkspaceView(workspaceId, navigationVersion)) controllerState.lastResourceId = selectedId;
@@ -778,10 +814,59 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 			runningLabel: summary.runningLabel,
 			ariaLabel: summary.ariaLabel
 		} : null,
-		children: kind === "project" ? applyCustomOrder(item.children || [], controllerState.taskOrder[item.id]).map((task) => appShellResourceModel(task, "task", item.id)) : [],
+		children: kind === "project" ? appShellProjectChildrenModel(item) : [],
 		projectId,
 		favorite: Boolean(item.userState?.favorite),
 		unreadCount: Number(item.unreadCount) || 0
+	};
+}
+// appShellProjectChildrenModel builds the mixed root list of a Project:
+// virtual folders and ungrouped Tasks interleaved in the stored custom order.
+function appShellProjectChildrenModel(project: ResourceRecord): ShellResourceItem[] {
+	const tasks = project.children || [];
+	const taskById = new Map(tasks.map((task) => [task.id, task]));
+	const folderById = new Map(foldersForProject(controllerState.folders, project.id).map((folder) => [folder.id, folder]));
+	const rootIds = sidebarProjectRootIds(
+		{ taskOrder: controllerState.taskOrder, folderOrder: controllerState.folderOrder },
+		controllerState.folders,
+		project.id,
+		tasks.map((task) => task.id)
+	);
+	const children: ShellResourceItem[] = [];
+	for (const id of rootIds) {
+		const task = taskById.get(id);
+		if (task) {
+			children.push(appShellResourceModel(task, "task", project.id));
+			continue;
+		}
+		const folder = folderById.get(id);
+		if (folder) children.push(appShellFolderModel(folder, project, taskById));
+	}
+	return children;
+}
+function appShellFolderModel(folder: SidebarFolder, project: ResourceRecord, taskById: Map<string, ResourceRecord>): ShellResourceItem {
+	const taskIds = sidebarFolderTaskIds(
+		{ taskOrder: controllerState.taskOrder, folderOrder: controllerState.folderOrder },
+		folder,
+		(project.children || []).map((task) => task.id)
+	);
+	const children = taskIds.map((id) => taskById.get(id)).filter((task): task is ResourceRecord => Boolean(task)).map((task) => appShellResourceModel(task, "task", project.id));
+	const title = folder.name || SIDEBAR_FOLDER_DEFAULT_NAME;
+	return {
+		id: folder.id,
+		type: "folder",
+		title,
+		ref: "",
+		active: false,
+		expanded: folder.expanded,
+		ariaLabel: `Folder ${title}. ${children.length} ${children.length === 1 ? "task" : "tasks"}`,
+		statusLabel: "",
+		status: appShellStatusModel(noTaskOperationalState().statusPresentation),
+		summary: null,
+		children,
+		projectId: project.id,
+		favorite: false,
+		unreadCount: 0
 	};
 }
 function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellResourceItem | null {
@@ -850,6 +935,7 @@ function renderAppShell() {
 		})),
 		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
+		treeEditing: controllerState.treeEditing,
 		activity,
 		doctor: doctorSnapshotForWorkspace(controllerState.doctor, controllerState.activeWorkspaceId),
 		...paneLayoutController.snapshot(),
@@ -865,6 +951,11 @@ function renderAppShell() {
 		onDragState: (drag) => {
 			controllerState.listDrag = drag;
 		},
+		onToggleTreeEditing: () => toggleTreeEditing(),
+		onCreateFolder: (projectId) => createFolder(projectId),
+		onRenameFolder: (id, name) => renameFolder(id, name),
+		onDeleteFolder: (id) => deleteFolder(id),
+		onToggleFolder: (id) => toggleFolder(id),
 		onToggleFavorite: (id, favorite) => toggleResourceFavorite(id, favorite),
 		onPanePreview: (name, value) => setPaneSize(name, value),
 		onPaneCommit: (name) => savePaneSize(name),
@@ -896,6 +987,7 @@ async function switchWorkspace(id: string): Promise<void> {
 	controllerState.activeWorkspaceId = id;
 	controllerState.selectedId = "workspace";
 	controllerState.tree = null;
+	controllerState.treeEditing = false;
 	controllerState.navigationLoading = true;
 	controllerState.navigationError = "";
 	clearResourceDetailState();
@@ -911,29 +1003,121 @@ async function switchWorkspace(id: string): Promise<void> {
 async function commitListDrag(drag: ShellDragTarget, target: ShellDragTarget, after: boolean): Promise<void> {
 	const previous = {
 		projectOrder: [...controllerState.projectOrder],
-		taskOrder: Object.fromEntries(Object.entries(controllerState.taskOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []]))
+		taskOrder: Object.fromEntries(Object.entries(controllerState.taskOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []])),
+		folderOrder: Object.fromEntries(Object.entries(controllerState.folderOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []]))
 	};
-	if (drag.kind === "task") {
-		const project = findResource(drag.projectId);
-		if (!project) return;
-		const tasks = applyCustomOrder(project.children || [], controllerState.taskOrder[drag.projectId]);
-		controllerState.taskOrder = {
-			...controllerState.taskOrder,
-			[drag.projectId]: moveIdInList(tasks.map((task) => task.id), drag.id, target.id, after)
-		};
-	} else if (drag.kind === "project") {
+	if (drag.kind === "project") {
+		if (target.kind !== "project") return;
 		const projects = applyCustomOrder(controllerState.tree?.projects || [], controllerState.projectOrder);
 		controllerState.projectOrder = moveIdInList(projects.map((project) => project.id), drag.id, target.id, after);
-	} else return;
+	} else {
+		const next = moveSidebarItem(
+			{ taskOrder: controllerState.taskOrder, folderOrder: controllerState.folderOrder },
+			controllerState.folders,
+			projectTasksIndex(),
+			drag,
+			target,
+			after
+		);
+		if (!next) return;
+		controllerState.taskOrder = next.taskOrder;
+		controllerState.folderOrder = next.folderOrder;
+	}
 	renderAppShell();
 	try {
 		await saveUIState();
 	} catch (err) {
 		controllerState.projectOrder = previous.projectOrder;
 		controllerState.taskOrder = previous.taskOrder;
+		controllerState.folderOrder = previous.folderOrder;
 		renderAppShell();
 		throw err;
 	}
+}
+function projectTasksIndex(): Record<string, string[]> {
+	const index: Record<string, string[]> = {};
+	for (const project of controllerState.tree?.projects || []) {
+		index[project.id] = (project.children || []).map((task) => task.id);
+	}
+	return index;
+}
+function snapshotFolderState(): { folders: SidebarFolder[]; taskOrder: Record<string, string[]>; folderOrder: Record<string, string[]> } {
+	return {
+		folders: controllerState.folders.map((folder) => ({ ...folder })),
+		taskOrder: Object.fromEntries(Object.entries(controllerState.taskOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []])),
+		folderOrder: Object.fromEntries(Object.entries(controllerState.folderOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []]))
+	};
+}
+async function commitFolderChange(apply: () => void): Promise<void> {
+	const previous = snapshotFolderState();
+	apply();
+	renderAppShell();
+	try {
+		await saveUIState();
+	} catch (err) {
+		controllerState.folders = previous.folders;
+		controllerState.taskOrder = previous.taskOrder;
+		controllerState.folderOrder = previous.folderOrder;
+		renderAppShell();
+		throw err;
+	}
+}
+function toggleTreeEditing(): void {
+	controllerState.treeEditing = !controllerState.treeEditing;
+	renderAppShell();
+}
+async function createFolder(projectId: string): Promise<string> {
+	const project = findResource(projectId);
+	if (!project) throw new Error("Project is no longer available.");
+	const folder: SidebarFolder = { id: createSidebarFolderId(), projectId, name: SIDEBAR_FOLDER_DEFAULT_NAME, expanded: true };
+	await commitFolderChange(() => {
+		controllerState.folders = [...controllerState.folders, folder];
+		const rootIds = sidebarProjectRootIds(
+			{ taskOrder: controllerState.taskOrder, folderOrder: controllerState.folderOrder },
+			controllerState.folders,
+			projectId,
+			(project.children || []).map((task) => task.id)
+		);
+		controllerState.taskOrder = { ...controllerState.taskOrder, [projectId]: rootIds };
+	});
+	return folder.id;
+}
+async function renameFolder(id: string, name: string): Promise<void> {
+	const folder = sidebarFolderById(controllerState.folders, id);
+	if (!folder) return;
+	const trimmed = sanitizeSidebarFolderName(name);
+	if (!trimmed) throw new Error("Folder name is required.");
+	if (trimmed === folder.name) return;
+	await commitFolderChange(() => {
+		controllerState.folders = controllerState.folders.map((candidate) => candidate.id === id ? { ...candidate, name: trimmed } : candidate);
+	});
+}
+async function deleteFolder(id: string): Promise<void> {
+	const folder = sidebarFolderById(controllerState.folders, id);
+	if (!folder) return;
+	const project = findResource(folder.projectId);
+	await commitFolderChange(() => {
+		const state = { taskOrder: controllerState.taskOrder, folderOrder: controllerState.folderOrder };
+		const projectTaskIds = (project?.children || []).map((task) => task.id);
+		const taskIds = sidebarFolderTaskIds(state, folder, projectTaskIds);
+		const currentRootIds = sidebarProjectRootIds(state, controllerState.folders, folder.projectId, projectTaskIds);
+		const index = currentRootIds.indexOf(id);
+		// Ungrouped tasks return to the Project root where the folder used to be.
+		const rootIds = currentRootIds.filter((rootId) => rootId !== id);
+		rootIds.splice(index < 0 ? rootIds.length : index, 0, ...taskIds);
+		controllerState.folders = controllerState.folders.filter((candidate) => candidate.id !== id);
+		controllerState.taskOrder = { ...controllerState.taskOrder, [folder.projectId]: rootIds };
+		const folderOrder = { ...controllerState.folderOrder };
+		delete folderOrder[id];
+		controllerState.folderOrder = folderOrder;
+	});
+}
+async function toggleFolder(id: string): Promise<void> {
+	const folder = sidebarFolderById(controllerState.folders, id);
+	if (!folder) return;
+	await commitFolderChange(() => {
+		controllerState.folders = controllerState.folders.map((candidate) => candidate.id === id ? { ...candidate, expanded: !candidate.expanded } : candidate);
+	});
 }
 async function selectResource(id: string, options: SelectResourceOptions = {}): Promise<void> {
 	const selectionChanged = controllerState.selectedId !== id;
@@ -1697,6 +1881,15 @@ function removeArchivedResourceFromTree(resourceId: string): void {
 	for (const [projectId, order] of Object.entries(controllerState.taskOrder || {})) {
 		if (removedIds.has(projectId)) delete controllerState.taskOrder[projectId];
 		else if (order.some((id) => removedIds.has(id))) controllerState.taskOrder[projectId] = order.filter((id) => !removedIds.has(id));
+	}
+	const removedFolders = controllerState.folders.filter((folder) => removedIds.has(folder.projectId));
+	if (removedFolders.length) {
+		const removedFolderIds = new Set(removedFolders.map((folder) => folder.id));
+		controllerState.folders = controllerState.folders.filter((folder) => !removedFolderIds.has(folder.id));
+		for (const folderId of removedFolderIds) delete controllerState.folderOrder[folderId];
+	}
+	for (const [folderId, order] of Object.entries(controllerState.folderOrder || {})) {
+		if (order.some((id) => removedIds.has(id))) controllerState.folderOrder[folderId] = order.filter((id) => !removedIds.has(id));
 	}
 	for (const id of removedIds) clearUnreadForResource(id);
 }

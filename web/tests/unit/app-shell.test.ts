@@ -38,7 +38,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
       { id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg" },
       { id: "workspace-b", name: "Workspace B", path: "/tmp/b", iconSrc: "/favicon.svg" },
     ],
-    projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], activity: { running: [], favorites: [], unread: [], problems: [] },
+    projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], treeEditing: false, activity: { running: [], favorites: [], unread: [], problems: [] },
     doctor: { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] },
     paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details", immersive: false },
@@ -46,7 +46,8 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
     route: { path: "", revision: 0, replace: true },
     onSwitchWorkspace: vi.fn(async () => undefined), onAddWorkspace: vi.fn(), onCreateProject: vi.fn(), onOpenSettings: vi.fn(), onRefreshDoctor: vi.fn(async () => undefined),
     onToggleProject: vi.fn(async () => undefined), onSelectResource: vi.fn(async () => undefined), onReorder: vi.fn(async () => undefined),
-    onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
+    onDragState: vi.fn(), onToggleTreeEditing: vi.fn(), onCreateFolder: vi.fn(async () => ""), onRenameFolder: vi.fn(async () => undefined),
+    onDeleteFolder: vi.fn(async () => undefined), onToggleFolder: vi.fn(async () => undefined), onToggleFavorite: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
     onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onToast: vi.fn(),
     onHistoryNavigation: vi.fn(async () => undefined),
     ...overrides,
@@ -209,10 +210,10 @@ describe("AppShell", () => {
       expect(row.querySelector('[aria-label="Remove Project A from favorites"]')).not.toBeNull();
   });
 
-  it("keeps drag state local and sends one typed reorder transaction", async () => {
+  it("keeps drag state local and sends one typed reorder transaction in tree edit mode", async () => {
     const onReorder = vi.fn(async () => undefined);
     const onDragState = vi.fn();
-    const channel = createModelChannel(model({ onReorder, onDragState }));
+    const channel = createModelChannel(model({ onReorder, onDragState, treeEditing: true }));
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(AppShell, { target, props: { channel } });
     cleanups.push(() => unmount(component));

@@ -35,6 +35,17 @@ function resource(id: string, type: "project" | "task" = "project"): ShellResour
   };
 }
 
+function treeEditProps(editing = false) {
+  return {
+    editing,
+    onToggleEditing: vi.fn(),
+    onCreateFolder: vi.fn(async () => ""),
+    onRenameFolder: vi.fn(async () => undefined),
+    onDeleteFolder: vi.fn(async () => undefined),
+    onToggleFolder: vi.fn(async () => undefined),
+  };
+}
+
 function dragEvent(type: string, clientY = 0): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clientY", { value: clientY });
@@ -160,17 +171,100 @@ describe("AppShell responsibility components", () => {
     expect(target.querySelector("#workspaceMenu")).not.toBeNull();
   });
 
-  it("ProjectTree owns keyed rows, project toggles, selection, and typed drag transactions", async () => {
+  it("ProjectTree renders virtual folders and owns folder interactions", async () => {
+    const onToggleFolder = vi.fn(async () => undefined);
+    const folderA: ShellResourceItem = { ...resource("vf-1"), type: "folder", expanded: true, children: [resource("task-a", "task")] };
+    const project = { ...resource("project-a"), expanded: true, children: [folderA, resource("task-b", "task")] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(), onToggleFolder,
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const folderRow = target.querySelector<HTMLElement>(".folder-item")!;
+    expect(folderRow.querySelector(".folder-count")?.textContent).toBe("1");
+    expect(target.querySelector(".folder-task-group [data-task-id=\"task-a\"]")).not.toBeNull();
+    // Folders are not selectable resources: clicking toggles expansion.
+    folderRow.click();
+    await vi.waitFor(() => expect(onToggleFolder).toHaveBeenCalledWith("vf-1"));
+    // Normal mode shows no folder management chrome.
+    expect(folderRow.querySelector(".row-action-button")).toBeNull();
+    expect(folderRow.querySelector(".drag-handle")).toBeNull();
+  });
+
+  it("ProjectTree edit mode owns folder create, rename, delete, and drop-into", async () => {
+    const onCreateFolder = vi.fn(async () => "vf-2");
+    const onRenameFolder = vi.fn(async () => undefined);
+    const onDeleteFolder = vi.fn(async () => undefined);
+    const onReorder = vi.fn(async () => undefined);
+    const folderA: ShellResourceItem = { ...resource("vf-1"), type: "folder", expanded: true, children: [resource("task-a", "task")] };
+    const project = { ...resource("project-a"), expanded: true, children: [folderA, resource("task-b", "task")] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
+      onReorder, onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(true), onCreateFolder, onRenameFolder, onDeleteFolder,
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelector<HTMLElement>('[aria-label="New folder in project-a"]')!.click();
+    await vi.waitFor(() => expect(onCreateFolder).toHaveBeenCalledWith("project-a"));
+
+    const folderRow = target.querySelector<HTMLElement>(".folder-item")!;
+    folderRow.querySelector<HTMLElement>('[aria-label="Rename vf-1"]')!.click();
+    await tick();
+    const input = folderRow.querySelector<HTMLInputElement>(".folder-rename-input")!;
+    expect(input).not.toBeNull();
+    input.value = "Grouped work";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => expect(onRenameFolder).toHaveBeenCalledWith("vf-1", "Grouped work"));
+
+    folderRow.querySelector<HTMLElement>('[aria-label="Delete vf-1"]')!.click();
+    await vi.waitFor(() => expect(onDeleteFolder).toHaveBeenCalledWith("vf-1"));
+
+    // Dragging a root Task onto the folder row groups into the folder and
+    // highlights the whole row instead of a before/after line.
+    const rootTask = target.querySelector<HTMLElement>('[data-task-id="task-b"]')!;
+    rootTask.querySelector<HTMLElement>(".drag-handle")!.dispatchEvent(dragEvent("dragstart"));
+    folderRow.dispatchEvent(dragEvent("dragover", 1));
+    await tick();
+    expect(folderRow.classList.contains("drop-into")).toBe(true);
+    folderRow.dispatchEvent(dragEvent("drop", 1));
+    await vi.waitFor(() => expect(onReorder).toHaveBeenCalledWith(
+      { kind: "task", id: "task-b", projectId: "project-a", containerId: "" },
+      { kind: "folder", id: "vf-1", projectId: "project-a" },
+      false,
+    ));
+
+    // Dragging a grouped Task onto a root Task carries its container.
+    const groupedTask = target.querySelector<HTMLElement>('[data-task-id="task-a"]')!;
+    groupedTask.querySelector<HTMLElement>(".drag-handle")!.dispatchEvent(dragEvent("dragstart"));
+    rootTask.dispatchEvent(dragEvent("dragover", 1));
+    rootTask.dispatchEvent(dragEvent("drop", 1));
+    await vi.waitFor(() => expect(onReorder).toHaveBeenCalledWith(
+      { kind: "task", id: "task-a", projectId: "project-a", containerId: "vf-1" },
+      { kind: "task", id: "task-b", projectId: "project-a", containerId: "" },
+      true,
+    ));
+  });
+
+  it("ProjectTree owns keyed rows, project toggles, selection, and favorites", async () => {
     const onToggle = vi.fn(async () => undefined);
     const onSelect = vi.fn(async () => undefined);
-    const onReorder = vi.fn(async () => undefined);
-    const onDragState = vi.fn();
     const onToggleFavorite = vi.fn(async () => undefined);
     const projectA = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [projectA, resource("project-b")],
-      onCreate: vi.fn(), onToggle, onSelect, onReorder, onDragState, onToggleFavorite, onToast: vi.fn(),
+      onCreate: vi.fn(), onToggle, onSelect, onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite, onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -181,6 +275,33 @@ describe("AppShell responsibility components", () => {
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("task-a"));
     target.querySelector<HTMLElement>('[aria-label="Add project-a to favorites"]')!.click();
     await vi.waitFor(() => expect(onToggleFavorite).toHaveBeenCalledWith("project-a", true));
+    // Normal mode keeps the tree clean: no drag handles or row actions.
+    expect(target.querySelector(".drag-handle")).toBeNull();
+    expect(target.querySelector(".row-actions")).toBeNull();
+  });
+
+  it("ProjectTree edit mode owns typed drag transactions and hides status chrome", async () => {
+    const onReorder = vi.fn(async () => undefined);
+    const onDragState = vi.fn();
+    const onSelect = vi.fn(async () => undefined);
+    const projectA = { ...resource("project-a"), expanded: true, unreadCount: 2, favorite: true, children: [{ ...resource("task-a", "task"), unreadCount: 3 }] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [projectA, resource("project-b")],
+      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect, onReorder, onDragState, onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(true),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    // Edit mode hides favorite stars, unread badges, and status icons, and
+    // row clicks no longer navigate.
+    expect(target.querySelector(".favorite-star")).toBeNull();
+    expect(target.querySelector(".unread-badge")).toBeNull();
+    expect(target.querySelector(".task-state-icon")).toBeNull();
+    target.querySelector<HTMLButtonElement>('[aria-label="task-a"]')!.click();
+    await tick();
+    expect(onSelect).not.toHaveBeenCalled();
 
     const rows = target.querySelectorAll<HTMLElement>(".project-tree > .tree-item");
     rows[0].querySelector<HTMLElement>(".drag-handle")!.dispatchEvent(dragEvent("dragstart"));
@@ -201,6 +322,7 @@ describe("AppShell responsibility components", () => {
       identity: "workspace-a", loading: false, error: "", projects: [resource("project-a")],
       onCreate, onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -219,6 +341,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleFavorite: vi.fn(), onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -246,6 +369,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle: vi.fn(), onSelect, onReorder: vi.fn(), onDragState: vi.fn(), onToggleFavorite: vi.fn(), onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -282,6 +406,7 @@ describe("AppShell responsibility components", () => {
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleFavorite: vi.fn(), onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -316,6 +441,7 @@ describe("AppShell responsibility components", () => {
       identity: "workspace-a", loading: false, error: "", projects: [expandedProject, collapsedProject],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -339,6 +465,7 @@ describe("AppShell responsibility components", () => {
       identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle, onSelect,
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -363,6 +490,7 @@ describe("AppShell responsibility components", () => {
       identity: "workspace-a", loading: false, error: "", projects: [project],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect,
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -392,6 +520,7 @@ describe("AppShell responsibility components", () => {
       identity: "workspace-a", loading: false, error: "", projects: [resource("project-a")],
       onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
       onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite, onToast: vi.fn(),
+      ...treeEditProps(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
