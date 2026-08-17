@@ -149,6 +149,10 @@ export interface ResourceHistoryTurnSummary {
   endedAt?: string;
   durationMs: number;
   triggerPreview?: string;
+  // triggerRole carries the turn opener's provenance ("user", "system",
+  // "agent"); the chat timeline collapses closed non-user Turns by default.
+  triggerRole?: string;
+  triggerSender?: { name?: string; id?: string; sessionId?: string };
   finalReplyPreview?: string;
   eventCount: number;
   toolEventCount: number;
