@@ -60,6 +60,17 @@ export interface ShellActivityLists {
   problems: ShellActivityItem[];
 }
 
+export interface ShellInboxMessage {
+  id: string;
+  resourceId: string;
+  resourceTitle: string;
+  senderName: string;
+  text: string;
+  timeLabel: string;
+  unread: boolean;
+  replied: boolean;
+}
+
 export interface ShellWorkspaceItem extends WorkspaceOption {
   iconSrc: string;
   status?: ShellStatusPresentation;
@@ -116,6 +127,7 @@ export interface AppShellModel {
   projects: ShellResourceItem[];
   treeEditing: boolean;
   activity: ShellActivityLists;
+  inbox: ShellInboxMessage[];
   doctor: DoctorSnapshotModel;
   paneSizes: { sidebarWidth: number; chatWidth: number; sidebarAttentionHeight: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat"; immersive: boolean };
@@ -136,6 +148,8 @@ export interface AppShellModel {
   onDeleteFolder: (id: string) => Promise<void>;
   onToggleFolder: (id: string) => Promise<void>;
   onToggleFavorite: (id: string, favorite: boolean) => Promise<void>;
+  onOpenInboxMessage: (id: string) => Promise<void>;
+  onReplyInboxMessage: (id: string, text: string) => Promise<void>;
   onPanePreview: (name: keyof AppShellModel["paneSizes"], value: number) => void;
   onPaneCommit: (name: keyof AppShellModel["paneSizes"]) => void;
   onPaneViewport: () => void;

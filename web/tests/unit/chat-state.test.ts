@@ -223,13 +223,13 @@ describe("resource conversation controller", () => {
     expect(String(rangeRequest?.[0])).toContain("end=8");
   });
 
-  it("expands a compact tool from a non-current generation", async () => {
+  it("expands a compact activity from a non-current generation", async () => {
     const closed = turn(2, "closed", 5, 8);
     const compact = {
       turn: closed,
       latestEventId: 8,
       items: [
-        { type: "tool", startEventId: 6, endEventId: 7, startedAt: closed.startedAt, endedAt: closed.startedAt, count: 1 },
+        { type: "activity", startEventId: 6, endEventId: 7, startedAt: closed.startedAt, endedAt: closed.startedAt, count: 2, thinkingCount: 1, reasoningUpdateCount: 3, toolCallCount: 1 },
       ],
     };
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
@@ -250,7 +250,10 @@ describe("resource conversation controller", () => {
     value.activate("workspace-a", "task-a", null);
     await vi.waitFor(() => expect(latest.blocks).toHaveLength(1));
     await value.loadTurn(closed.reference);
-    expect(latest.blocks[0].items?.find((item) => item.kind === "tools")?.compact).toBe(true);
+    expect(latest.blocks[0].items?.find((item) => item.kind === "activity")).toMatchObject({
+      compact: true, thinkingCount: 1, reasoningUpdateCount: 3, toolCallCount: 1,
+      rangeStartEventId: 6, rangeEndEventId: 7,
+    });
 
     await value.expandRange("gen-2", 6, 7);
 

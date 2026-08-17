@@ -430,7 +430,7 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div role="button" tabindex="0" class={`tree-item folder-item ${drag?.id === child.id ? "drag-source" : ""} ${rowDropClass(child.id)}`} aria-label={child.ariaLabel || undefined} onclick={(event) => activate(event, child)} onkeydown={(event) => { if (event.key === "Enter" && event.target === event.currentTarget) void activate(event as unknown as MouseEvent, child); }} ondragover={(event) => updateDrop(event, { kind: "folder", id: child.id, projectId: project.id })} ondrop={(event) => commitDrop(event, { kind: "folder", id: child.id, projectId: project.id })}>
                   <span class="chevron" class:expanded={child.expanded} data-folder-toggle={child.id}><Icon name="chevron-right" /></span>
-                  <Icon name="folder" className="tree-icon" />
+                  <Icon name="folders" className="tree-icon folder-tree-icon" />
                   {#if renamingId === child.id}
                     <span class="name"><input class="folder-rename-input" data-folder-rename={child.id} bind:value={renameDraft} maxlength="80" placeholder="Folder name" aria-label={`Rename ${child.title}`} onclick={(event) => event.stopPropagation()} onkeydown={(event) => renameKeydown(event, child)} onblur={() => void commitRename(child)} /></span>
                   {:else}

@@ -652,19 +652,27 @@ Commands:
 
 func printMessageHelp() {
 	fmt.Print(`Usage:
-  pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
+  pua message send --to=<resource|user> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
   pua message show --id=<message-id> [--server=<url>]
 
 Commands:
-  pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
-    Persist a message in the target resource mailbox through the owning pua
-    serve process. steer is the default. A message that actually opens a Turn
-    subscribes to its result by default; a message delivered as steer into an
-    existing Turn does not. Pass --subscribe-result=false to disable the opener
-    result. The current directory's stable work-subject id and Workspace
-    instance id are sent as role=agent provenance. A valid injected PUA
-    resource environment takes precedence over cwd; provenance is not
+  pua message send --to=<resource|user> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
+    When --to is a stable resource id (workspace, scheduler, projectN, or
+    projectN.taskM), persist a message in the target resource mailbox through
+    the owning pua serve process. steer is the default.
+    A message that actually opens a Turn subscribes to its result by default;
+    a message delivered as steer into an
+    existing Turn does not. Pass --subscribe-result=false to disable the
+    opener result. The current directory's stable work-subject id and
+    Workspace instance id are sent as role=agent provenance. A valid injected
+    PUA resource environment takes precedence over cwd; provenance is not
     authentication or instruction priority.
+
+    When --to is a registered user name, durably append the message to that
+    user's inbox for display in the Web GUI. The user reads it in the Inbox
+    panel and may reply; the reply arrives as an ordinary role=user resource
+    mailbox message addressed to the sending resource. --mode and
+    --subscribe-result apply only to resource targets.
 
   pua message show --id=<message-id> [--server=<url>]
     Query the current delivery record for a stable mailbox message id. Status

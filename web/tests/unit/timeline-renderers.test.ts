@@ -2,6 +2,7 @@ import { mount, tick, unmount } from "svelte";
 import type { Component } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import ActivityGroup from "../../src/components/ActivityGroup.svelte";
 import ApprovalCard from "../../src/components/ApprovalCard.svelte";
 import LifecycleNotice from "../../src/components/LifecycleNotice.svelte";
 import ThinkingBlock from "../../src/components/ThinkingBlock.svelte";
@@ -9,6 +10,7 @@ import TimelineMessage from "../../src/components/TimelineMessage.svelte";
 import TimelineNotice from "../../src/components/TimelineNotice.svelte";
 import ToolGroup from "../../src/components/ToolGroup.svelte";
 import ToolItem from "../../src/components/ToolItem.svelte";
+import ActivityGroupHarness from "../fixtures/ActivityGroupHarness.svelte";
 import ThinkingBlockHarness from "../fixtures/ThinkingBlockHarness.svelte";
 import UnknownEvent from "../../src/components/UnknownEvent.svelte";
 import { formatClock } from "../../src/components/timeline-events";
@@ -116,6 +118,39 @@ describe("timeline rendering components", () => {
     harness.replaceItem({ kind: "thinking", text: "draft", active: false });
     await tick();
     expect(details?.open).toBe(false);
+  });
+
+  it("renders one activity disclosure, expands every child detail, and folds when live work ends", async () => {
+    const onExpand = vi.fn();
+    const item = {
+      kind: "activity", key: 2, thinkingCount: 2, reasoningUpdateCount: 3, toolCallCount: 1,
+      items: [
+        { kind: "thinking", key: 2, text: "inspect", startTime: "2026-01-01T00:00:00Z", time: "2026-01-01T00:00:02Z" },
+        { kind: "tools", key: 3, calls: [{ callId: "call-a", name: "Read", summary: "task.md", status: "completed", output: "ok" }] },
+        { kind: "thinking", key: 4, text: "verify" },
+      ],
+    };
+    const completed = mounted(ActivityGroup, { item, onExpand });
+    const details = completed.querySelector<HTMLDetailsElement>(".agent-activity-group")!;
+    expect(details.open).toBe(false);
+    expect(completed.querySelector(".agent-activity-title")?.textContent).toBe("2 thoughts · 1 tool call");
+    expect(completed.querySelectorAll(".agent-activity-group")).toHaveLength(1);
+
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+    await tick();
+    expect(onExpand).toHaveBeenCalledTimes(1);
+    expect(completed.querySelectorAll(".agent-activity-thought")).toHaveLength(2);
+    expect(completed.querySelector(".agent-tool-item")?.getAttribute("open")).toBe("");
+    expect(completed.textContent).toContain("ok");
+
+    const activeTarget = target();
+    const active = mount(ActivityGroupHarness, { target: activeTarget, props: { item: { ...item, active: true }, onExpand: vi.fn() } });
+    cleanups.push(() => unmount(active));
+    expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")?.open).toBe(true);
+    active.replaceItem({ ...item, active: false });
+    await tick();
+    expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")?.open).toBe(false);
   });
 
   it("renders tool groups and tool items with stable summaries, statuses, details, and toggle callbacks", async () => {
