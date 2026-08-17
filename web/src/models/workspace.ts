@@ -23,11 +23,15 @@ export interface ResourceRecord {
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
   scheduler?: SchedulerConfigRecord;
   runtime?: ResourceRuntime;
-  attention?: ResourceAttention;
+  userState?: ResourceUserState;
+  latestTurnNumber?: number;
+  latestTurnAt?: string;
+  latestAgentName?: string;
+  unreadCount?: number;
 }
 
-export interface ResourceAttention {
-  followed?: boolean;
+export interface ResourceUserState {
+  favorite?: boolean;
   readTurnNumber?: number;
 }
 
@@ -79,14 +83,21 @@ export interface GenerationPolicyRecord {
 }
 
 export interface WorkspaceTree {
-	agentBinding?: { kind: "profile" | "agent"; name: string };
-	resourceDefaults?: ResourceAgentDefaultsRecord;
-	generationPolicy?: GenerationPolicyRecord;
+  agentBinding?: { kind: "profile" | "agent"; name: string };
+  resourceDefaults?: ResourceAgentDefaultsRecord;
+  generationPolicy?: GenerationPolicyRecord;
   workspace?: ResourceRecord;
   scheduler?: ResourceRecord;
   projects: ResourceRecord[];
-  attentionList?: ResourceRecord[];
+  activity?: ResourceActivityLists;
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
+}
+
+export interface ResourceActivityLists {
+  running: ResourceRecord[];
+  favorites: ResourceRecord[];
+  unread: ResourceRecord[];
+  problems: ResourceRecord[];
 }
 
 export interface WorkspaceFileRecord {

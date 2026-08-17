@@ -663,12 +663,12 @@ func TestArchiveResourcePrunesPersistedUIState(t *testing.T) {
 			"project1": {"project1.task2", "project1.task1"},
 			"project2": {"project2.task1", "project2.task2"},
 		},
-		Attention: map[string]resourceAttentionState{
-			"project1":       {Followed: true},
-			"project1.task2": {Followed: true},
-			"project2":       {Followed: true},
-			"project2.task1": {Followed: true},
-			"project2.task2": {Followed: true},
+		ResourceStates: map[string]resourceUserState{
+			"project1":       {Favorite: true},
+			"project1.task2": {Favorite: true},
+			"project2":       {Favorite: true},
+			"project2.task1": {Favorite: true},
+			"project2.task2": {Favorite: true},
 		},
 	}
 	if err := saveUIStateFile(userUIStatePath(workspace, app.DefaultUserName), seed); err != nil {
@@ -716,19 +716,19 @@ func TestArchiveResourcePrunesPersistedUIState(t *testing.T) {
 	if _, ok := state.TaskOrder["project1"]; ok {
 		t.Fatalf("taskOrder for archived project retained: %v", state.TaskOrder)
 	}
-	for id := range state.Attention {
+	for id := range state.ResourceStates {
 		if id == "project1" || strings.HasPrefix(id, "project1.") {
-			t.Fatalf("attention for archived resource retained: %v", state.Attention)
+			t.Fatalf("resource state for archived resource retained: %v", state.ResourceStates)
 		}
 	}
-	if !state.Attention["project2"].Followed {
-		t.Fatalf("attention for unrelated project lost: %v", state.Attention)
+	if !state.ResourceStates["project2"].Favorite {
+		t.Fatalf("favorite for unrelated project lost: %v", state.ResourceStates)
 	}
 	aliceState, err := loadUIStateFile(userUIStatePath(workspace, "Alice"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := aliceState.Attention["project1"]; ok || aliceState.LastResourceID != "" {
+	if _, ok := aliceState.ResourceStates["project1"]; ok || aliceState.LastResourceID != "" {
 		t.Fatalf("archived resource retained in second user's state: %#v", aliceState)
 	}
 	shared, err := loadResourceStateFile(resourceStatePath(workspace))
@@ -745,11 +745,11 @@ func TestArchiveResourcePrunesPersistedUIState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := state.Attention["project2.task1"]; ok {
-		t.Fatalf("attention for archived task retained: %v", state.Attention)
+	if _, ok := state.ResourceStates["project2.task1"]; ok {
+		t.Fatalf("resource state for archived task retained: %v", state.ResourceStates)
 	}
-	if !state.Attention["project2"].Followed || !state.Attention["project2.task2"].Followed {
-		t.Fatalf("attention for surviving resources lost: %v", state.Attention)
+	if !state.ResourceStates["project2"].Favorite || !state.ResourceStates["project2.task2"].Favorite {
+		t.Fatalf("favorites for surviving resources lost: %v", state.ResourceStates)
 	}
 	if got := strings.Join(state.TaskOrder["project2"], ","); got != "project2.task2" {
 		t.Fatalf("taskOrder for surviving project not pruned: %v", state.TaskOrder)

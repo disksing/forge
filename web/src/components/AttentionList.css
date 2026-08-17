@@ -9,17 +9,46 @@
   overflow: auto;
 }
 
-:where([data-component-owner="attention-list"]) .section-title {
-  height: 22px;
+:where([data-component-owner="attention-list"]) .activity-tabs {
+  min-height: 26px;
   display: flex;
   align-items: center;
-  margin-bottom: 6px;
-  padding: 0 8px;
+  gap: 2px;
+  margin-bottom: 8px;
+  overflow-x: auto;
   color: var(--faint-on-dark);
-  font-size: calc(11px * var(--sidebar-font-scale, 1));
+}
+
+:where([data-component-owner="attention-list"]) .activity-tabs button {
+  min-width: 0;
+  display: inline-flex;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: 5px;
+  color: var(--faint-on-dark);
+  font-size: calc(10px * var(--sidebar-font-scale, 1));
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+}
+
+:where([data-component-owner="attention-list"]) .activity-tabs button:hover,
+:where([data-component-owner="attention-list"]) .activity-tabs button.active {
+  background: var(--ink-row);
+  color: #fff;
+}
+
+:where([data-component-owner="attention-list"]) .activity-tab-count {
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 9px;
 }
 
 :where([data-component-owner="attention-list"]) .attention-list {
@@ -132,8 +161,7 @@
   gap: 2px;
 }
 
-:where([data-component-owner="attention-list"]) .attention-star,
-:where([data-component-owner="attention-list"]) .attention-dismiss {
+:where([data-component-owner="attention-list"]) .favorite-star {
   width: 18px;
   height: 18px;
   display: grid;
@@ -144,31 +172,25 @@
   opacity: 0;
 }
 
-:where([data-component-owner="attention-list"]) .activity-row:hover .attention-star,
-:where([data-component-owner="attention-list"]) .activity-row:focus-within .attention-star,
-:where([data-component-owner="attention-list"]) .attention-star.followed,
-:where([data-component-owner="attention-list"]) .activity-row:hover .attention-dismiss,
-:where([data-component-owner="attention-list"]) .activity-row:focus-within .attention-dismiss,
-:where([data-component-owner="attention-list"]) .attention-star:focus-visible,
-:where([data-component-owner="attention-list"]) .attention-dismiss:focus-visible {
+:where([data-component-owner="attention-list"]) .activity-row:hover .favorite-star,
+:where([data-component-owner="attention-list"]) .activity-row:focus-within .favorite-star,
+:where([data-component-owner="attention-list"]) .favorite-star.favorite,
+:where([data-component-owner="attention-list"]) .favorite-star:focus-visible {
   opacity: 1;
 }
 
-:where([data-component-owner="attention-list"]) .attention-star:hover,
-:where([data-component-owner="attention-list"]) .attention-star:focus-visible,
-:where([data-component-owner="attention-list"]) .attention-dismiss:hover,
-:where([data-component-owner="attention-list"]) .attention-dismiss:focus-visible {
+:where([data-component-owner="attention-list"]) .favorite-star:hover,
+:where([data-component-owner="attention-list"]) .favorite-star:focus-visible {
   background: var(--ink-row);
   color: #fff;
 }
 
-:where([data-component-owner="attention-list"]) .attention-star svg,
-:where([data-component-owner="attention-list"]) .attention-dismiss svg {
+:where([data-component-owner="attention-list"]) .favorite-star svg {
   width: 14px;
   height: 14px;
 }
 
-:where([data-component-owner="attention-list"]) .attention-star.followed svg {
+:where([data-component-owner="attention-list"]) .favorite-star.favorite svg {
   fill: currentColor;
 }
 

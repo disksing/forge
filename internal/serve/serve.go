@@ -89,7 +89,7 @@ type workspaceTree struct {
 	Workspace        resourceSnapshot          `json:"workspace"`
 	Scheduler        resourceSnapshot          `json:"scheduler"`
 	Projects         []resourceSnapshot        `json:"projects"`
-	AttentionList    []resourceSnapshot        `json:"attentionList"`
+	Activity         resourceActivityLists     `json:"activity"`
 	Wiki             workspaceWiki             `json:"wiki"`
 }
 
@@ -109,18 +109,22 @@ type fileTreeEntry struct {
 }
 
 type resourceSnapshot struct {
-	ID             string                     `json:"id"`
-	Type           string                     `json:"type"`
-	Title          string                     `json:"title"`
-	Path           string                     `json:"path"`
-	Archived       bool                       `json:"archived"`
-	AgentBinding   app.AgentBinding           `json:"agentBinding"`
-	State          app.TaskState              `json:"state,omitempty"`
-	StateNote      string                     `json:"stateNote,omitempty"`
-	StateUpdatedAt string                     `json:"stateUpdatedAt,omitempty"`
-	Runtime        *resourceRuntimeSnapshot   `json:"runtime,omitempty"`
-	Attention      *resourceAttentionSnapshot `json:"attention,omitempty"`
-	Children       []resourceSnapshot         `json:"children,omitempty"`
+	ID               string                     `json:"id"`
+	Type             string                     `json:"type"`
+	Title            string                     `json:"title"`
+	Path             string                     `json:"path"`
+	Archived         bool                       `json:"archived"`
+	AgentBinding     app.AgentBinding           `json:"agentBinding"`
+	State            app.TaskState              `json:"state,omitempty"`
+	StateNote        string                     `json:"stateNote,omitempty"`
+	StateUpdatedAt   string                     `json:"stateUpdatedAt,omitempty"`
+	Runtime          *resourceRuntimeSnapshot   `json:"runtime,omitempty"`
+	UserState        *resourceUserStateSnapshot `json:"userState,omitempty"`
+	LatestTurnNumber int                        `json:"latestTurnNumber,omitempty"`
+	LatestTurnAt     string                     `json:"latestTurnAt,omitempty"`
+	LatestAgentName  string                     `json:"latestAgentName,omitempty"`
+	UnreadCount      int                        `json:"unreadCount,omitempty"`
+	Children         []resourceSnapshot         `json:"children,omitempty"`
 }
 
 type filePreview struct {
@@ -150,6 +154,7 @@ type uiState struct {
 	LastResourceID   string                            `json:"lastResourceId,omitempty"`
 	ProjectOrder     []string                          `json:"projectOrder,omitempty"`
 	TaskOrder        map[string][]string               `json:"taskOrder,omitempty"`
+	ResourceStates   map[string]resourceUserState      `json:"resourceStates,omitempty"`
 	Attention        map[string]resourceAttentionState `json:"attention,omitempty"`
 }
 
@@ -453,12 +458,12 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			s.agents.handleTaskState(w, r, id, parts[2])
 			return
 		}
-		if len(parts) == 5 && parts[3] == "attention" && parts[4] == "dismiss" {
-			s.handleResourceAttentionDismiss(w, r, id, parts[2])
+		if len(parts) == 4 && parts[3] == "read" {
+			s.handleResourceRead(w, r, id, parts[2])
 			return
 		}
-		if len(parts) == 4 && parts[3] == "attention" {
-			s.handleResourceAttention(w, r, id, parts[2])
+		if len(parts) == 4 && parts[3] == "favorite" {
+			s.handleResourceFavorite(w, r, id, parts[2])
 			return
 		}
 		if len(parts) == 4 && parts[3] == "messages" {
@@ -1654,7 +1659,7 @@ func (s *server) treeAt(ctx context.Context, path string, userNames ...string) (
 	if err := s.enrichTreeResourceRuntime(path, &tree); err != nil {
 		return workspaceTree{}, err
 	}
-	if err := s.enrichTreeResourceAttention(path, &tree, userNames...); err != nil {
+	if err := s.enrichTreeResourceActivity(path, &tree, userNames...); err != nil {
 		return workspaceTree{}, err
 	}
 	return tree, nil
@@ -1763,13 +1768,14 @@ func (s *server) saveUIState(id string, state uiState, userNames ...string) erro
 	if err != nil {
 		return err
 	}
-	// UI navigation updates predate attention state. Preserve the server-owned
-	// attention map so an older browser cannot overwrite stars or dismissals.
+	// UI navigation updates predate user resource state. Preserve the
+	// server-owned map so an older browser cannot overwrite favorites or reads.
 	statePath := userUIStatePath(workspace.Path, selectedUserName(userNames))
 	existing, err := loadUIStateFile(statePath)
 	if err != nil {
 		return err
 	}
+	state.ResourceStates = existing.ResourceStates
 	state.Attention = existing.Attention
 	return saveUIStateFile(statePath, state)
 }

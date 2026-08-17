@@ -34,21 +34,30 @@ export interface ShellResourceItem {
   summary: ShellProjectSummary | null;
   children: ShellResourceItem[];
   projectId?: string;
-  followed?: boolean;
+  favorite?: boolean;
+  unreadCount: number;
 }
 
-export interface ShellAttentionItem {
+export interface ShellActivityItem {
   id: string;
   type: "workspace" | "scheduler" | "project" | "task";
   title: string;
   ref: string;
   selected: boolean;
   activeTurn: boolean;
-  followed: boolean;
+  favorite: boolean;
+  unreadCount: number;
   turnNumber: number;
   agentName: string;
   statusLabel: string;
   status: ShellStatusPresentation;
+}
+
+export interface ShellActivityLists {
+  running: ShellActivityItem[];
+  favorites: ShellActivityItem[];
+  unread: ShellActivityItem[];
+  problems: ShellActivityItem[];
 }
 
 export interface ShellWorkspaceItem extends WorkspaceOption {
@@ -102,7 +111,7 @@ export interface AppShellModel {
   workspaces: ShellWorkspaceItem[];
   scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];
-  attentionList: ShellAttentionItem[];
+  activity: ShellActivityLists;
   doctor: DoctorSnapshotModel;
   paneSizes: { sidebarWidth: number; chatWidth: number; sidebarAttentionHeight: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat"; immersive: boolean };
@@ -117,8 +126,7 @@ export interface AppShellModel {
   onSelectResource: (id: string) => Promise<void>;
   onReorder: (drag: ShellDragTarget, target: ShellDragTarget, after: boolean) => Promise<void>;
   onDragState: (drag: ShellDragTarget | null) => void;
-  onToggleAttention: (id: string, followed: boolean) => Promise<void>;
-  onDismissAttention: (id: string) => Promise<void>;
+  onToggleFavorite: (id: string, favorite: boolean) => Promise<void>;
   onPanePreview: (name: keyof AppShellModel["paneSizes"], value: number) => void;
   onPaneCommit: (name: keyof AppShellModel["paneSizes"]) => void;
   onPaneViewport: () => void;

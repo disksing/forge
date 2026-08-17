@@ -15,7 +15,7 @@ interface Harness {
   steeredMessageIds: string[];
   schedulerBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
   bindingBodies: Array<Record<string, unknown>>;
-  attentionBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
+  resourceStateBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
   markdownBodies: Array<{ path: string; content: string; expectedContentHash: string }>;
 }
 
@@ -61,6 +61,18 @@ const project = {
 type MockProject = typeof project;
 type MockTask = MockProject["children"][number];
 type MockResource = MockProject | MockTask;
+type MockActivityResource = {
+  id: string;
+  type: string;
+  title: string;
+  path: string;
+  archived: boolean;
+  state?: string;
+  userState?: { favorite: boolean; readTurnNumber?: number };
+  latestTurnNumber?: number;
+  unreadCount?: number;
+  runtime?: { activeTurn?: boolean; [key: string]: unknown };
+};
 
 const schedulerResource = {
   id: "scheduler",
@@ -160,12 +172,12 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle", settingsRefreshDelayMs = 0, conversationFixture: ConversationFixture = "default"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [], markdownBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], resourceStateBodies: [], markdownBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
-  const attentionStates: Record<string, { followed: boolean; readTurnNumber?: number }> = {};
+  const resourceStates: Record<string, { favorite: boolean; readTurnNumber?: number }> = {};
   let runtimeExists = !startWithoutRuntime;
   let turnRunning = initialTurnRunning;
-  if (startWithoutRuntime) attentionStates["project1.task1"] = { followed: true };
+  if (startWithoutRuntime) resourceStates["project1.task1"] = { favorite: true };
   let createdProject: MockProject | null = null;
   let createdTask: MockTask | null = null;
   let scheduleSequence = 0;
@@ -263,50 +275,52 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       const tasks = [...project.children, ...(createdTask ? [createdTask] : [])];
       const projectSnapshot = {
         ...project,
-        attention: attentionStates[project.id],
+        userState: resourceStates[project.id],
         children: tasks.map((resource) => resource.id === "project1.task1" ? {
           ...resource,
           state: turnRunning ? "in_progress" : resource.state,
-          attention: attentionStates[resource.id],
+          userState: resourceStates[resource.id],
+          latestTurnNumber: turnRunning ? 1 : 0,
+          unreadCount: Math.max(0, (turnRunning ? 1 : 0) - Number(resourceStates[resource.id]?.readTurnNumber || 0)),
           ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : initialIdleStatus, agentName: "test-agent", updatedAt: now, resumable: initialIdleStatus === "idle-suspended", turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning } } : {}),
-        } : { ...resource, attention: attentionStates[resource.id] }),
+        } : { ...resource, userState: resourceStates[resource.id], latestTurnNumber: 0, unreadCount: 0 }),
       };
-      const attentionCandidates = [projectSnapshot, ...projectSnapshot.children];
-      const attentionList = attentionCandidates.filter((item) => {
-        const state = item.attention;
-        const runtime = (item as { runtime?: { activeTurn?: boolean; turnNumber?: number } }).runtime;
-        if (runtime?.activeTurn) return true;
-        if (!state?.followed) return false;
-        return state.readTurnNumber === undefined || Number(runtime?.turnNumber || 0) > state.readTurnNumber;
-      }).map((item) => ({ ...item, children: undefined }));
+      const activityCandidates: MockActivityResource[] = [projectSnapshot, ...projectSnapshot.children].map((item) => ({ ...item, children: undefined }));
+      const activity = {
+        running: activityCandidates.filter((item) => item.runtime?.activeTurn),
+        favorites: activityCandidates.filter((item) => item.userState?.favorite),
+        unread: activityCandidates.filter((item) => Number(item.unreadCount || 0) > 0),
+        problems: activityCandidates.filter((item) => item.type === "task" && (item.state === "blocked" || item.state === "error")),
+      };
       return json(route, {
         root: "/tmp/pua-e2e",
+        workspace: { id: "workspace", type: "workspace", title: "Isolated E2E", path: ".", archived: false, latestTurnNumber: 0, unreadCount: 0 },
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
-        projects: [projectSnapshot, ...(createdProject ? [{ ...createdProject, attention: attentionStates[createdProject.id] }] : [])],
-        attentionList,
+        projects: [projectSnapshot, ...(createdProject ? [{ ...createdProject, userState: resourceStates[createdProject.id] }] : [])],
+        activity,
         wiki: { exists: true, entries: [{ name: "index.md", path: "wiki/index.md", type: "file", size: 28 }] },
       });
     }
-    const attentionDismissMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/attention\/dismiss$/);
-    if (attentionDismissMatch && method === "POST") {
-      const resourceId = decodeURIComponent(attentionDismissMatch[1]);
-      const current = attentionStates[resourceId] || { followed: false };
-      attentionStates[resourceId] = { ...current, readTurnNumber: turnRunning && resourceId === "project1.task1" ? 1 : 0 };
-      harness.attentionBodies.push({ method, path });
-      return json(route, attentionStates[resourceId]);
+    const readMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/read$/);
+    if (readMatch && method === "PUT") {
+      const resourceId = decodeURIComponent(readMatch[1]);
+      const body = request.postDataJSON() as { throughTurnNumber?: number };
+      const current = resourceStates[resourceId] || { favorite: false };
+      resourceStates[resourceId] = { ...current, readTurnNumber: Math.max(Number(current.readTurnNumber || 0), Number(body.throughTurnNumber || 0)) };
+      harness.resourceStateBodies.push({ method, path, body });
+      return json(route, resourceStates[resourceId]);
     }
-    const attentionMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/attention$/);
-    if (attentionMatch) {
-      const resourceId = decodeURIComponent(attentionMatch[1]);
+    const favoriteMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/favorite$/);
+    if (favoriteMatch) {
+      const resourceId = decodeURIComponent(favoriteMatch[1]);
       if (method === "PUT") {
-        const body = request.postDataJSON() as { followed?: boolean };
-        const current = attentionStates[resourceId] || { followed: false };
-        attentionStates[resourceId] = body.followed ? { followed: true } : current;
-        if (!body.followed) attentionStates[resourceId].followed = false;
-        harness.attentionBodies.push({ method, path, body });
-        return json(route, attentionStates[resourceId]);
+        const body = request.postDataJSON() as { favorite?: boolean };
+        const current = resourceStates[resourceId] || { favorite: false };
+        resourceStates[resourceId] = { ...current, favorite: Boolean(body.favorite) };
+        harness.resourceStateBodies.push({ method, path, body });
+        return json(route, resourceStates[resourceId]);
       }
-      if (method === "GET") return json(route, attentionStates[resourceId] || { followed: false });
+      if (method === "GET") return json(route, resourceStates[resourceId] || { favorite: false });
     }
     if (path === "/api/workspaces/ws-test/scheduler" && method === "GET") {
       return json(route, schedulerConfig);
@@ -408,7 +422,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       harness.inputBodies.push(request.postDataJSON());
       runtimeExists = true;
       turnRunning = true;
-      attentionStates["project1.task1"] = { followed: true };
       return json(route, { status: "delivered", messageId: "msg-e2e" });
     }
     const resourceMessagesMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/messages$/);
@@ -844,18 +857,22 @@ test("navigates to a newly created project", async ({ page }) => {
   await expect(page.locator("#toast")).toContainText("Project created");
 });
 
-test("follows and dismisses a resource from the tree and attention list", async ({ page }) => {
+test("favorites a resource and always shows all Activity tab counts", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");
 
   const projectRow = page.locator("#projectTree > .tree-item").first();
   await projectRow.hover();
-  await projectRow.locator('[aria-label="Follow Migration project"]').click();
-  await expect(page.getByText("Activity", { exact: true })).toBeVisible();
-  const attentionRow = page.locator('[data-component-owner="attention-list"] button.activity-row');
-  await expect(attentionRow).toHaveCount(1);
-  await expect(attentionRow).toContainText("Migration project");
-  await expect(attentionRow).toContainText("#1 · No turns · Focused resource");
+  await projectRow.locator('[aria-label="Add Migration project to favorites"]').click();
+  await expect(page.getByRole("tab", { name: "Running 0", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Favorites 1", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Unread 0", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Problems 0", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
+  const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row');
+  await expect(activityRow).toHaveCount(1);
+  await expect(activityRow).toContainText("Migration project");
+  await expect(activityRow).toContainText("#1 · No turns · Favorite");
 
   const activityPanel = page.locator('[data-component-owner="attention-list"]');
   const initialHeight = await activityPanel.evaluate((element) => element.getBoundingClientRect().height);
@@ -869,13 +886,17 @@ test("follows and dismisses a resource from the tree and attention list", async 
   await expect.poll(() => activityPanel.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(initialHeight + 40);
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("pua.web.paneSizes") || "{}").sidebarAttentionHeight)).toBeGreaterThan(initialHeight + 40);
 
-  await attentionRow.hover();
-  await attentionRow.locator('[aria-label="Dismiss Migration project"]').click();
-  await expect(attentionRow).toHaveCount(0);
-  expect(harness.attentionBodies.map((entry) => entry.method)).toEqual(["PUT", "POST"]);
+  await activityRow.hover();
+  await activityRow.locator('[aria-label="Remove Migration project from favorites"]').click();
+  await expect(activityRow).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Favorites 0", exact: true })).toBeVisible();
+  expect(harness.resourceStateBodies.map((entry) => entry.path)).toEqual([
+    "/api/workspaces/ws-test/resources/project1/favorite",
+    "/api/workspaces/ws-test/resources/project1/favorite",
+  ]);
 });
 
-test("uses Task workflow state in the tree while leaving Activity unchanged", async ({ page }) => {
+test("uses Task workflow state in the tree while keeping the favorite presentation independent", async ({ page }) => {
   await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
 
@@ -884,10 +905,11 @@ test("uses Task workflow state in the tree while leaving Activity unchanged", as
   await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(0);
   await expect(taskRow.locator('[data-lucide="message-square"]')).toHaveCount(0);
   await taskRow.hover();
-  await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
+  await taskRow.locator('[aria-label="Add Infrastructure task to favorites"]').click();
+  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
 
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
-  await expect(activityRow).toContainText("Focused resource");
+  await expect(activityRow).toContainText("Favorite");
   await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
   await expect(activityRow.locator('.activity-status [data-lucide="message-square"]')).toHaveCount(0);
 });
@@ -901,10 +923,11 @@ test("keeps Task workflow state independent from a sleeping Session", async ({ p
   await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(0);
   await expect(taskRow.locator('[data-lucide="pause-circle"]')).toHaveCount(0);
   await taskRow.hover();
-  await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
+  await taskRow.locator('[aria-label="Add Infrastructure task to favorites"]').click();
+  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
 
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
-  await expect(activityRow).toContainText("Focused resource");
+  await expect(activityRow).toContainText("Favorite");
   await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
   await expect(activityRow.locator('.activity-status [data-lucide="pause-circle"]')).toHaveCount(0);
 });
@@ -915,24 +938,26 @@ test("highlights the selected Activity resource instead of every active turn", a
 
   const projectRow = page.locator("#projectTree > .tree-item").first();
   await projectRow.hover();
-  await projectRow.locator('[aria-label="Follow Migration project"]').click();
+  await projectRow.locator('[aria-label="Add Migration project to favorites"]').click();
 
-  const selectedActivity = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Migration project" });
   const runningActivity = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
-  await expect(selectedActivity).toHaveClass(/\bselected\b/);
-  await expect(selectedActivity).toHaveAttribute("aria-current", "page");
-  await expect(selectedActivity).not.toHaveAttribute("data-active-turn");
   await expect(runningActivity).not.toHaveClass(/\bselected\b/);
   await expect(runningActivity).not.toHaveAttribute("aria-current");
   await expect(runningActivity).toHaveAttribute("data-active-turn", "true");
   await expect(runningActivity).toContainText("Resource working");
-  await expect(runningActivity.locator('[aria-label="Dismiss Infrastructure task"]')).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
+  const selectedActivity = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Migration project" });
+  await expect(selectedActivity).toHaveClass(/\bselected\b/);
+  await expect(selectedActivity).toHaveAttribute("aria-current", "page");
+  await expect(selectedActivity).not.toHaveAttribute("data-active-turn");
 });
 
 test("keeps a newly created task Activity row aligned when its first turn starts", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1", false, false, true);
   await page.goto("/w/ws-test/r/project1.task1");
 
+  await page.getByRole("tab", { name: "Favorites 1", exact: true }).click();
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
   await expect(activityRow).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-status")).toHaveCount(1);
@@ -960,6 +985,31 @@ test("keeps a newly created task Activity row aligned when its first turn starts
   expect(after.directChildren).toBe(3);
   expect(Math.abs(after.titleTop - after.actionsTop)).toBeLessThan(2);
   expect(Math.abs(after.titleTop - before.titleTop)).toBeLessThan(2);
+});
+
+test("keeps a new Turn unread while selected and clears it when the selected resource is clicked again", async ({ page }) => {
+  const harness = await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const taskRow = page.locator("#projectTree .task-item", { hasText: "Infrastructure task" });
+  await expect(taskRow.locator(".unread-badge")).toHaveCount(0);
+
+  await page.locator("#chatInput").fill("Start a new turn while this task stays selected");
+  await page.locator("#chatInput").press("Enter");
+  await expect.poll(() => harness.inputBodies.length).toBe(1);
+  await expect(taskRow.locator(".unread-badge")).toHaveText("1", { timeout: 8_000 });
+  await expect(page.getByRole("tab", { name: "Unread 1", exact: true })).toBeVisible();
+
+  await taskRow.click();
+  await expect(taskRow.locator(".unread-badge")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Unread 0", exact: true })).toBeVisible();
+  expect(harness.resourceStateBodies.filter((entry) => entry.path.endsWith("/read"))).toEqual([
+    {
+      method: "PUT",
+      path: "/api/workspaces/ws-test/resources/project1.task1/read",
+      body: { throughTurnNumber: 1 },
+    },
+  ]);
 });
 
 test("manages natural-language schedules from the fixed Scheduler resource", async ({ page }) => {

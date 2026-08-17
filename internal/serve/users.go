@@ -66,6 +66,10 @@ func (s *server) handleUsers(w http.ResponseWriter, r *http.Request, workspaceID
 				writeError(w, err, http.StatusBadRequest)
 				return
 			}
+			if err := s.ensureUserUIStateBaseline(workspace.Path, profile.Name); err != nil {
+				writeError(w, err, http.StatusInternalServerError)
+				return
+			}
 			writeJSON(w, profile)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -120,20 +124,24 @@ func (s *server) ensureWorkspaceUsersAndMigrateUIState(workspacePath string) err
 
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	target := userUIStatePath(workspacePath, app.DefaultUserName)
-	targetExists := false
-	if _, err := os.Stat(target); err == nil {
-		targetExists = true
-	} else if !os.IsNotExist(err) {
-		return err
-	}
 	shared, err := loadResourceStateFile(resourceStatePath(workspacePath))
 	if err != nil {
 		return err
 	}
 	sharedChanged := false
+	records, err := loadGenerationRecords(workspacePath)
+	if err != nil {
+		return err
+	}
+	for resourceID, record := range latestTurnGenerationByResource(records) {
+		if record.TurnNumber > shared.TurnNumbers[resourceID] {
+			shared.TurnNumbers[resourceID] = record.TurnNumber
+			sharedChanged = true
+		}
+	}
 	legacyPaths := []string{uiStatePath(workspacePath), filepath.Join(workspacepath.ControlDir(workspacePath), "gui-state.json")}
 	migratedPaths := make([]string, 0, len(legacyPaths))
+	var legacyDefaultState *uiState
 	for _, legacy := range legacyPaths {
 		if _, err := os.Stat(legacy); os.IsNotExist(err) {
 			continue
@@ -151,11 +159,9 @@ func (s *server) ensureWorkspaceUsersAndMigrateUIState(workspacePath string) err
 				sharedChanged = true
 			}
 		}
-		if !targetExists {
-			if err := saveUIStateFile(target, state); err != nil {
-				return err
-			}
-			targetExists = true
+		if legacyDefaultState == nil {
+			cloned := state
+			legacyDefaultState = &cloned
 		}
 	}
 	if sharedChanged {
@@ -163,10 +169,92 @@ func (s *server) ensureWorkspaceUsersAndMigrateUIState(workspacePath string) err
 			return err
 		}
 	}
+	users, err := workspace.Users()
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		statePath := userUIStatePath(workspacePath, user.Name)
+		_, statErr := os.Stat(statePath)
+		stateExists := statErr == nil
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return statErr
+		}
+		var state uiState
+		if !stateExists && user.Name == app.DefaultUserName && legacyDefaultState != nil {
+			state = *legacyDefaultState
+		} else {
+			state, err = loadUIStateFile(statePath)
+			if err != nil {
+				return err
+			}
+		}
+		if !stateExists || state.Version < 2 {
+			seedUnreadBaseline(&state, shared.TurnNumbers)
+			if err := saveUIStateFile(statePath, state); err != nil {
+				return err
+			}
+		}
+	}
 	for _, legacy := range migratedPaths {
 		_ = os.Remove(legacy)
 	}
 	return nil
+}
+
+func seedUnreadBaseline(state *uiState, turnNumbers map[string]int) {
+	if state.ResourceStates == nil {
+		state.ResourceStates = map[string]resourceUserState{}
+	}
+	for resourceID, turnNumber := range turnNumbers {
+		if turnNumber <= 0 {
+			continue
+		}
+		if _, exists := state.ResourceStates[resourceID]; exists {
+			continue
+		}
+		state.ResourceStates[resourceID] = resourceUserState{ReadTurnNumber: cloneIntPointer(&turnNumber)}
+	}
+}
+
+func (s *server) ensureUserUIStateBaseline(workspacePath, userName string) error {
+	s.uiStateMu.Lock()
+	defer s.uiStateMu.Unlock()
+	statePath := userUIStatePath(workspacePath, userName)
+	_, statErr := os.Stat(statePath)
+	stateExists := statErr == nil
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return statErr
+	}
+	state, err := loadUIStateFile(statePath)
+	if err != nil {
+		return err
+	}
+	if stateExists && state.Version >= 2 {
+		return nil
+	}
+	shared, err := loadResourceStateFile(resourceStatePath(workspacePath))
+	if err != nil {
+		return err
+	}
+	sharedChanged := false
+	records, err := loadGenerationRecords(workspacePath)
+	if err != nil {
+		return err
+	}
+	for resourceID, record := range latestTurnGenerationByResource(records) {
+		if record.TurnNumber > shared.TurnNumbers[resourceID] {
+			shared.TurnNumbers[resourceID] = record.TurnNumber
+			sharedChanged = true
+		}
+	}
+	if sharedChanged {
+		if err := saveResourceStateFile(resourceStatePath(workspacePath), shared); err != nil {
+			return err
+		}
+	}
+	seedUnreadBaseline(&state, shared.TurnNumbers)
+	return saveUIStateFile(statePath, state)
 }
 
 func userUIStatePath(workspacePath, userName string) string {

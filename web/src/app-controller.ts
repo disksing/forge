@@ -3,7 +3,7 @@ import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
-import type { AppShellModel, DoctorSnapshotModel, ShellAttentionItem, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
+import type { AppShellModel, DoctorSnapshotModel, ShellActivityItem, ShellActivityLists, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
 import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceTree, WorkspaceUser } from "./models/workspace";
 import type { ArchiveResponse } from "./api/types";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
@@ -714,7 +714,6 @@ async function autoRefresh() {
 		}
 		observeCompletionProjections(resourceNotificationProjections(tree));
 		if (await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId())) changed = true;
-		if (await markSelectedResourceRead()) changed = true;
 		if (taskOperationalStateKey() !== controllerState.taskOperationalStateKey) changed = true;
 		if (changed) publishViewModels();
 	} finally {
@@ -776,7 +775,8 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 		ariaLabel: [
 			title,
 			summary?.ariaLabel,
-			taskState.label
+			taskState.label,
+			item.unreadCount ? `${item.unreadCount} unread ${item.unreadCount === 1 ? "Turn" : "Turns"}` : ""
 		].filter(Boolean).join(". "),
 		statusLabel: taskState.label || "",
 		status: appShellStatusModel(taskState.statusPresentation),
@@ -787,7 +787,8 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 		} : null,
 		children: kind === "project" ? applyCustomOrder(item.children || [], controllerState.taskOrder[item.id]).map((task) => appShellResourceModel(task, "task", item.id)) : [],
 		projectId,
-		followed: Boolean(item.attention?.followed)
+		favorite: Boolean(item.userState?.favorite),
+		unreadCount: Number(item.unreadCount) || 0
 	};
 }
 function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellResourceItem | null {
@@ -804,11 +805,12 @@ function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellR
 		statusLabel: state.label || "Workspace Scheduler",
 		status: appShellStatusModel(state.statusPresentation),
 		summary: null,
-		children: []
+		children: [],
+		unreadCount: Number(item.unreadCount) || 0
 	};
 }
-function appShellAttentionModel(item: ResourceRecord): ShellAttentionItem {
-	const state = taskOperationalState(item);
+function appShellActivityModel(item: ResourceRecord, category: keyof ShellActivityLists): ShellActivityItem {
+	const state = item.type === "task" && (item.state === "blocked" || item.state === "error") ? taskWorkflowState(item) : taskOperationalState(item);
 	const type = item.type === "scheduler" || item.type === "project" || item.type === "task" ? item.type : "workspace";
 	const title = item.title || item.id;
 	return {
@@ -818,16 +820,23 @@ function appShellAttentionModel(item: ResourceRecord): ShellAttentionItem {
 		ref: type === "project" || type === "task" ? resourceRefText(item.id) : "",
 		selected: controllerState.selectedId === item.id,
 		activeTurn: Boolean(item.runtime?.activeTurn),
-		followed: Boolean(item.attention?.followed),
-		turnNumber: Number(item.runtime?.turnNumber) || 0,
-		agentName: String(item.runtime?.agentName || "").trim(),
-		statusLabel: state.label || (item.attention?.followed ? "Focused resource" : "Active turn"),
+		favorite: Boolean(item.userState?.favorite),
+		unreadCount: Number(item.unreadCount) || 0,
+		turnNumber: Number(item.latestTurnNumber) || 0,
+		agentName: String(item.runtime?.agentName || item.latestAgentName || "").trim(),
+		statusLabel: state.label || (category === "favorites" ? "Favorite" : category === "unread" ? `${Number(item.unreadCount) || 0} unread` : "Active turn"),
 		status: appShellStatusModel(state.statusPresentation)
 	};
 }
 function renderAppShell() {
 	const projects = controllerState.tree ? applyCustomOrder(controllerState.tree.projects || [], controllerState.projectOrder).map((project) => appShellResourceModel(project, "project")) : [];
-	const attentionList = controllerState.tree?.attentionList?.map((item) => appShellAttentionModel(item)) || [];
+	const activitySource = controllerState.tree?.activity;
+	const activity: ShellActivityLists = {
+		running: activitySource?.running?.map((item) => appShellActivityModel(item, "running")) || [],
+		favorites: activitySource?.favorites?.map((item) => appShellActivityModel(item, "favorites")) || [],
+		unread: activitySource?.unread?.map((item) => appShellActivityModel(item, "unread")) || [],
+		problems: activitySource?.problems?.map((item) => appShellActivityModel(item, "problems")) || [],
+	};
 	if (controllerState.tree) controllerState.taskOperationalStateKey = taskOperationalStateKey();
 	const workspaceState = resourceNavigationState(controllerState.tree?.workspace);
 	publisher.renderAppShell({
@@ -848,7 +857,7 @@ function renderAppShell() {
 		})),
 		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
-		attentionList,
+		activity,
 		doctor: doctorSnapshotForWorkspace(controllerState.doctor, controllerState.activeWorkspaceId),
 		...paneLayoutController.snapshot(),
 		route: routeController.projection(),
@@ -863,8 +872,7 @@ function renderAppShell() {
 		onDragState: (drag) => {
 			controllerState.listDrag = drag;
 		},
-		onToggleAttention: (id, followed) => toggleResourceAttention(id, followed),
-		onDismissAttention: (id) => dismissResourceAttention(id),
+		onToggleFavorite: (id, favorite) => toggleResourceFavorite(id, favorite),
 		onPanePreview: (name, value) => setPaneSize(name, value),
 		onPaneCommit: (name) => savePaneSize(name),
 		onPaneViewport: () => syncPaneViewport(),
@@ -1211,20 +1219,13 @@ async function refreshTreeAfterResourceMutation(): Promise<void> {
 	const tree = await fetchCurrentTree(controllerState.activeWorkspaceId);
 	if (tree) controllerState.tree = tree;
 }
-async function toggleResourceAttention(resourceId: string, followed: boolean): Promise<void> {
+async function toggleResourceFavorite(resourceId: string, favorite: boolean): Promise<void> {
 	const workspaceId = controllerState.activeWorkspaceId;
 	if (!workspaceId || !resourceId) return;
-	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/attention`, {
+	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/favorite`, {
 		method: "PUT",
-		body: JSON.stringify({ followed })
+		body: JSON.stringify({ favorite })
 	});
-	await refreshTreeAfterResourceMutation();
-	publishViewModels();
-}
-async function dismissResourceAttention(resourceId: string): Promise<void> {
-	const workspaceId = controllerState.activeWorkspaceId;
-	if (!workspaceId || !resourceId) return;
-	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/attention/dismiss`, { method: "POST" });
 	await refreshTreeAfterResourceMutation();
 	publishViewModels();
 }
@@ -1233,19 +1234,40 @@ async function markSelectedResourceRead(): Promise<boolean> {
 	const workspaceId = controllerState.activeWorkspaceId;
 	const resourceId = selectedAgentResourceId();
 	if (!workspaceId || !resourceId || !controllerState.tree) return false;
-	const item = resourceId === "workspace"
-		? controllerState.tree.attentionList?.find((candidate) => candidate.id === "workspace")
-		: findResource(resourceId);
-	if (!item?.attention?.followed || item.runtime?.activeTurn) return false;
-	const turnNumber = Number(item.runtime?.turnNumber) || 0;
-	const readTurnNumber = Number(item.attention.readTurnNumber) || 0;
+	const item = findTreeResource(resourceId);
+	if (!item) return false;
+	const turnNumber = Number(item.latestTurnNumber) || 0;
+	const readTurnNumber = Number(item.userState?.readTurnNumber) || 0;
 	if (turnNumber <= 0 || turnNumber <= readTurnNumber) return false;
 	const navigationVersion = controllerState.navigationVersion;
-	const attention = await api<{ followed?: boolean; readTurnNumber?: number }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/attention/dismiss`, { method: "POST" });
+	const userState = await api<{ favorite?: boolean; readTurnNumber?: number }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/read`, {
+		method: "PUT",
+		body: JSON.stringify({ throughTurnNumber: turnNumber })
+	});
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || selectedAgentResourceId() !== resourceId) return false;
-	item.attention = attention;
-	controllerState.tree.attentionList = (controllerState.tree.attentionList || []).filter((candidate) => candidate.id !== resourceId);
+	updateResourceReadState(resourceId, userState);
 	return true;
+}
+
+function updateResourceReadState(resourceId: string, userState: { favorite?: boolean; readTurnNumber?: number }): void {
+	const tree = controllerState.tree;
+	if (!tree) return;
+	const update = (item: ResourceRecord | null | undefined): void => {
+		if (!item || item.id !== resourceId) return;
+		item.userState = userState;
+		item.unreadCount = Math.max(0, (Number(item.latestTurnNumber) || 0) - (Number(userState.readTurnNumber) || 0));
+	};
+	update(tree.workspace);
+	update(tree.scheduler);
+	for (const project of tree.projects || []) {
+		update(project);
+		for (const task of project.children || []) update(task);
+	}
+	if (!tree.activity) return;
+	for (const items of Object.values(tree.activity)) {
+		for (const item of items) update(item);
+	}
+	tree.activity.unread = tree.activity.unread.filter((item) => item.id !== resourceId);
 }
 async function refreshResourceMessageStatus(workspaceId = controllerState.activeWorkspaceId, resourceId = selectedAgentResourceId()): Promise<boolean> {
 	if (!workspaceId || !resourceId) return false;
@@ -1678,7 +1700,11 @@ function removeArchivedResourceFromTree(resourceId: string): void {
 				break;
 			}
 		}
-		if (tree.attentionList) tree.attentionList = tree.attentionList.filter((item) => !removedIds.has(item.id));
+		if (tree.activity) {
+			for (const key of Object.keys(tree.activity) as Array<keyof typeof tree.activity>) {
+				tree.activity[key] = tree.activity[key].filter((item) => !removedIds.has(item.id));
+			}
+		}
 	}
 	controllerState.projectOrder = controllerState.projectOrder.filter((id) => !removedIds.has(id));
 	for (const id of removedIds) controllerState.expandedProjects.delete(id);
@@ -1696,6 +1722,11 @@ function findResource(id: string): ResourceRecord | null {
 		for (const task of project.children || []) if (task.id === id) return task;
 	}
 	return null;
+}
+function findTreeResource(id: string): ResourceRecord | null {
+	if (!controllerState.tree) return null;
+	if (id === "workspace") return controllerState.tree.workspace || null;
+	return findResource(id);
 }
 function resolveResourceTitle(id: string): string | null {
 	if (id === "workspace") return workspaceName();

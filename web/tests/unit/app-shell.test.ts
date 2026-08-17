@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../src/components/AppShell.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
-import type { AppShellModel, ShellAttentionItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
+import type { AppShellModel, ShellActivityItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -19,15 +19,15 @@ const emptyStatus: ShellStatusPresentation = {
 function resource(id: string, title: string, type: "project" | "task" = "project"): ShellResourceItem {
   return {
     id, type, title, ref: type === "project" ? "#1" : "#2", active: false, expanded: false,
-    ariaLabel: title, statusLabel: "", status: emptyStatus, summary: null, children: [],
+    ariaLabel: title, statusLabel: "", status: emptyStatus, summary: null, children: [], unreadCount: 0,
   };
 }
 
-function activity(status: ShellStatusPresentation = emptyStatus): ShellAttentionItem {
+function activity(status: ShellStatusPresentation = emptyStatus): ShellActivityItem {
   return {
     id: "project-a", type: "project", title: "Project A", ref: "#1", selected: true,
-    activeTurn: status.hasTaskState, followed: true, turnNumber: status.hasTaskState ? 1 : 0,
-    agentName: status.hasTaskState ? "Codex" : "", statusLabel: status.hasTaskState ? "Resource working" : "Focused resource", status,
+    activeTurn: status.hasTaskState, favorite: true, unreadCount: status.hasTaskState ? 1 : 0, turnNumber: status.hasTaskState ? 1 : 0,
+    agentName: status.hasTaskState ? "Codex" : "", statusLabel: status.hasTaskState ? "Resource working" : "Favorite", status,
   };
 }
 
@@ -38,7 +38,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
       { id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg" },
       { id: "workspace-b", name: "Workspace B", path: "/tmp/b", iconSrc: "/favicon.svg" },
     ],
-    projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], attentionList: [],
+    projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], activity: { running: [], favorites: [], unread: [], problems: [] },
     doctor: { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] },
     paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details", immersive: false },
@@ -46,7 +46,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
     route: { path: "", revision: 0, replace: true },
     onSwitchWorkspace: vi.fn(async () => undefined), onAddWorkspace: vi.fn(), onCreateProject: vi.fn(), onOpenSettings: vi.fn(), onRefreshDoctor: vi.fn(async () => undefined),
     onToggleProject: vi.fn(async () => undefined), onSelectResource: vi.fn(async () => undefined), onReorder: vi.fn(async () => undefined),
-    onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onDismissAttention: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
+    onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
     onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onToast: vi.fn(), onIconsChanged: vi.fn(),
     onHistoryNavigation: vi.fn(async () => undefined),
     ...overrides,
@@ -163,7 +163,7 @@ describe("AppShell", () => {
   });
 
   it("keeps the Activity grid stable when a new resource starts its first turn", async () => {
-    const initial = model({ attentionList: [activity()] });
+      const initial = model({ activity: { running: [activity()], favorites: [], unread: [], problems: [] } });
     const channel = createModelChannel(initial);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(AppShell, { target, props: { channel } });
@@ -180,7 +180,7 @@ describe("AppShell", () => {
     expect(fallbackSlot.hidden).toBe(false);
     expect(runtimeSlot.hidden).toBe(true);
     expect(fallbackSlot.querySelector('[data-lucide="folder"]')).not.toBeNull();
-    expect(row.querySelector('[aria-label="Dismiss Project A"]')).not.toBeNull();
+      expect(row.querySelector('[aria-label="Remove Project A from favorites"]')).not.toBeNull();
 
     const runningStatus: ShellStatusPresentation = {
       hasTaskState: true,
@@ -189,7 +189,7 @@ describe("AppShell", () => {
       slotClassName: "task-status-single",
       statuses: [{ key: "resource-running:0", className: "task-status-session-running", iconName: "loader-circle", recentOutput: true }],
     };
-    channel.publish({ ...initial, attentionList: [activity(runningStatus)] });
+      channel.publish({ ...initial, activity: { ...initial.activity, running: [activity(runningStatus)] } });
     await tick();
 
     expect(target.querySelector('[data-component-owner="attention-list"] button.activity-row')).toBe(row);
@@ -201,13 +201,12 @@ describe("AppShell", () => {
     expect(runtimeSlot.hidden).toBe(false);
     expect(runtimeSlot.querySelectorAll('[data-lucide="loader-circle"]')).toHaveLength(1);
     expect(fallbackSlot.querySelector('[data-lucide="folder"]')).not.toBeNull();
-    expect(row.querySelector('[aria-label="Dismiss Project A"]')).toBeNull();
 
-    channel.publish({ ...initial, attentionList: [activity()] });
+      channel.publish({ ...initial, activity: { ...initial.activity, running: [activity()] } });
     await tick();
 
     expect(target.querySelector('[data-component-owner="attention-list"] button.activity-row')).toBe(row);
-    expect(row.querySelector('[aria-label="Dismiss Project A"]')).not.toBeNull();
+      expect(row.querySelector('[aria-label="Remove Project A from favorites"]')).not.toBeNull();
   });
 
   it("keeps drag state local and sends one typed reorder transaction", async () => {
