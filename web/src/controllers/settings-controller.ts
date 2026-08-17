@@ -227,6 +227,16 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		if (draft) state.data = { ...state.data, ...draft };
 	}
 
+	// externalSync refreshes the open settings modal after the serve settings
+	// changed elsewhere (another browser tab, another client, or the CLI). An
+	// unsaved agent draft wins: the modal keeps the user's edits and picks up
+	// the server state on the next open.
+	async function externalSync(): Promise<void> {
+		if (!state.open || state.agentDirty) return;
+		await refresh();
+		render();
+	}
+
 	async function addWorkspace(): Promise<void> {
 		const path = state.workspacePath.trim();
 		if (!path) throw new Error("Workspace path is required.");
@@ -320,6 +330,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		close,
 		render,
 		refresh,
+		externalSync,
 		isOpenTab: (tab: SettingsDraft["tab"]) => state.open && state.tab === tab,
 		providers: () => state.data?.agentHub?.catalog?.providers || [],
 		profiles: () => state.data?.agentProfiles || [],

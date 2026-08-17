@@ -18,6 +18,7 @@ type agentHubSettingsResponse struct {
 	Compatible         bool                `json:"compatible"`
 	Status             *agentHubStatus     `json:"status,omitempty"`
 	Catalog            agentHubCatalog     `json:"catalog"`
+	Revision           string              `json:"revision,omitempty"`
 	Error              string              `json:"error,omitempty"`
 }
 
@@ -120,6 +121,7 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 		}
 	}
 	response.Config = cfg
+	response.Revision = s.settingsRevisionOrEmpty()
 	return response, nil
 }
 
@@ -180,7 +182,19 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		Compatible:         true,
 		Status:             &status,
 		Catalog:            catalog,
+		Revision:           s.settingsRevisionOrEmpty(),
 	}, nil
+}
+
+// settingsRevisionOrEmpty best-effort computes the settings revision after a
+// settings read or save; a revision failure must not fail the settings flow
+// itself, so the frontend simply falls back to polling.
+func (s *server) settingsRevisionOrEmpty() string {
+	revision, err := s.currentSettingsRevision()
+	if err != nil {
+		return ""
+	}
+	return revision
 }
 
 func writeAgentHubConfigFile(path string, cfg agentHubServeConfig) error {
