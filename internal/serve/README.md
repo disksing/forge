@@ -59,6 +59,10 @@ GET  /api/workspaces/{workspaceId}/users
 POST /api/workspaces/{workspaceId}/users
 PUT  /api/workspaces/{workspaceId}/users/{name}
 DELETE /api/workspaces/{workspaceId}/users/{name}
+GET  /api/workspaces/{workspaceId}/users/{name}/messages
+POST /api/workspaces/{workspaceId}/users/{name}/messages
+PUT  /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}/read
+POST /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}/reply
 ```
 
 手动结束当前 Task Turn 时，Server 会在 AgentHub Interrupt 成功后把持久化 Task state 设为 `paused`，并在同一个资源控制器临界区取消尚未送达的 steer；这样 terminal event 不会把用户刚停止的 Task 自动续推。Workspace、Project 和 Scheduler 的 End Turn 不写 Task state。响应中的 `taskState` / `taskStateError` 分别报告自动暂停结果和异常。
@@ -67,7 +71,9 @@ DELETE /api/workspaces/{workspaceId}/users/{name}
 
 `GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `activity`，其中 `running`、`favorites`、`unread` 和 `problems` 是相互独立的四个列表，同一资源可同时出现在多个列表。资源树快照包含当前用户的 `userState.favorite`、`userState.readTurnNumber`、`latestTurnNumber` 与 `unreadCount`；其中 `latestTurnNumber` 只表示最新已完成 Turn，活动 Turn 仅出现在 `running`，不计入未读。收藏仅支持 Project 和 Task，且只由用户通过 `PUT .../favorite` 改变；创建资源、发送消息或阅读都不会自动收藏。`PUT .../read` 接收前端实际观察到的 `throughTurnNumber`，只单调推进当前用户的已读游标，且不允许超过资源当前已完成 Turn 高水位，因此活动 Turn 不能被提前标记已读。个人 UI/资源状态保存在 `<control-dir>/users/{name}/ui-state.json`；公共 Turn 编号高水位保存在 `<control-dir>/resource-state.json`。用户级请求通过 `X-PUA-User` 指定用户，未提供时兼容使用默认 `User`。归档 Project/Task 时会同步删除所有用户的收藏与阅读状态。ui-state 还保存侧栏虚拟目录（`folders` 与 `folderOrder`）：虚拟目录是纯 UI 层的 Task 分组，只挂在 Project 下、不支持嵌套，不影响磁盘上的真实任务目录；`taskOrder` 中混合记录项目根级的 Task 与目录 ID。归档 Task 时会将其从所属目录移除，归档 Project 时会连带删除其目录。
 
-用户名只允许 ASCII 字母、数字、下划线和减号，最长 80 个字符。`POST .../users` 显式注册用户，`PUT .../users/{name}` 接收 `{ "preference": "..." }`，删除用户会级联删除该用户目录，但不会改写历史消息中的 sender。用户只是 Workspace 范围的身份标记，不构成认证或权限边界。
+用户名只允许 ASCII 字母、数字、下划线和减号，最长 80 个字符；`workspace`、`scheduler`、`project`、`task` 以及 `projectN`、`taskN` 这类与稳定资源 ID 相同或近似的名字（不区分大小写）被保留，不能注册为用户名，避免 `pua message send --to=` 目标产生歧义。`POST .../users` 显式注册用户，`PUT .../users/{name}` 接收 `{ "preference": "..." }`，删除用户会级联删除该用户目录，但不会改写历史消息中的 sender。用户只是 Workspace 范围的身份标记，不构成认证或权限边界。
+
+用户收件箱是资源 mailbox 的外向对应物：Agent 通过 `POST .../users/{name}/messages`（携带稳定 sender 资源 ID 与匹配的 Workspace instance ID 作为来源证明）把消息持久化到 `<control-dir>/users/{name}/inbox.json`；投递在用户在 Web GUI 的 Inbox 面板中阅读时完成（`PUT .../read` 逐条标记已读并保留首个已读时间戳）。用户的回复由 `POST .../reply` 转换为对来源资源的普通 role=user mailbox 消息，投递、generation 唤醒与 steer/enqueue 处理完全复用现有 mailbox 管线；回复成功后 inbox 条目记录 `repliedAt` 并同时视为已读。inbox 最多保留 200 条，超出时优先淘汰最旧的已读消息，未读消息不因保留策略丢失。
 
 `PUT .../generation-policy` 更新 `workspace.json` 中统一覆盖 Workspace、Project、Task 和 Scheduler 的自动轮换预算。缺少该配置的现有 Workspace 与新 Workspace 均默认启用 20 个已结束 Turn 或累计 120 分钟 Turn wall-clock 的 OR 阈值；Turn 之间的 idle 不计时。设置页可以整体关闭策略并保留预算值。
 

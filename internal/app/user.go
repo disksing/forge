@@ -24,6 +24,33 @@ type UserProfile struct {
 	Preference string `json:"preference"`
 }
 
+// reservedUserName reports whether name collides with a stable PUA resource
+// ID (workspace, scheduler, projectN, projectN.taskM) or a lookalike word.
+// User names share the `pua message send --to=` target namespace with
+// resource IDs, so these names would make a send target ambiguous.
+func reservedUserName(name string) bool {
+	lower := strings.ToLower(name)
+	switch lower {
+	case "workspace", "scheduler", "project", "task":
+		return true
+	}
+	for _, prefix := range []string{"project", "task"} {
+		if digits, ok := strings.CutPrefix(lower, prefix); ok && digits != "" && allASCIIDigits(digits) {
+			return true
+		}
+	}
+	return false
+}
+
+func allASCIIDigits(value string) bool {
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return len(value) > 0
+}
+
 func ValidateUserName(name string) error {
 	if name == "" {
 		return errors.New("user name is required")
@@ -36,6 +63,9 @@ func ValidateUserName(name string) error {
 			continue
 		}
 		return errors.New("user name may contain only letters, numbers, underscores, and hyphens")
+	}
+	if reservedUserName(name) {
+		return fmt.Errorf("user name %q is reserved for PUA resource addressing", name)
 	}
 	return nil
 }

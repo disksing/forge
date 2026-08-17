@@ -7,7 +7,7 @@ import ProjectTree from "../../src/components/ProjectTree.svelte";
 import PaneResizeHandle from "../../src/components/PaneResizeHandle.svelte";
 import SchedulerNav from "../../src/components/SchedulerNav.svelte";
 import WorkspaceSwitcher from "../../src/components/WorkspaceSwitcher.svelte";
-import type { ShellActivityItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
+import type { ShellActivityItem, ShellInboxMessage, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -188,6 +188,12 @@ describe("AppShell responsibility components", () => {
     const folderRow = target.querySelector<HTMLElement>(".folder-item")!;
     expect(folderRow.querySelector(".folder-count")?.textContent).toBe("1");
     expect(target.querySelector(".folder-task-group [data-task-id=\"task-a\"]")).not.toBeNull();
+    // Virtual folders use the stacked folders glyph so they read as groupings,
+    // distinct from the plain folder icon on Project rows.
+    expect(folderRow.querySelector('[data-lucide="folders"]')).not.toBeNull();
+    expect(folderRow.querySelector('[data-lucide="folder"]')).toBeNull();
+    const projectRow = target.querySelector<HTMLElement>("button.tree-item")!;
+    expect(projectRow.querySelector('[data-lucide="folder"]')).not.toBeNull();
     // Folders are not selectable resources: clicking toggles expansion.
     folderRow.click();
     await vi.waitFor(() => expect(onToggleFolder).toHaveBeenCalledWith("vf-1"));
@@ -540,6 +546,57 @@ describe("AppShell responsibility components", () => {
     expect(document.activeElement).toBe(star);
   });
 
+  it("ActivityPanel inbox lists messages, opens them, and sends inline replies", async () => {
+    const onOpenInboxMessage = vi.fn(async () => undefined);
+    const onReplyInboxMessage = vi.fn(async () => undefined);
+    const inbox: ShellInboxMessage[] = [
+      { id: "umsg-1", resourceId: "project1.task1", resourceTitle: "Task One", senderName: "project1.task1", text: "Build finished.", timeLabel: "2m ago", unread: true, replied: false },
+      { id: "umsg-2", resourceId: "project1.task2", resourceTitle: "Task Two", senderName: "project1.task2", text: "Need input.", timeLabel: "5m ago", unread: false, replied: true },
+    ];
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ActivityPanel, {
+      target,
+      props: {
+        activity: { running: [], favorites: [], unread: [], problems: [] },
+        inbox,
+        onSelect: vi.fn(async () => undefined),
+        onToggleFavorite: vi.fn(async () => undefined),
+        onOpenInboxMessage,
+        onReplyInboxMessage,
+        onToast: vi.fn(),
+      },
+    });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    // The inbox tab counts only unread messages.
+    expect(target.querySelector('[role="tab"]:last-child')?.textContent?.trim()).toBe("Inbox 1");
+    target.querySelector<HTMLElement>('[role="tab"]:last-child')!.click();
+    await tick();
+
+    const rows = target.querySelectorAll(".inbox-row");
+    expect(rows.length).toBe(2);
+    expect(rows[0].classList.contains("unread")).toBe(true);
+    expect(rows[1].classList.contains("unread")).toBe(false);
+    expect(rows[1].querySelector(".inbox-replied-badge")?.textContent).toBe("Replied");
+
+    // Clicking a row opens the message (marks read and navigates).
+    (rows[0] as HTMLElement).click();
+    await vi.waitFor(() => expect(onOpenInboxMessage).toHaveBeenCalledWith("umsg-1"));
+
+    // The reply affordance expands an inline form and posts the draft.
+    const replyButton = rows[1].querySelector<HTMLElement>(".inbox-actions .inbox-action:nth-child(2)")!;
+    replyButton.click();
+    await tick();
+    const input = target.querySelector<HTMLTextAreaElement>(".inbox-reply-input")!;
+    input.value = "on it";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    target.querySelector<HTMLElement>(".inbox-send")!.click();
+    await vi.waitFor(() => expect(onReplyInboxMessage).toHaveBeenCalledWith("umsg-2", "on it"));
+    expect(onOpenInboxMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("ActivityPanel shows tab counts and favorites without a dismiss control", async () => {
     const onSelect = vi.fn(async () => undefined);
     const onToggleFavorite = vi.fn(async () => undefined);
@@ -553,11 +610,11 @@ describe("AppShell responsibility components", () => {
     };
     const target = document.body.appendChild(document.createElement("div"));
     const activity = { running: [activeItem], favorites: [item], unread: [activeItem, item], problems: [] };
-    const component = mount(ActivityPanel, { target, props: { activity, onSelect, onToggleFavorite, onToast: vi.fn() } });
+    const component = mount(ActivityPanel, { target, props: { activity, inbox: [], onSelect, onToggleFavorite, onOpenInboxMessage: vi.fn(async () => undefined), onReplyInboxMessage: vi.fn(async () => undefined), onToast: vi.fn() } });
     cleanups.push(() => unmount(component));
     await tick();
 
-    expect([...target.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim())).toEqual(["Running 1", "Favs 1", "Unread 2", "Issues 0"]);
+    expect([...target.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim())).toEqual(["Running 1", "Favs 1", "Unread 2", "Issues 0", "Inbox 0"]);
     const activeRow = target.querySelector<HTMLElement>('[aria-label^="Task B."]')!;
     expect(activeRow.classList.contains("selected")).toBe(false);
     expect(activeRow.getAttribute("data-active-turn")).toBe("true");
