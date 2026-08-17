@@ -12,6 +12,7 @@
     onToggleFavorite,
     onOpenInboxMessage,
     onReplyInboxMessage,
+    onDeleteInboxMessage,
     onToast,
   }: {
     activity: ShellActivityLists;
@@ -20,6 +21,7 @@
     onToggleFavorite: (id: string, favorite: boolean) => Promise<void>;
     onOpenInboxMessage: (id: string) => Promise<void>;
     onReplyInboxMessage: (id: string, text: string) => Promise<void>;
+    onDeleteInboxMessage: (id: string) => Promise<void>;
     onToast: (message: string) => void;
   } = $props();
 
@@ -143,6 +145,21 @@
       replySending = false;
     }
   }
+
+  async function deleteInboxMessage(event: Event, message: ShellInboxMessage): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event instanceof MouseEvent) (event.currentTarget as HTMLElement | null)?.blur();
+    try {
+      await onDeleteInboxMessage(message.id);
+      if (replyOpenId === message.id) {
+        replyOpenId = "";
+        replyDraft = "";
+      }
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
 </script>
 
 <section class="attention-section" data-component-owner="attention-list">
@@ -157,21 +174,25 @@
         <div class="activity-row empty-attention"><Icon name="inbox" /><div><strong>No messages</strong><span>{emptyMessage("inbox")}</span></div></div>
       {:else}
         {#each inbox as message (message.id)}
-          <div class={`inbox-row ${message.unread ? "unread" : ""}`} role="button" tabindex="0" aria-label={`Message from ${message.resourceTitle}. ${message.unread ? "Unread." : ""}`} onclick={() => openInboxMessage(message)} onkeydown={(event) => inboxRowKeydown(event, message)}>
+          <div class={`inbox-row ${message.unread ? "unread" : ""}`} role="button" tabindex="0" aria-label={`Message from ${message.resourceId}. ${message.unread ? "Unread." : ""}`} onclick={() => openInboxMessage(message)} onkeydown={(event) => inboxRowKeydown(event, message)}>
             <span class="inbox-row-head">
               <span class="inbox-unread-slot" aria-hidden="true">{#if message.unread}<span class="inbox-unread-dot"></span>{/if}</span>
-              <span class="inbox-source"><strong>{message.resourceTitle}</strong><span class="activity-meta">{message.resourceId} · {message.timeLabel}</span></span>
+              <span class="inbox-source">
+                <strong>{message.resourceId}</strong>
+                <span class="inbox-context">{message.resourceTitle !== message.resourceId ? `${message.resourceTitle} · ` : ""}{message.timeLabel}</span>
+              </span>
               {#if message.replied}<span class="inbox-replied-badge" title="You replied to this message">Replied</span>{/if}
             </span>
             <span class="inbox-text">{message.text}</span>
             <span class="inbox-actions">
-              <button type="button" class="inbox-action" title="Open the source resource" aria-label={`Open ${message.resourceTitle}`} onclick={(event) => { event.stopPropagation(); void openInboxMessage(message); }}><Icon name="arrow-right" /> Open</button>
-              <button type="button" class="inbox-action" title="Reply to this message" aria-label={`Reply to message from ${message.resourceTitle}`} aria-expanded={replyOpenId === message.id} onclick={(event) => toggleReply(event, message)}><Icon name="reply" /> Reply</button>
+              <button type="button" class="inbox-action" title="Open the source resource" aria-label={`Open ${message.resourceId}`} onclick={(event) => { event.stopPropagation(); void openInboxMessage(message); }}><Icon name="arrow-right" /> Open</button>
+              <button type="button" class="inbox-action" title="Reply to this message" aria-label={`Reply to message from ${message.resourceId}`} aria-expanded={replyOpenId === message.id} onclick={(event) => toggleReply(event, message)}><Icon name="reply" /> Reply</button>
+              <button type="button" class="inbox-action inbox-delete" title="Delete this message" aria-label={`Delete message from ${message.resourceId}`} onclick={(event) => deleteInboxMessage(event, message)}><Icon name="trash-2" /></button>
             </span>
             {#if replyOpenId === message.id}
               <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
               <span class="inbox-reply-form" onclick={(event) => event.stopPropagation()}>
-                <textarea class="inbox-reply-input" rows="2" placeholder={`Reply to ${message.resourceTitle}...`} bind:value={replyDraft} disabled={replySending}></textarea>
+                <textarea class="inbox-reply-input" rows="2" placeholder={`Reply to ${message.resourceId}...`} bind:value={replyDraft} disabled={replySending}></textarea>
                 <span class="inbox-reply-actions">
                   <button type="button" class="inbox-action" disabled={replySending} onclick={() => { replyOpenId = ""; replyDraft = ""; }}>Cancel</button>
                   <button type="button" class="inbox-action inbox-send" disabled={replySending || !replyDraft.trim()} onclick={() => sendReply(message)}><Icon name="send" /> Send</button>

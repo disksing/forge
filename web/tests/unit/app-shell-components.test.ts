@@ -543,6 +543,7 @@ describe("AppShell responsibility components", () => {
   it("ActivityPanel inbox lists messages, opens them, and sends inline replies", async () => {
     const onOpenInboxMessage = vi.fn(async () => undefined);
     const onReplyInboxMessage = vi.fn(async () => undefined);
+    const onDeleteInboxMessage = vi.fn(async () => undefined);
     const inbox: ShellInboxMessage[] = [
       { id: "umsg-1", resourceId: "project1.task1", resourceTitle: "Task One", senderName: "project1.task1", text: "Build finished.", timeLabel: "2m ago", unread: true, replied: false },
       { id: "umsg-2", resourceId: "project1.task2", resourceTitle: "Task Two", senderName: "project1.task2", text: "Need input.", timeLabel: "5m ago", unread: false, replied: true },
@@ -557,6 +558,7 @@ describe("AppShell responsibility components", () => {
         onToggleFavorite: vi.fn(async () => undefined),
         onOpenInboxMessage,
         onReplyInboxMessage,
+        onDeleteInboxMessage,
         onToast: vi.fn(),
       },
     });
@@ -573,6 +575,9 @@ describe("AppShell responsibility components", () => {
     expect(rows[0].classList.contains("unread")).toBe(true);
     expect(rows[1].classList.contains("unread")).toBe(false);
     expect(rows[1].querySelector(".inbox-replied-badge")?.textContent).toBe("Replied");
+    // The sender resource id leads; the resource title is secondary context.
+    expect(rows[0].querySelector(".inbox-source strong")?.textContent).toBe("project1.task1");
+    expect(rows[0].querySelector(".inbox-context")?.textContent).toContain("Task One");
 
     // Clicking a row opens the message (marks read and navigates).
     (rows[0] as HTMLElement).click();
@@ -589,6 +594,12 @@ describe("AppShell responsibility components", () => {
     target.querySelector<HTMLElement>(".inbox-send")!.click();
     await vi.waitFor(() => expect(onReplyInboxMessage).toHaveBeenCalledWith("umsg-2", "on it"));
     expect(onOpenInboxMessage).toHaveBeenCalledTimes(1);
+
+    // The delete affordance asks the controller to remove the message.
+    const deleteButton = rows[1].querySelector<HTMLElement>(".inbox-delete")!;
+    deleteButton.click();
+    await vi.waitFor(() => expect(onDeleteInboxMessage).toHaveBeenCalledWith("umsg-2"));
+    expect(onOpenInboxMessage).toHaveBeenCalledTimes(1);
   });
 
   it("ActivityPanel shows tab counts and favorites without a dismiss control", async () => {
@@ -604,7 +615,7 @@ describe("AppShell responsibility components", () => {
     };
     const target = document.body.appendChild(document.createElement("div"));
     const activity = { running: [activeItem], favorites: [item], unread: [activeItem, item], problems: [] };
-    const component = mount(ActivityPanel, { target, props: { activity, inbox: [], onSelect, onToggleFavorite, onOpenInboxMessage: vi.fn(async () => undefined), onReplyInboxMessage: vi.fn(async () => undefined), onToast: vi.fn() } });
+    const component = mount(ActivityPanel, { target, props: { activity, inbox: [], onSelect, onToggleFavorite, onOpenInboxMessage: vi.fn(async () => undefined), onReplyInboxMessage: vi.fn(async () => undefined), onDeleteInboxMessage: vi.fn(async () => undefined), onToast: vi.fn() } });
     cleanups.push(() => unmount(component));
     await tick();
 

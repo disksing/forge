@@ -992,6 +992,7 @@ function renderAppShell() {
 		onToggleFavorite: (id, favorite) => toggleResourceFavorite(id, favorite),
 		onOpenInboxMessage: (id) => openInboxMessage(id),
 		onReplyInboxMessage: (id, text) => replyInboxMessage(id, text),
+		onDeleteInboxMessage: (id) => deleteInboxMessage(id),
 		onPanePreview: (name, value) => setPaneSize(name, value),
 		onPaneCommit: (name) => savePaneSize(name),
 		onPaneViewport: () => syncPaneViewport(),
@@ -1470,6 +1471,15 @@ async function replyInboxMessage(messageId: string, text: string): Promise<void>
 	}
 	publishViewModels();
 	toast("Reply sent.");
+}
+async function deleteInboxMessage(messageId: string): Promise<void> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	if (!workspaceId) return;
+	const confirmed = await confirmDialog({ title: "Delete message", message: "Delete this inbox message? This cannot be undone.", confirmLabel: "Delete", danger: true });
+	if (!confirmed) return;
+	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/users/${encodeURIComponent(currentUserName())}/messages/${encodeURIComponent(messageId)}`, { method: "DELETE" });
+	await refreshInbox(workspaceId);
+	publishViewModels();
 }
 async function refreshTreeAfterResourceMutation(): Promise<void> {
 	if (!controllerState.activeWorkspaceId || !controllerState.tree) return;

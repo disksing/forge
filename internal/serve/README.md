@@ -63,6 +63,7 @@ GET  /api/workspaces/{workspaceId}/users/{name}/messages
 POST /api/workspaces/{workspaceId}/users/{name}/messages
 PUT  /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}/read
 POST /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}/reply
+DELETE /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}
 ```
 
 手动结束当前 Task Turn 时，Server 会在 AgentHub Interrupt 成功后把持久化 Task state 设为 `paused`，并在同一个资源控制器临界区取消尚未送达的 steer；这样 terminal event 不会把用户刚停止的 Task 自动续推。Workspace、Project 和 Scheduler 的 End Turn 不写 Task state。响应中的 `taskState` / `taskStateError` 分别报告自动暂停结果和异常。
@@ -73,7 +74,7 @@ POST /api/workspaces/{workspaceId}/users/{name}/messages/{messageId}/reply
 
 用户名只允许 ASCII 字母、数字、下划线和减号，最长 80 个字符；`workspace`、`scheduler`、`project`、`task` 以及 `projectN`、`taskN` 这类与稳定资源 ID 相同或近似的名字（不区分大小写）被保留，不能注册为用户名，避免 `pua message send --to=` 目标产生歧义。`POST .../users` 显式注册用户，`PUT .../users/{name}` 接收 `{ "preference": "..." }`，删除用户会级联删除该用户目录，但不会改写历史消息中的 sender。用户只是 Workspace 范围的身份标记，不构成认证或权限边界。
 
-用户收件箱是资源 mailbox 的外向对应物：Agent 通过 `POST .../users/{name}/messages`（携带稳定 sender 资源 ID 与匹配的 Workspace instance ID 作为来源证明）把消息持久化到 `<control-dir>/users/{name}/inbox.json`；投递在用户在 Web GUI 的 Inbox 面板中阅读时完成（`PUT .../read` 逐条标记已读并保留首个已读时间戳）。用户的回复由 `POST .../reply` 转换为对来源资源的普通 role=user mailbox 消息，投递、generation 唤醒与 steer/enqueue 处理完全复用现有 mailbox 管线；回复成功后 inbox 条目记录 `repliedAt` 并同时视为已读。inbox 最多保留 200 条，超出时优先淘汰最旧的已读消息，未读消息不因保留策略丢失。
+用户收件箱是资源 mailbox 的外向对应物：Agent 通过 `POST .../users/{name}/messages`（携带稳定 sender 资源 ID 与匹配的 Workspace instance ID 作为来源证明）把消息持久化到 `<control-dir>/users/{name}/inbox.json`；投递在用户在 Web GUI 的 Inbox 面板中阅读时完成（`PUT .../read` 逐条标记已读并保留首个已读时间戳）。用户的回复由 `POST .../reply` 转换为对来源资源的普通 role=user mailbox 消息（正文以 `[Reply to your Inbox message <id>]` 加原文引用开头，引用超过 1KB 截断，Agent 据此识别回复对象），投递、generation 唤醒与 steer/enqueue 处理完全复用现有 mailbox 管线；回复成功后 inbox 条目记录 `repliedAt` 并同时视为已读。`DELETE` 按消息 ID 删除 inbox 条目，无论已读或未回复均可删除。inbox 最多保留 200 条，超出时优先淘汰最旧的已读消息，未读消息不因保留策略丢失。
 
 `PUT .../generation-policy` 更新 `workspace.json` 中统一覆盖 Workspace、Project、Task 和 Scheduler 的自动轮换预算。缺少该配置的现有 Workspace 与新 Workspace 均默认启用 20 个已结束 Turn 或累计 120 分钟 Turn wall-clock 的 OR 阈值；Turn 之间的 idle 不计时。设置页可以整体关闭策略并保留预算值。
 

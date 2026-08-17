@@ -150,6 +150,7 @@ export interface AppShellModel {
   onToggleFavorite: (id: string, favorite: boolean) => Promise<void>;
   onOpenInboxMessage: (id: string) => Promise<void>;
   onReplyInboxMessage: (id: string, text: string) => Promise<void>;
+  onDeleteInboxMessage: (id: string) => Promise<void>;
   onPanePreview: (name: keyof AppShellModel["paneSizes"], value: number) => void;
   onPaneCommit: (name: keyof AppShellModel["paneSizes"]) => void;
   onPaneViewport: () => void;
