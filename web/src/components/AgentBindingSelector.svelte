@@ -75,25 +75,52 @@
     const onResize = () => {
       if (open) fitMenuToViewport();
     };
+    // The menu is position:fixed to escape clipping ancestors, so it no
+    // longer follows the button automatically when a scroll container moves
+    // it. Reposition on any scroll (capture phase catches nested scrollers
+    // like the detail panel) instead of closing the menu mid-interaction.
+    const onScroll = () => {
+      if (open) fitMenuToViewport();
+    };
     document.addEventListener("mousedown", outside);
     window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", outside);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
     };
   });
 
-  // Size the menu against the free space on its opening side: upward menus
-  // (composer at the bottom of the viewport) measure the distance to the top,
-  // downward menus (settings panel) measure the distance to the bottom, minus
-  // a small margin. Grow the menu up to that space instead of a fixed cap so
-  // long agent lists stay visible instead of being clipped into a small
-  // scroll area.
+  // The menu is position:fixed because absolutely positioned menus get
+  // clipped by ancestors with overflow:hidden (e.g. the settings list card)
+  // or overflow:auto (the detail panel scroll container), leaving only a
+  // slice of the options visible and unreachable. Anchor the fixed menu to
+  // the button rect and cap its height against the free space on the opening
+  // side: upward menus (composer at the bottom of the viewport) measure the
+  // distance to the top, downward menus (settings panel) measure the
+  // distance to the bottom, minus a small margin. Grow the menu up to that
+  // space instead of a fixed cap so long agent lists stay visible instead of
+  // being clipped into a small scroll area.
   function fitMenuToViewport(): void {
     if (!root || !menu) return;
     const rect = root.getBoundingClientRect();
     const available = openUp ? rect.top - 14 : window.innerHeight - rect.bottom - 14;
     menu.style.maxHeight = `${Math.max(120, Math.floor(available))}px`;
+    // Keep the menu's right edge aligned with the button, at least 12px from
+    // the viewport edge; max-width in CSS keeps the left edge on screen. Pin
+    // the minimum width to the button so narrow content never collapses the
+    // menu below the control that opened it (percentage min-width no longer
+    // works now that the containing block is the viewport).
+    menu.style.right = `${Math.max(12, Math.floor(window.innerWidth - rect.right))}px`;
+    menu.style.minWidth = `${Math.ceil(rect.width)}px`;
+    if (openUp) {
+      menu.style.top = "auto";
+      menu.style.bottom = `${Math.floor(window.innerHeight - rect.top) + 6}px`;
+    } else {
+      menu.style.bottom = "auto";
+      menu.style.top = `${Math.floor(rect.bottom) + 6}px`;
+    }
   }
 
   // Size the menu as a two-column table: every primary label shares the width
