@@ -815,7 +815,7 @@ function appShellActivityModel(item: ResourceRecord, category: keyof ShellActivi
 		activeTurn: Boolean(item.runtime?.activeTurn),
 		favorite: Boolean(item.userState?.favorite),
 		unreadCount: Number(item.unreadCount) || 0,
-		turnNumber: Number(item.latestTurnNumber) || 0,
+		turnNumber: category === "running" ? Number(item.runtime?.turnNumber) || 0 : Number(item.latestTurnNumber) || 0,
 		agentName: String(item.runtime?.agentName || item.latestAgentName || "").trim(),
 		statusLabel: state.label || (category === "favorites" ? "Favorite" : category === "unread" ? `${Number(item.unreadCount) || 0} unread` : "Active turn"),
 		status: appShellStatusModel(state.statusPresentation)

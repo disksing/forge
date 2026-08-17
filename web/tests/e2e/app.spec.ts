@@ -17,6 +17,7 @@ interface Harness {
   bindingBodies: Array<Record<string, unknown>>;
   resourceStateBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
   markdownBodies: Array<{ path: string; content: string; expectedContentHash: string }>;
+  finishTurn: () => void;
 }
 
 const templates = [
@@ -172,11 +173,18 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle", settingsRefreshDelayMs = 0, conversationFixture: ConversationFixture = "default"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], resourceStateBodies: [], markdownBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], resourceStateBodies: [], markdownBodies: [], finishTurn: () => undefined };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   const resourceStates: Record<string, { favorite: boolean; readTurnNumber?: number }> = {};
   let runtimeExists = !startWithoutRuntime;
   let turnRunning = initialTurnRunning;
+  let turnNumber = initialTurnRunning ? 1 : 0;
+  let completedTurnNumber = 0;
+  harness.finishTurn = () => {
+    if (!turnRunning) return;
+    turnRunning = false;
+    completedTurnNumber = turnNumber;
+  };
   if (startWithoutRuntime) resourceStates["project1.task1"] = { favorite: true };
   let createdProject: MockProject | null = null;
   let createdTask: MockTask | null = null;
@@ -280,9 +288,9 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
           ...resource,
           state: turnRunning ? "in_progress" : resource.state,
           userState: resourceStates[resource.id],
-          latestTurnNumber: turnRunning ? 1 : 0,
-          unreadCount: Math.max(0, (turnRunning ? 1 : 0) - Number(resourceStates[resource.id]?.readTurnNumber || 0)),
-          ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : initialIdleStatus, agentName: "test-agent", updatedAt: now, resumable: initialIdleStatus === "idle-suspended", turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning } } : {}),
+          latestTurnNumber: completedTurnNumber,
+          unreadCount: Math.max(0, completedTurnNumber - Number(resourceStates[resource.id]?.readTurnNumber || 0)),
+          ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : initialIdleStatus, agentName: "test-agent", updatedAt: now, resumable: initialIdleStatus === "idle-suspended", turnNumber, activeTurn: turnRunning } } : {}),
         } : { ...resource, userState: resourceStates[resource.id], latestTurnNumber: 0, unreadCount: 0 }),
       };
       const activityCandidates: MockActivityResource[] = [projectSnapshot, ...projectSnapshot.children].map((item) => ({ ...item, children: undefined }));
@@ -421,6 +429,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     if (path === "/api/workspaces/ws-test/resources/project1.task1/messages" && method === "POST") {
       harness.inputBodies.push(request.postDataJSON());
       runtimeExists = true;
+      if (!turnRunning) turnNumber += 1;
       turnRunning = true;
       return json(route, { status: "delivered", messageId: "msg-e2e" });
     }
@@ -987,7 +996,7 @@ test("keeps a newly created task Activity row aligned when its first turn starts
   expect(Math.abs(after.titleTop - before.titleTop)).toBeLessThan(2);
 });
 
-test("keeps a new Turn unread while selected and clears it when the selected resource is clicked again", async ({ page }) => {
+test("does not count a running Turn as unread, then clears it after completion when clicked again", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
 
@@ -997,7 +1006,14 @@ test("keeps a new Turn unread while selected and clears it when the selected res
   await page.locator("#chatInput").fill("Start a new turn while this task stays selected");
   await page.locator("#chatInput").press("Enter");
   await expect.poll(() => harness.inputBodies.length).toBe(1);
+  await expect(page.getByRole("tab", { name: "Running 1", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Unread 0", exact: true })).toBeVisible();
+  await expect(taskRow.locator(".unread-badge")).toHaveCount(0);
+  expect(harness.resourceStateBodies.filter((entry) => entry.path.endsWith("/read"))).toHaveLength(0);
+
+  harness.finishTurn();
   await expect(taskRow.locator(".unread-badge")).toHaveText("1", { timeout: 8_000 });
+  await expect(page.getByRole("tab", { name: "Running 0", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Unread 1", exact: true })).toBeVisible();
 
   await taskRow.click();

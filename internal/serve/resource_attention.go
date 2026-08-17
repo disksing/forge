@@ -436,13 +436,13 @@ func (s *server) handleResourceRead(w http.ResponseWriter, r *http.Request, work
 		writeError(w, errors.New("throughTurnNumber must not be negative"), http.StatusBadRequest)
 		return
 	}
-	currentTurnNumber, err := s.currentResourceTurnNumber(workspace.Path, resourceID)
+	currentTurnNumber, err := s.currentCompletedResourceTurnNumber(workspace.Path, resourceID)
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
 	if *body.ThroughTurnNumber > currentTurnNumber {
-		writeError(w, fmt.Errorf("throughTurnNumber %d exceeds current Turn %d", *body.ThroughTurnNumber, currentTurnNumber), http.StatusBadRequest)
+		writeError(w, fmt.Errorf("throughTurnNumber %d exceeds current completed Turn %d", *body.ThroughTurnNumber, currentTurnNumber), http.StatusBadRequest)
 		return
 	}
 	resourceState, err := s.mutateResourceUserStateAtPath(workspace.Path, resourceID, func(state *resourceUserState) {
@@ -505,23 +505,80 @@ func latestTurnGenerationByResource(records []generationRecord) map[string]gener
 	return byResourceID
 }
 
-func (s *server) currentResourceTurnNumber(workspacePath, resourceID string) (int, error) {
+type completedResourceTurn struct {
+	Record     generationRecord
+	TurnNumber int
+	Exact      bool
+}
+
+func completedTurnNumberForGeneration(record generationRecord) int {
+	turnNumber := record.TurnNumber
+	if generationHasActiveTurn(record) && turnNumber > 0 {
+		turnNumber--
+	}
+	return turnNumber
+}
+
+func latestCompletedTurnByResource(records []generationRecord) map[string]completedResourceTurn {
+	byResourceID := make(map[string]completedResourceTurn)
+	for _, record := range records {
+		if strings.TrimSpace(record.GenerationID) == "" || !isAgentHubGeneration(record) {
+			continue
+		}
+		turnNumber := completedTurnNumberForGeneration(record)
+		if turnNumber <= 0 {
+			continue
+		}
+		resourceID := normalizedResourceID(record.ResourceID)
+		if resourceID == "" {
+			resourceID = "workspace"
+		}
+		candidate := completedResourceTurn{Record: record, TurnNumber: turnNumber, Exact: !generationHasActiveTurn(record)}
+		current, ok := byResourceID[resourceID]
+		if !ok || candidate.TurnNumber > current.TurnNumber ||
+			candidate.TurnNumber == current.TurnNumber && candidate.Exact && !current.Exact ||
+			candidate.TurnNumber == current.TurnNumber && candidate.Exact == current.Exact && resourceRuntimeGenerationNewer(candidate.Record, current.Record) {
+			byResourceID[resourceID] = candidate
+		}
+	}
+	return byResourceID
+}
+
+func completedTurnNumbersByResource(records []generationRecord) map[string]int {
+	completed := latestCompletedTurnByResource(records)
+	turnNumbers := make(map[string]int, len(completed))
+	for resourceID, turn := range completed {
+		turnNumbers[resourceID] = turn.TurnNumber
+	}
+	return turnNumbers
+}
+
+func completedTurnBaseline(turnNumbers map[string]int, records []generationRecord) map[string]int {
+	baseline := make(map[string]int, len(turnNumbers))
+	for resourceID, turnNumber := range turnNumbers {
+		baseline[resourceID] = turnNumber
+	}
+	completed := completedTurnNumbersByResource(records)
+	for resourceID := range latestTurnGenerationByResource(records) {
+		if turnNumber := completed[resourceID]; turnNumber > 0 {
+			baseline[resourceID] = turnNumber
+		} else {
+			delete(baseline, resourceID)
+		}
+	}
+	return baseline
+}
+
+func (s *server) currentCompletedResourceTurnNumber(workspacePath, resourceID string) (int, error) {
 	records, err := loadGenerationRecords(workspacePath)
 	if err != nil {
 		return 0, err
 	}
-	state, err := loadResourceStateFile(resourceStatePath(workspacePath))
-	if err != nil {
-		return 0, err
-	}
-	turnNumber := state.TurnNumbers[normalizedResourceID(resourceID)]
 	resourceID = normalizedResourceID(resourceID)
-	for _, record := range records {
-		if normalizedResourceID(record.ResourceID) == resourceID && record.TurnNumber > turnNumber {
-			turnNumber = record.TurnNumber
-		}
+	if turn, ok := latestCompletedTurnByResource(records)[resourceID]; ok {
+		return turn.TurnNumber, nil
 	}
-	return turnNumber, nil
+	return 0, nil
 }
 
 func resourceRuntimeSnapshotForGeneration(record generationRecord) *resourceRuntimeSnapshot {
@@ -569,11 +626,7 @@ func (s *server) enrichTreeResourceActivity(workspacePath string, tree *workspac
 	if err != nil {
 		return fmt.Errorf("load resource generations for activity: %w", err)
 	}
-	latestRecords := latestTurnGenerationByResource(records)
-	sharedState, err := loadResourceStateFile(resourceStatePath(workspacePath))
-	if err != nil {
-		return fmt.Errorf("load resource Turn state for activity: %w", err)
-	}
+	latestCompletedTurns := latestCompletedTurnByResource(records)
 	var applyState func(*resourceSnapshot)
 	applyState = func(item *resourceSnapshot) {
 		resourceID := normalizedResourceID(item.ID)
@@ -581,11 +634,9 @@ func (s *server) enrichTreeResourceActivity(workspacePath string, tree *workspac
 		if hasState {
 			item.UserState = resourceUserStateSnapshotForState(state)
 		}
-		item.LatestTurnNumber = sharedState.TurnNumbers[resourceID]
-		if record, ok := latestRecords[resourceID]; ok {
-			if record.TurnNumber > item.LatestTurnNumber {
-				item.LatestTurnNumber = record.TurnNumber
-			}
+		if completed, ok := latestCompletedTurns[resourceID]; ok {
+			item.LatestTurnNumber = completed.TurnNumber
+			record := completed.Record
 			item.LatestTurnAt = record.CompletionAt
 			if item.LatestTurnAt == "" {
 				item.LatestTurnAt = record.TurnStartedAt

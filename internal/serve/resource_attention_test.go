@@ -150,29 +150,54 @@ func TestResourceReadAPIRejectsFutureTurnsAndNeverRegresses(t *testing.T) {
 	}
 }
 
-func TestActiveTurnCanBeMarkedReadAndUIStatePreservesResourceState(t *testing.T) {
+func TestActiveTurnDoesNotCountAsUnreadAndCannotBeMarkedRead(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	now := "2026-08-13T00:00:00Z"
-	if err := rewriteTestGenerationRecords(workspace, []generationRecord{{
+	record := generationRecord{
 		ID: "gen-active-attention", WorkspaceID: "workspace-one", ResourceID: "project1",
 		Generation: 1, GenerationID: "gen-active-attention", AgentHubSessionID: "session-active-attention",
-		Status: "running", CurrentTurnID: "turn-active", TurnNumber: 2, Title: "Active", Cwd: workspace, CreatedAt: now, UpdatedAt: now,
-	}}); err != nil {
+		Status: "running", CurrentTurnID: "turn-active", TurnNumber: 2, Title: "Active", Cwd: workspace,
+		CreatedAt: now, UpdatedAt: now, TurnStartedAt: "2026-08-13T00:00:02Z", CompletionAt: "2026-08-13T00:00:01Z",
+	}
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{record}); err != nil {
 		t.Fatal(err)
 	}
-	recorder := attentionRequest(t, server, http.MethodPut, "/api/workspaces/workspace-one/resources/project1/read", `{"throughTurnNumber":2}`)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("read active Turn returned %d: %s", recorder.Code, recorder.Body.String())
+	if _, err := server.mutateResourceUserStateAtPath(workspace, "project1", func(state *resourceUserState) {
+		state.ReadTurnNumber = intPointer(1)
+	}); err != nil {
+		t.Fatal(err)
 	}
 	tree, err := server.treeAt(context.Background(), workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(tree.Activity.Running) != 1 || !tree.Activity.Running[0].Runtime.ActiveTurn {
-		t.Fatalf("active Turn must remain in Running after read: %#v", tree.Activity.Running)
+		t.Fatalf("active Turn must remain in Running: %#v", tree.Activity.Running)
 	}
-	if len(tree.Activity.Unread) != 0 {
-		t.Fatalf("read active Turn remained unread: %#v", tree.Activity.Unread)
+	if len(tree.Activity.Unread) != 0 || tree.Projects[0].UnreadCount != 0 || tree.Projects[0].LatestTurnNumber != 1 {
+		t.Fatalf("active Turn contributed to unread state: project=%#v unread=%#v", tree.Projects[0], tree.Activity.Unread)
+	}
+	recorder := attentionRequest(t, server, http.MethodPut, "/api/workspaces/workspace-one/resources/project1/read", `{"throughTurnNumber":2}`)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("read active Turn returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	record.Status = "idle"
+	record.CurrentTurnID = ""
+	record.CompletionAt = "2026-08-13T00:00:03Z"
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	tree, err = server.treeAt(context.Background(), workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Activity.Running) != 0 || len(tree.Activity.Unread) != 1 || tree.Projects[0].UnreadCount != 1 || tree.Projects[0].LatestTurnNumber != 2 {
+		t.Fatalf("completed Turn did not become unread: project=%#v activity=%#v", tree.Projects[0], tree.Activity)
+	}
+	recorder = attentionRequest(t, server, http.MethodPut, "/api/workspaces/workspace-one/resources/project1/read", `{"throughTurnNumber":2}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("read completed Turn returned %d: %s", recorder.Code, recorder.Body.String())
 	}
 
 	recorder = attentionRequest(t, server, http.MethodPut, "/api/workspaces/workspace-one/ui-state", `{"version":2,"expandedProjects":["project1"],"lastResourceId":"project1"}`)
@@ -213,6 +238,41 @@ func TestActivityUsesLatestTurnAcrossRetiredGenerations(t *testing.T) {
 	}
 	if len(tree.Activity.Unread) != 1 || tree.Activity.Unread[0].LatestTurnNumber != 4 {
 		t.Fatalf("latest historical Turn must remain unread: %#v", tree.Activity.Unread)
+	}
+}
+
+func TestLatestCompletedTurnPrefersAnExactCompletedGeneration(t *testing.T) {
+	records := []generationRecord{
+		{
+			ID: "gen-completed", ResourceID: "project1", Generation: 1, GenerationID: "gen-completed",
+			AgentHubSessionID: "session-completed", Status: "idle", TurnNumber: 3, CompletionAt: "2026-08-13T00:00:03Z",
+		},
+		{
+			ID: "gen-active", ResourceID: "project1", Generation: 2, GenerationID: "gen-active",
+			AgentHubSessionID: "session-active", Status: "running", CurrentTurnID: "turn-4", TurnNumber: 4,
+		},
+	}
+	completed := latestCompletedTurnByResource(records)["project1"]
+	if completed.TurnNumber != 3 || completed.Record.ID != "gen-completed" || !completed.Exact {
+		t.Fatalf("latest completed Turn = %#v, want exact Turn 3 record", completed)
+	}
+	if got := completedTurnNumberForGeneration(generationRecord{Status: "running", TurnNumber: 1}); got != 0 {
+		t.Fatalf("first active Turn completed boundary = %d, want 0", got)
+	}
+	inferred := latestCompletedTurnByResource(records[1:])["project1"]
+	if inferred.TurnNumber != 3 || inferred.Record.ID != "gen-active" || inferred.Exact {
+		t.Fatalf("inferred completed Turn = %#v, want Turn 3 from active generation", inferred)
+	}
+	baselineRecords := append(records, generationRecord{
+		ID: "gen-first-active", ResourceID: "project3", Generation: 1, GenerationID: "gen-first-active",
+		AgentHubSessionID: "session-first-active", Status: "running", CurrentTurnID: "turn-1", TurnNumber: 1,
+	})
+	baseline := completedTurnBaseline(map[string]int{"project1": 4, "project2": 8, "project3": 1}, baselineRecords)
+	if baseline["project1"] != 3 || baseline["project2"] != 8 {
+		t.Fatalf("completed baseline = %#v, want project1=3 and fallback project2=8", baseline)
+	}
+	if _, exists := baseline["project3"]; exists {
+		t.Fatalf("first active Turn remained in completed baseline: %#v", baseline)
 	}
 }
 

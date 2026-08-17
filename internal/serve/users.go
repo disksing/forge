@@ -169,6 +169,7 @@ func (s *server) ensureWorkspaceUsersAndMigrateUIState(workspacePath string) err
 			return err
 		}
 	}
+	completedTurnNumbers := completedTurnBaseline(shared.TurnNumbers, records)
 	users, err := workspace.Users()
 	if err != nil {
 		return err
@@ -190,7 +191,7 @@ func (s *server) ensureWorkspaceUsersAndMigrateUIState(workspacePath string) err
 			}
 		}
 		if !stateExists || state.Version < 2 {
-			seedUnreadBaseline(&state, shared.TurnNumbers)
+			seedUnreadBaseline(&state, completedTurnNumbers)
 			if err := saveUIStateFile(statePath, state); err != nil {
 				return err
 			}
@@ -253,7 +254,7 @@ func (s *server) ensureUserUIStateBaseline(workspacePath, userName string) error
 			return err
 		}
 	}
-	seedUnreadBaseline(&state, shared.TurnNumbers)
+	seedUnreadBaseline(&state, completedTurnBaseline(shared.TurnNumbers, records))
 	return saveUIStateFile(statePath, state)
 }
 
