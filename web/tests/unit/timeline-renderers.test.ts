@@ -120,7 +120,7 @@ describe("timeline rendering components", () => {
     expect(details?.open).toBe(false);
   });
 
-  it("renders one activity disclosure, expands every child detail, and folds when live work ends", async () => {
+  it("renders one activity disclosure with collapsed tool details and folds when live work ends", async () => {
     const onExpand = vi.fn();
     const item = {
       kind: "activity", key: 2, thinkingCount: 2, reasoningUpdateCount: 3, toolCallCount: 1,
@@ -141,13 +141,20 @@ describe("timeline rendering components", () => {
     await tick();
     expect(onExpand).toHaveBeenCalledTimes(1);
     expect(completed.querySelectorAll(".agent-activity-thought")).toHaveLength(2);
-    expect(completed.querySelector(".agent-tool-item")?.getAttribute("open")).toBe("");
+    const completedTool = completed.querySelector<HTMLDetailsElement>(".agent-tool-item")!;
+    expect(completedTool.open).toBe(false);
     expect(completed.textContent).toContain("ok");
+
+    completedTool.open = true;
+    completedTool.dispatchEvent(new Event("toggle"));
+    await tick();
+    expect(completedTool.open).toBe(true);
 
     const activeTarget = target();
     const active = mount(ActivityGroupHarness, { target: activeTarget, props: { item: { ...item, active: true }, onExpand: vi.fn() } });
     cleanups.push(() => unmount(active));
     expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")?.open).toBe(true);
+    expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-tool-item")?.open).toBe(false);
     active.replaceItem({ ...item, active: false });
     await tick();
     expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")?.open).toBe(false);

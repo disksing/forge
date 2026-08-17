@@ -240,9 +240,10 @@
   font-style: italic;
 }
 
-/* Expanded conversation detail: white card nested inside the rail. */
+/* Expanded conversation detail keeps the surrounding History background so
+   nested activity disclosures do not read as stacked white cards. */
 [data-component-owner="history-timeline"] .history-items {
-  background: #fff;
+  background: transparent;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   display: flex;

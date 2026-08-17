@@ -306,12 +306,6 @@
   user-select: none;
 }
 
-/* Virtual folders use the stacked "folders" glyph in a warm tone so they
-   read as groupings rather than Projects, which use the plain folder icon. */
-:where([data-component-owner="project-tree"]) .folder-item .folder-tree-icon {
-  color: #f0b35e;
-}
-
 :where([data-component-owner="project-tree"]) .folder-item .folder-count {
   flex: 0 0 auto;
   color: var(--faint-on-dark);
