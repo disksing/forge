@@ -648,7 +648,7 @@ describe("EventTimeline", () => {
     expect(historyTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
   });
 
-  it("renders closed non-user turns as collapsed cards that expand on click and collapse again", async () => {
+  it("renders closed non-user turns as a two-message digest that expands on click and collapses again", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     const fixture = history("task-a", [{ type: "message", role: "assistant", text: "full turn detail", startEventId: 2, endEventId: 2, startedAt: "2026-08-12T00:00:00Z", endedAt: "2026-08-12T00:00:00Z" }]);
@@ -667,32 +667,40 @@ describe("EventTimeline", () => {
     const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
     cleanups.push(() => unmount(component));
 
-    // The collapsed card shows source, trigger and final reply previews; the
-    // detail is neither rendered nor fetched until the user clicks.
-    const card = await vi.waitFor(() => {
-      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-card");
+    // The digest keeps the normal message rows: trigger message with the
+    // sender's name and role tag, an ellipsis expander, then the final reply
+    // with the agent's name. The detail is neither rendered nor fetched
+    // until the user clicks.
+    const gap = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-gap");
       expect(value).not.toBeNull();
       return value!;
     });
-    expect(card.textContent).toContain("project1.task2");
-    expect(card.textContent).toContain("please review my patch");
-    expect(card.textContent).toContain("looks good, merged");
-    expect(card.textContent).toContain("Expand turn");
+    // The digest groups both messages on a role-tinted background.
+    expect(target.querySelector(".turn-collapsed-digest")?.getAttribute("data-trigger-role")).toBe("agent");
+    const triggerRow = target.querySelector<HTMLElement>(".agent-message-row.agent");
+    expect(triggerRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("project1.task2");
+    expect(triggerRow?.querySelector(".agent-message-role-tag")?.textContent).toBe("agent");
+    expect(triggerRow?.textContent).toContain("please review my patch");
+    const replyRow = target.querySelector<HTMLElement>(".agent-message-row.assistant.final");
+    expect(replyRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("Test Agent");
+    expect(replyRow?.textContent).toContain("looks good, merged");
+    expect(gap.textContent).toContain("Expand turn");
     expect(target.textContent).not.toContain("full turn detail");
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fetchMock.mock.calls.map(([input]) => String(input)).some((path) => path.includes("/history/turns/ref-"))).toBe(false);
 
-    card.click();
+    gap.click();
     await vi.waitFor(() => expect(target.textContent).toContain("full turn detail"));
     const collapse = target.querySelector<HTMLButtonElement>(".turn-collapse-again");
     expect(collapse).not.toBeNull();
 
     collapse!.click();
-    await vi.waitFor(() => expect(target.querySelector(".turn-collapsed-card")).not.toBeNull());
+    await vi.waitFor(() => expect(target.querySelector(".turn-collapsed-gap")).not.toBeNull());
     expect(target.textContent).not.toContain("full turn detail");
   });
 
-  it("marks a failed non-user turn's collapsed card with its status", async () => {
+  it("marks a failed non-user turn's digest with its status", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     const fixture = history("task-a");
@@ -705,12 +713,16 @@ describe("EventTimeline", () => {
     const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
     cleanups.push(() => unmount(component));
 
-    const card = await vi.waitFor(() => {
-      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-card");
+    const gap = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-gap");
       expect(value).not.toBeNull();
       return value!;
     });
-    expect(card.querySelector(".turn-collapsed-status")?.textContent).toBe("failed");
-    expect(card.textContent).toContain("System");
+    expect(gap.querySelector(".turn-collapsed-status")?.textContent).toBe("failed");
+    expect(target.querySelector(".turn-collapsed-digest")?.getAttribute("data-trigger-role")).toBe("system");
+    const triggerRow = target.querySelector<HTMLElement>(".agent-message-row.system");
+    expect(triggerRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("System");
+    // No final reply preview: the digest renders only the trigger message.
+    expect(target.querySelector(".agent-message-row.assistant.final")).toBeNull();
   });
 });

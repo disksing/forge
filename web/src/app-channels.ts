@@ -30,7 +30,7 @@ export function createPUAAppChannels(): PUAAppChannels {
       layout: { preference: "auto", effective: "three" },
       route: { path: "", revision: 0, replace: true },
       onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onRefreshDoctor: noopAsync, onToggleProject: noopAsync, onSelectResource: noopAsync,
-      onReorder: noopAsync, onDragState: noop, onToggleTreeEditing: noop, onCreateFolder: async () => "", onRenameFolder: noopAsync, onDeleteFolder: noopAsync, onToggleFolder: noopAsync, onToggleFavorite: noopAsync, onOpenInboxMessage: noopAsync, onReplyInboxMessage: noopAsync, onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
+      onReorder: noopAsync, onDragState: noop, onToggleTreeEditing: noop, onCreateFolder: async () => "", onRenameFolder: noopAsync, onDeleteFolder: noopAsync, onToggleFolder: noopAsync, onToggleFavorite: noopAsync, onOpenInboxMessage: noopAsync, onReplyInboxMessage: noopAsync, onDeleteInboxMessage: noopAsync, onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
       onMobileImmersive: noop, onToast: noop, onHistoryNavigation: noopAsync,
     }),
     create: createModelChannel<CreateDialogModel>({
