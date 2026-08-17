@@ -188,6 +188,12 @@ describe("AppShell responsibility components", () => {
     const folderRow = target.querySelector<HTMLElement>(".folder-item")!;
     expect(folderRow.querySelector(".folder-count")?.textContent).toBe("1");
     expect(target.querySelector(".folder-task-group [data-task-id=\"task-a\"]")).not.toBeNull();
+    // Virtual folders use the stacked folders glyph so they read as groupings,
+    // distinct from the plain folder icon on Project rows.
+    expect(folderRow.querySelector('[data-lucide="folders"]')).not.toBeNull();
+    expect(folderRow.querySelector('[data-lucide="folder"]')).toBeNull();
+    const projectRow = target.querySelector<HTMLElement>("button.tree-item")!;
+    expect(projectRow.querySelector('[data-lucide="folder"]')).not.toBeNull();
     // Folders are not selectable resources: clicking toggles expansion.
     folderRow.click();
     await vi.waitFor(() => expect(onToggleFolder).toHaveBeenCalledWith("vf-1"));
