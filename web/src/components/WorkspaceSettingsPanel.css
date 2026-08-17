@@ -60,6 +60,9 @@
   display: block;
   color: #2c3e50;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-row-main small {

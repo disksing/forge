@@ -185,6 +185,17 @@ describe("CSS ownership", () => {
     expect(css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1)).toContain("width: auto;");
   });
 
+  it("truncates overlong workspace names instead of overflowing the settings row", () => {
+    const css = read("src/components/WorkspaceSettingsPanel.css");
+    const selector = ':where([data-component-owner="workspace-settings-panel"]) .settings-row-main strong';
+    const start = css.indexOf(selector);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const body = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    expect(body).toContain("overflow: hidden;");
+    expect(body).toContain("text-overflow: ellipsis;");
+    expect(body).toContain("white-space: nowrap;");
+  });
+
   it("marks nested component roots with the same owner used by their CSS", () => {
 	    for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "ActivityPanel", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskWizard", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
