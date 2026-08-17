@@ -213,6 +213,35 @@ func TestActiveTurnDoesNotCountAsUnreadAndCannotBeMarkedRead(t *testing.T) {
 	}
 }
 
+func TestSchedulerNeverCountsAsUnread(t *testing.T) {
+	server, workspace := attentionTestServer(t)
+	now := "2026-08-13T00:00:00Z"
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{
+		{
+			ID: "gen-scheduler-unread", WorkspaceID: "workspace-one", ResourceID: "scheduler",
+			Generation: 1, GenerationID: "gen-scheduler-unread", AgentHubSessionID: "session-scheduler-unread",
+			Status: "idle", TurnNumber: 3, Title: "Scheduler", Cwd: workspace, CreatedAt: now, UpdatedAt: now, CompletionAt: now,
+		},
+		{
+			ID: "gen-project-unread", WorkspaceID: "workspace-one", ResourceID: "project1",
+			Generation: 1, GenerationID: "gen-project-unread", AgentHubSessionID: "session-project-unread",
+			Status: "idle", TurnNumber: 2, Title: "Project", Cwd: workspace, CreatedAt: now, UpdatedAt: now, CompletionAt: now,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := server.treeAt(context.Background(), workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Scheduler.UnreadCount != 0 || tree.Scheduler.LatestTurnNumber != 3 {
+		t.Fatalf("scheduler must not count unread Turns: %#v", tree.Scheduler)
+	}
+	if len(tree.Activity.Unread) != 1 || tree.Activity.Unread[0].ID != "project1" {
+		t.Fatalf("scheduler leaked into the unread list: %#v", tree.Activity.Unread)
+	}
+}
+
 func TestResourceActiveTurnIgnoresStaleTurnIDOnIdleGeneration(t *testing.T) {
 	record := generationRecord{Status: "idle", CurrentTurnID: "turn-already-completed"}
 	if generationHasActiveTurn(record) {

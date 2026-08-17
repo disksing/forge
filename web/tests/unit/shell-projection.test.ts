@@ -134,4 +134,12 @@ describe("shell projection", () => {
     const emptyProjection = createShellProjection({ tree: () => null, findResource: () => null, agentName: (id) => id || "agent" });
     expect(emptyProjection.archiveRedirectTarget("project1", [], {})).toBe("workspace");
   });
+
+  it("aggregates child unread counts only while collapsed", () => {
+    const children = [{ unreadCount: 3 }, { unreadCount: 0 }, {}, { unreadCount: 2 }];
+    expect(projection.aggregatedUnreadCount(1, children, false)).toBe(6);
+    expect(projection.aggregatedUnreadCount(1, children, true)).toBe(1);
+    expect(projection.aggregatedUnreadCount(0, children, true)).toBe(0);
+    expect(projection.aggregatedUnreadCount(0, [], false)).toBe(0);
+  });
 });

@@ -341,6 +341,7 @@ const WORKSPACE_ICON_BY_ID = new Map(WORKSPACE_ICONS.map((item) => [item.id, ite
 const {
 	applyCustomOrder,
 	archiveRedirectTarget,
+	aggregatedUnreadCount,
 	moveIdInList,
 	projectTaskSummary,
 	resourceRefText,
@@ -810,6 +811,12 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 	const expanded = kind === "project" && isProjectExpanded(item.id);
 	const summary = kind === "project" ? projectTaskSummary(item) : null;
 	const title = item.title || item.id;
+	// A collapsed Project aggregates its Tasks' unread Turns into its own
+	// badge; expanded Projects show only their own because each visible Task
+	// renders its own badge.
+	const unreadCount = kind === "project"
+		? aggregatedUnreadCount(Number(item.unreadCount) || 0, item.children || [], expanded)
+		: Number(item.unreadCount) || 0;
 	return {
 		id: item.id,
 		type: kind,
@@ -821,7 +828,7 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 			title,
 			summary?.ariaLabel,
 			taskState.label,
-			item.unreadCount ? `${item.unreadCount} unread ${item.unreadCount === 1 ? "Turn" : "Turns"}` : ""
+			unreadCount ? `${unreadCount} unread ${unreadCount === 1 ? "Turn" : "Turns"}` : ""
 		].filter(Boolean).join(". "),
 		statusLabel: taskState.label || "",
 		status: appShellStatusModel(taskState.statusPresentation),
@@ -833,7 +840,7 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 		children: kind === "project" ? appShellProjectChildrenModel(item) : [],
 		projectId,
 		favorite: Boolean(item.userState?.favorite),
-		unreadCount: Number(item.unreadCount) || 0
+		unreadCount
 	};
 }
 // appShellProjectChildrenModel builds the mixed root list of a Project:
@@ -868,6 +875,8 @@ function appShellFolderModel(folder: SidebarFolder, project: ResourceRecord, tas
 	);
 	const children = taskIds.map((id) => taskById.get(id)).filter((task): task is ResourceRecord => Boolean(task)).map((task) => appShellResourceModel(task, "task", project.id));
 	const title = folder.name || SIDEBAR_FOLDER_DEFAULT_NAME;
+	// A collapsed folder aggregates the unread Turns of the Tasks it hides.
+	const unreadCount = aggregatedUnreadCount(0, children, folder.expanded);
 	return {
 		id: folder.id,
 		type: "folder",
@@ -875,14 +884,18 @@ function appShellFolderModel(folder: SidebarFolder, project: ResourceRecord, tas
 		ref: "",
 		active: false,
 		expanded: folder.expanded,
-		ariaLabel: `Folder ${title}. ${children.length} ${children.length === 1 ? "task" : "tasks"}`,
+		ariaLabel: [
+			`Folder ${title}`,
+			`${children.length} ${children.length === 1 ? "task" : "tasks"}`,
+			unreadCount ? `${unreadCount} unread ${unreadCount === 1 ? "Turn" : "Turns"}` : ""
+		].filter(Boolean).join(". "),
 		statusLabel: "",
 		status: appShellStatusModel(noTaskOperationalState().statusPresentation),
 		summary: null,
 		children,
 		projectId: project.id,
 		favorite: false,
-		unreadCount: 0
+		unreadCount
 	};
 }
 function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellResourceItem | null {

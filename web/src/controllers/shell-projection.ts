@@ -176,6 +176,16 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     return { taskCount: tasks.length, runningCount: running, taskLabel, runningLabel, text: `${taskLabel} · ${runningLabel}`, ariaLabel: `Open tasks: ${taskLabel}; ${runningLabel}` };
   }
 
+  // aggregatedUnreadCount totals the unread Turns shown on a collapsed
+  // container badge: the container's own unread Turns plus every child's.
+  // An expanded container keeps only its own count because each visible
+  // child renders its own badge.
+  function aggregatedUnreadCount(ownUnread: number, children: Array<{ unreadCount?: number }>, expanded: boolean): number {
+    const own = Number(ownUnread) || 0;
+    if (expanded) return own;
+    return children.reduce((total, child) => total + (Number(child.unreadCount) || 0), own);
+  }
+
   function taskStatusKey(status: TaskStatusState | null): string {
     return status ? `${status.kind}:${status.iconName}:${status.recentOutput}` : "none";
   }
@@ -224,6 +234,7 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
   }
 
   return {
+    aggregatedUnreadCount,
     applyCustomOrder,
     archiveRedirectTarget,
     moveIdInList,

@@ -202,6 +202,31 @@ describe("AppShell responsibility components", () => {
     expect(folderRow.querySelector(".drag-handle")).toBeNull();
   });
 
+  it("ProjectTree shows an aggregated unread badge only on collapsed folders", async () => {
+    const collapsed: ShellResourceItem = { ...resource("vf-1"), type: "folder", expanded: false, unreadCount: 5, children: [resource("task-a", "task")] };
+    const expandedFolder: ShellResourceItem = { ...resource("vf-2"), type: "folder", expanded: true, unreadCount: 0, children: [{ ...resource("task-b", "task"), unreadCount: 2 }] };
+    const project = { ...resource("project-a"), expanded: true, children: [collapsed, expandedFolder] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onToast: vi.fn(),
+      ...treeEditProps(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const rows = target.querySelectorAll<HTMLElement>(".folder-item");
+    expect(rows).toHaveLength(2);
+    const collapsedBadge = rows[0].querySelector<HTMLElement>(".unread-badge");
+    expect(collapsedBadge?.textContent).toBe("5");
+    expect(collapsedBadge?.getAttribute("aria-label")).toBe("5 unread Turns");
+    // An expanded folder carries no aggregate badge; its visible Tasks render
+    // their own badges inside the task group instead of the folder row.
+    expect(rows[1].querySelector(".unread-badge")).toBeNull();
+    expect(target.querySelector(".folder-task-group .task-item .unread-badge")?.textContent).toBe("2");
+  });
+
   it("ProjectTree edit mode owns folder create, rename, delete, and drop-into", async () => {
     const onCreateFolder = vi.fn(async () => "vf-2");
     const onRenameFolder = vi.fn(async () => undefined);

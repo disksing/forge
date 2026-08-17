@@ -434,7 +434,7 @@
                   {#if renamingId === child.id}
                     <span class="name"><input class="folder-rename-input" data-folder-rename={child.id} bind:value={renameDraft} maxlength="80" placeholder="Folder name" aria-label={`Rename ${child.title}`} onclick={(event) => event.stopPropagation()} onkeydown={(event) => renameKeydown(event, child)} onblur={() => void commitRename(child)} /></span>
                   {:else}
-                    <span class="name"><span class="name-text">{child.title}</span><span class="folder-count" aria-hidden="true">{child.children.length}</span></span>
+                    <span class="name"><span class="name-text">{child.title}</span>{#if !editing && child.unreadCount > 0}<span class="unread-badge" aria-label={`${child.unreadCount} unread ${child.unreadCount === 1 ? "Turn" : "Turns"}`}>{child.unreadCount > 99 ? "99+" : child.unreadCount}</span>{/if}<span class="folder-count" aria-hidden="true">{child.children.length}</span></span>
                   {/if}
                   {#if editing}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
