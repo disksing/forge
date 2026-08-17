@@ -38,7 +38,6 @@ describe("SettingsController", () => {
 			renderWorkspace: () => undefined,
 			renderAgentViews: () => undefined,
 			toast: () => undefined,
-			onIconsChanged: () => undefined,
 		};
 	}
 

@@ -50,7 +50,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     onDeleteWorkspaceUser: vi.fn(async () => undefined),
     onSaveGenerationPolicy: vi.fn(async () => undefined),
     onSaveTaskDefault: vi.fn(async () => undefined),
-    onToast: vi.fn(), onIconsChanged: vi.fn(),
+    onToast: vi.fn(),
     ...overrides,
   };
 }
@@ -147,9 +147,9 @@ describe("DetailPanel", () => {
 
     const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
     expect(tabs.length).toBeGreaterThan(0);
-    for (const tab of tabs) expect(tab.querySelector("i[data-lucide]")).not.toBeNull();
+    for (const tab of tabs) expect(tab.querySelector("[data-lucide]")).not.toBeNull();
     const taskTab = tabs.find((tab) => tab.textContent?.includes("Task"))!;
-    expect(taskTab.querySelector('i[data-lucide="file-text"]')).not.toBeNull();
+    expect(taskTab.querySelector('[data-lucide="file-text"]')).not.toBeNull();
 
     const documentSection = target.querySelector('[data-doc-file="task.md"]')!;
     expect(documentSection.querySelector("h3")).toBeNull();
@@ -429,11 +429,11 @@ describe("DetailPanel", () => {
     expect(directoryRow).not.toBeNull();
     expect(directoryRow.classList.contains("open")).toBe(false);
     // The chevron stays a single stable icon; direction comes from the open class.
-    expect(directoryRow.querySelector('.artifact-chevron i[data-lucide="chevron-right"]')).not.toBeNull();
-    expect(directoryRow.querySelector('.artifact-chevron i[data-lucide="chevron-down"]')).toBeNull();
+    expect(directoryRow.querySelector('.artifact-chevron [data-lucide="chevron-right"]')).not.toBeNull();
+    expect(directoryRow.querySelector('.artifact-chevron [data-lucide="chevron-down"]')).toBeNull();
     // Folder and folder-open are both rendered and switched through the open class.
-    expect(directoryRow.querySelector('.artifact-folder-icon i[data-lucide="folder"]')).not.toBeNull();
-    expect(directoryRow.querySelector('.artifact-folder-icon i[data-lucide="folder-open"]')).not.toBeNull();
+    expect(directoryRow.querySelector('.artifact-folder-icon [data-lucide="folder"]')).not.toBeNull();
+    expect(directoryRow.querySelector('.artifact-folder-icon [data-lucide="folder-open"]')).not.toBeNull();
 
     directoryRow.click();
     await tick();

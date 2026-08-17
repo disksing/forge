@@ -8,7 +8,7 @@ interface Window {
   };
   DOMPurify?: { sanitize(content: string): string };
   Diff2Html?: { html(diff: string, options: Record<string, unknown>): string };
-  lucide?: { createIcons(options?: Record<string, unknown>): void };
+  lucide?: { icons?: Record<string, unknown[]> };
   webkitAudioContext?: typeof AudioContext;
   puaAssetLoaded?: (asset: string) => void;
 }

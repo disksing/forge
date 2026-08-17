@@ -42,7 +42,6 @@
       draft = next.draft;
       error = "";
     }
-    queueMicrotask(next.onIconsChanged);
   }));
 
   $effect(() => {

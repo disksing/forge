@@ -47,7 +47,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
     onSwitchWorkspace: vi.fn(async () => undefined), onAddWorkspace: vi.fn(), onCreateProject: vi.fn(), onOpenSettings: vi.fn(), onRefreshDoctor: vi.fn(async () => undefined),
     onToggleProject: vi.fn(async () => undefined), onSelectResource: vi.fn(async () => undefined), onReorder: vi.fn(async () => undefined),
     onDragState: vi.fn(), onToggleFavorite: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
-    onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onToast: vi.fn(), onIconsChanged: vi.fn(),
+    onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onToast: vi.fn(),
     onHistoryNavigation: vi.fn(async () => undefined),
     ...overrides,
   };

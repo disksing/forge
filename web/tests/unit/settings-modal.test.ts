@@ -51,7 +51,6 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onBrowserNotifications: vi.fn(),
     onCompletionSound: vi.fn(),
     onToast: vi.fn(),
-    onIconsChanged: vi.fn(),
     ...overrides,
   };
 }

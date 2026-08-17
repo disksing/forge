@@ -29,7 +29,6 @@
   onMount(() => {
     const unsubscribe = channel.subscribe((next) => {
       model = next;
-      queueMicrotask(next.onIconsChanged);
     });
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && model.mobile.sidebarOpen) model.onMobileSidebar(false);
@@ -147,4 +146,4 @@
   <aside id="agentPanel" class="agent-panel"><div class="chat-panel">{#if agentHeader}{@render agentHeader()}{/if}<div id="chatTimeline" class="chat-timeline" data-component-owner="event-timeline">{#if timeline}{@render timeline()}{/if}</div><div id="chatComposer" class="chat-composer" data-component-owner="chat-composer">{#if composer}{@render composer()}{/if}</div></div></aside>
 </main>
 </div>
-{#if doctorOpen}<DoctorDialog snapshot={model.doctor} onClose={() => { doctorOpen = false; }} onRefresh={model.onRefreshDoctor} onIconsChanged={model.onIconsChanged} />{/if}
+{#if doctorOpen}<DoctorDialog snapshot={model.doctor} onClose={() => { doctorOpen = false; }} onRefresh={model.onRefreshDoctor} />{/if}

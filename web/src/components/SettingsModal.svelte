@@ -44,7 +44,6 @@
       if (preserveUserNameDraft) draft.userName = userNameDraft;
       else userNameDraft = next.userName;
     }
-    queueMicrotask(next.onIconsChanged);
   }));
 
   onMount(() => {

@@ -103,22 +103,13 @@
   function back(): void {
     if (model.submitting || step === 0) return;
     step--;
-    refreshStepIcons();
   }
 
   function next(): void {
     if (!canProceed()) return;
     if (step < lastStep) {
       step++;
-      refreshStepIcons();
     }
-  }
-
-  // Step transitions are local state and do not trigger a model publish, so
-  // ask the shell to re-render lucide icons (the stepper checkmarks) after the
-  // DOM updates.
-  function refreshStepIcons(): void {
-    void tick().then(() => model.onIconsChanged());
   }
 
   async function create(): Promise<void> {

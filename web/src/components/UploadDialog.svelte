@@ -41,7 +41,6 @@
         nextId = 1;
         if (next.open) queueMicrotask(() => document.getElementById("agentUploadDropZone")?.focus({ preventScroll: true }));
       }
-      queueMicrotask(next.onIconsChanged);
     });
     const paste = (event: ClipboardEvent) => {
       if (!model.open) return;

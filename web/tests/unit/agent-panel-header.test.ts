@@ -35,7 +35,6 @@ function model(overrides: Partial<AgentPanelHeaderModel> = {}): AgentPanelHeader
     modelSummary: "Kimi · kimi-k2-0905",
     turnNumber: 3,
     turnStartedAt: new Date(Date.now() - 134_000).toISOString(),
-    onIconsChanged: vi.fn(),
     ...overrides,
   };
 }

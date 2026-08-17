@@ -86,7 +86,6 @@
       controller?.activate(next.workspaceId, next.resourceId, next.status);
       void tick().then(() => {
         if (followWorkingChange && !hasActiveSelection()) scrollToBottom();
-        next.onIconsChanged();
       });
     });
     const selectionChanged = () => {
@@ -136,7 +135,6 @@
     if (scroll) scroll.dataset.agentResourceId = next.resourceId;
     void tick().then(() => {
       if (followAfterUpdate && !hasActiveSelection()) scrollToBottom();
-      model.onIconsChanged();
       if (next.loaded) void fillViewport(next.identity);
     });
   }
@@ -259,7 +257,6 @@
     if (snapshot.identity !== identity) return;
     if (anchor?.isConnected) scroll.scrollTop = previousTop + (anchor.getBoundingClientRect().top - anchorTop);
     else scroll.scrollTop = previousTop + (scroll.scrollHeight - previousHeight);
-    model.onIconsChanged();
   }
 
   function rememberToolOpen(item: TimelineItem, open: boolean): void {
@@ -388,4 +385,4 @@
   {/if}
 </div>
 
-<FilePreviewModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} selection={preview} editable={false} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSaveMarkdown={rejectReadOnlySave} onClose={() => preview = null} onError={model.onToast} onIconsChanged={model.onIconsChanged} />
+<FilePreviewModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} selection={preview} editable={false} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSaveMarkdown={rejectReadOnlySave} onClose={() => preview = null} onError={model.onToast} />

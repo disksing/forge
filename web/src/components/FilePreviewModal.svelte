@@ -11,7 +11,7 @@
   import type { FilePreviewModel } from "./models";
   import LazyMarkdownEditor from "./LazyMarkdownEditor.svelte";
 
-  let { client, workspaceId, resourceId, selection, editable, fullscreen = false, resolveResourceTitle, onNavigate, onOpenFile, onSaveMarkdown, onClose, onError, onIconsChanged }: { client: ApiClient; workspaceId: string; resourceId: string; selection: { section: string; path: string; mode?: "edit" | "annotate" } | null; editable: boolean; fullscreen?: boolean; resolveResourceTitle: ResourceTitleResolver; onNavigate: (resourceId: string) => void; onOpenFile?: (path: string) => void; onSaveMarkdown: (path: string, content: string, expectedContentHash: string) => Promise<FilePreviewModel>; onClose: () => void; onError: (message: string) => void; onIconsChanged: () => void } = $props();
+  let { client, workspaceId, resourceId, selection, editable, fullscreen = false, resolveResourceTitle, onNavigate, onOpenFile, onSaveMarkdown, onClose, onError }: { client: ApiClient; workspaceId: string; resourceId: string; selection: { section: string; path: string; mode?: "edit" | "annotate" } | null; editable: boolean; fullscreen?: boolean; resolveResourceTitle: ResourceTitleResolver; onNavigate: (resourceId: string) => void; onOpenFile?: (path: string) => void; onSaveMarkdown: (path: string, content: string, expectedContentHash: string) => Promise<FilePreviewModel>; onClose: () => void; onError: (message: string) => void } = $props();
   let preview = $state<FilePreviewModel | null>(null);
   let loading = $state(false);
   let error = $state("");
@@ -39,7 +39,7 @@
         error = reason instanceof Error ? reason.message : String(reason);
         onError(error);
       })
-      .finally(() => { if (selection?.section === current.section && selection.path === current.path) { loading = false; queueMicrotask(onIconsChanged); } });
+      .finally(() => { if (selection?.section === current.section && selection.path === current.path) { loading = false; } });
   });
 
   onDestroy(() => client.requests.abort(scope));
@@ -83,8 +83,8 @@
       <header class="file-modal-header"><div><strong>{preview?.name || selection.path.split("/").pop() || "File preview"}</strong><span>{selection.path}{preview?.size != null ? ` · ${formatBytes(preview.size)}` : ""}{preview?.truncated ? " · truncated" : ""}</span></div><div class="file-modal-actions">{#if editable && preview && !preview.truncated && !preview.binary && isMarkdownFile(preview.path || selection.path)}{#if mode === "preview"}<button class="secondary-button" type="button" onclick={() => mode = "edit"}><Icon name="pencil" /><span>Edit</span></button><button class="secondary-button" type="button" onclick={() => mode = "annotate"}><Icon name="message-square-plus" /><span>Annotate</span></button>{:else if mode === "edit"}<button class="secondary-button" type="button" onclick={() => mode = "preview"}><Icon name="eye" /><span>Preview</span></button><button class="secondary-button" type="button" onclick={() => mode = "annotate"}><Icon name="message-square-plus" /><span>Annotate</span></button>{:else}<button class="secondary-button" type="button" onclick={() => mode = "preview"}><Icon name="eye" /><span>Preview</span></button><button class="secondary-button" type="button" onclick={() => mode = "edit"}><Icon name="pencil" /><span>Edit</span></button>{/if}{/if}{#if !fullscreen}<button class="secondary-button file-modal-open" type="button" title="Open file full screen" aria-label="Open file full screen" onclick={openFullscreen}><Icon name="maximize-2" /><span>Full screen</span></button>{/if}<button class="icon-button" type="button" title="Close" aria-label="Close" onclick={onClose}><Icon name="x" /></button></div></header>
       {#if loading}<div class="file-modal-empty"><Icon name="loader-circle" /><strong>Loading preview</strong><span>{selection.path}</span></div>
       {:else if error}<div class="file-modal-empty error-preview"><Icon name="triangle-alert" /><strong>Preview unavailable</strong><span>{error}</span></div>
-      {:else if preview && mode === "edit"}<div class="modal-markdown-editor"><LazyMarkdownEditor identity={`${workspaceId}:${resourceId}:${selection.path}:edit`} file={preview} mode="edit" onSave={saveMarkdown} onToast={onError} {onIconsChanged} /></div>
-      {:else if preview && mode === "annotate"}<div class="modal-markdown-editor"><LazyMarkdownEditor identity={`${workspaceId}:${resourceId}:${selection.path}:annotate`} file={preview} mode="annotate" onSave={saveMarkdown} onToast={onError} {onIconsChanged} /></div>
+      {:else if preview && mode === "edit"}<div class="modal-markdown-editor"><LazyMarkdownEditor identity={`${workspaceId}:${resourceId}:${selection.path}:edit`} file={preview} mode="edit" onSave={saveMarkdown} onToast={onError} /></div>
+      {:else if preview && mode === "annotate"}<div class="modal-markdown-editor"><LazyMarkdownEditor identity={`${workspaceId}:${resourceId}:${selection.path}:annotate`} file={preview} mode="annotate" onSave={saveMarkdown} onToast={onError} /></div>
       {:else if preview?.image}<div class="image-preview" data-preview-scroll><img src={rawURL} alt={preview.name || selection.path} /></div>
       {:else if preview?.binary}<div class="file-modal-empty"><Icon name="file-warning" /><strong>Preview unavailable</strong><span>{preview.name || selection.path} · Binary file, {formatBytes(preview.size || 0)}.</span></div>
       {:else if isMarkdownFile(preview?.path || selection.path)}<div class="modal-markdown markdown-rendered" data-preview-scroll use:markdownResourceNavigation={{ resolveResourceTitle, onNavigate, onOpenFile }}>{@html markdownHTML(preview?.content || "", { workspaceId, resolveResourceTitle })}</div>

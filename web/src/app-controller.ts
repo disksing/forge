@@ -74,7 +74,6 @@ interface ControllerState {
 	messageStatusRequestVersion: number;
 	steeringMessageId: string;
 	stopNotice: { key: string; text: string } | null;
-	iconRefreshScheduled: boolean;
 	agent: {
 		renderTimer: number | null;
 		draftPrompt: string;
@@ -137,7 +136,6 @@ const controllerState: ControllerState = {
 	messageStatusRequestVersion: 0,
 	steeringMessageId: "",
 	stopNotice: null,
-	iconRefreshScheduled: false,
 	agent: {
 		renderTimer: null as number | null,
 		draftPrompt: "",
@@ -175,7 +173,6 @@ const updateAgentDraft = agentDraftController.update;
 const agentOperations = createAgentOperationController(() => {
 	if (!appBooted) return;
 	renderChatPanel();
-	refreshIcons();
 });
 const paneLayoutController = createPaneLayoutController(() => renderAppShell());
 const routeController = createRouteController(() => renderAppShell());
@@ -202,7 +199,6 @@ const createDialogController = createCreateDialogController({
 	onOpen: () => {
 		controllerState.modalEnter = "create";
 	},
-	onIconsChanged: refreshIcons,
 	confirmTemplateSwitch: () => confirmDialog({ title: "Switch template", message: "Discard edited template fields and switch templates?", confirmLabel: "Discard", danger: true }),
 	agents: () => svelteAgentOptions(),
 	agentProfiles: () => (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description, agentName: profile.agentName })),
@@ -376,8 +372,7 @@ const settingsController = createSettingsController({
 	},
 	renderWorkspace: renderWorkspaceSelect,
 	renderAgentViews: () => { applyAgentConfig(); renderChatComposer(); },
-	toast,
-	onIconsChanged: refreshIcons
+	toast
 });
 function svelteAgentOptions() {
 	return enabledAgentConfigs().map((agent) => ({
@@ -724,7 +719,6 @@ function publishViewModels() {
 	renderAppShell();
 	renderDetails();
 	renderChatPanel();
-	refreshIcons();
 	renderCreateDialog();
 	renderSettingsModal();
 }
@@ -732,7 +726,6 @@ function renderSelectionPanels() {
 	renderAppShell();
 	renderDetails();
 	renderChatPanel();
-	refreshIcons();
 	renderCreateDialog();
 }
 function isCurrentWorkspaceView(workspaceId: string, navigationVersion: number, treeRequestVersion: number | null = null): boolean {
@@ -880,8 +873,7 @@ function renderAppShell() {
 		onMobileView: (view) => setMobileView(view),
 		onMobileImmersive: (immersive) => setMobileImmersive(immersive),
 		onHistoryNavigation: (pathname) => handleHistoryNavigation(pathname),
-		onToast: toast,
-		onIconsChanged: refreshIcons
+		onToast: toast
 	});
 }
 async function switchWorkspace(id: string): Promise<void> {
@@ -1104,8 +1096,7 @@ function detailPanelModel(): DetailPanelModel {
 			if (controllerState.selectedId === "scheduler") await loadDetail("scheduler", { force: true });
 			publishViewModels();
 		},
-		onToast: toast,
-		onIconsChanged: refreshIcons
+		onToast: toast
 	};
 	if (!controllerState.tree) return base;
 	if (controllerState.selectedId === "workspace") return {
@@ -1392,8 +1383,7 @@ function renderChatPanel(_options: RenderOptions = {}): void {
 		agentName: agentDisplayName(agent),
 		modelSummary: agentConfigSummary(agent),
 		turnNumber: Number(status?.generation?.turnNumber) || Number(runtime?.turnNumber) || 0,
-		turnStartedAt: String(runtime?.turnStartedAt || ""),
-		onIconsChanged: refreshIcons
+		turnStartedAt: String(runtime?.turnStartedAt || "")
 	});
 	publisher.renderEventTimeline({
 		identity: `${controllerState.activeWorkspaceId}:${resourceId}`,
@@ -1407,8 +1397,7 @@ function renderChatPanel(_options: RenderOptions = {}): void {
 		onEvent: handleSvelteAgentEvent,
 		onNotice: () => {},
 		onApproval: resolveResourceApproval,
-		onToast: toast,
-		onIconsChanged: refreshIcons
+		onToast: toast
 	});
 }
 function resourceMutationKey(workspaceId: string, resourceId: string): string {
@@ -1473,8 +1462,7 @@ function renderChatComposer(_options: RenderOptions = {}): void {
 				agentBindingSavingFor = "";
 				renderChatComposer();
 			}
-		},
-		onIconsChanged: refreshIcons
+		}
 	});
 }
 function agentDisplayName(agent: AgentConfig | null | undefined): string {
@@ -1519,7 +1507,6 @@ function closeAgentUploadDialog(paths: string[] = [], context: UploadContext = {
 	if (composer) delete composer.dataset.composerKey;
 	renderChatComposer({ skipDraftSync: shouldSkipDraftSync });
 	elementById("chatInput")?.focus({ preventScroll: true });
-	refreshIcons();
 }
 function discardAgentUploadDialog(): void {
 	controllerState.uploadDialog = {
@@ -1544,8 +1531,7 @@ function renderAgentUploadDialog(): void {
 		identity: `${dialog.identity || 0}:${controllerState.activeWorkspaceId}:${dialog.resourceId || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
 		resourceId: dialog.resourceId || "",
-		onDone: closeAgentUploadDialog,
-		onIconsChanged: refreshIcons
+		onDone: closeAgentUploadDialog
 	});
 }
 async function stopAgentTurn(): Promise<void> {
@@ -1810,20 +1796,9 @@ let toastRevision = 0;
 function toast(message: unknown): void {
 	publisher.renderToast({ message: String(message || ""), revision: ++toastRevision });
 }
-function refreshIcons(): void {
-	const lucide = window.lucide;
-	if (!lucide || controllerState.iconRefreshScheduled) return;
-	controllerState.iconRefreshScheduled = true;
-	lifecycle?.animationFrame(() => {
-		controllerState.iconRefreshScheduled = false;
-		lucide.createIcons({ attrs: { "stroke-width": 2 } });
-	});
-}
 function optionalAssetLoaded(asset: string): void {
-	refreshIcons();
 	if (asset === "markdown" && window.marked && window.DOMPurify) {
 		renderDetails();
-		refreshIcons();
 	}
 	if (asset === "diff") renderDetails();
 }
@@ -1856,7 +1831,6 @@ function installControllerListeners(): void {
 	if (log && chatTimelineHasActiveSelection(log)) return;
 	controllerState.agent.renderDeferredForSelection = false;
 	renderChatPanel();
-	refreshIcons();
 	});
 	lifecycle?.listen(document, "keydown", (event) => {
 	if (event.key === "Escape" && controllerState.diff) closeDiff();
@@ -1864,7 +1838,6 @@ function installControllerListeners(): void {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.historyOpen = false;
 		renderChatComposer();
-		refreshIcons();
 	}
 	});
 	lifecycle?.listen(document, "click", (event) => {
@@ -1879,9 +1852,7 @@ function installControllerListeners(): void {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.historyOpen = false;
 		renderChatComposer();
-		refreshIcons();
 	}
-	refreshIcons();
 	});
 	lifecycle?.listen(window, "beforeunload", flushAgentDraftOnPageLeave);
 	lifecycle?.listen(document, "visibilitychange", () => {
@@ -1902,12 +1873,10 @@ export function startPUAApp(nextPublisher: PUAViewPublisher): void {
 		scope,
 		selectedResourceId: () => controllerState.selectedId,
 		resourceProjections: () => resourceNotificationProjections(),
-		hasTree: () => Boolean(controllerState.tree),
 		findResource,
 		selectResource,
 		notificationsSettingsVisible: () => settingsController.isOpenTab("notifications"),
 		renderSettings: renderSettingsModal,
-		refreshIcons,
 		flushDraft: flushAgentDraftOnPageLeave
 	});
 	userSettingsController = createUserSettingsController(scope, () => {

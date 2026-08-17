@@ -24,7 +24,6 @@ export interface CreateDialogDependencies {
 	reloadTree(): Promise<void>;
 	selectResource(resourceId: string): Promise<void>;
 	onOpen(): void;
-	onIconsChanged(): void;
 	confirmTemplateSwitch(): Promise<boolean>;
 	agents(): AgentOption[];
 	agentProfiles(): ResourceAgentProfileModel[];
@@ -170,8 +169,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 			onPreview: refreshPreview,
 			onSubmit: submit,
 			previewRequestKey: (next) => JSON.stringify(createTaskRequest({ ...dialog, ...stateFromDraft(next), templateDigest: "" } as CreateDialogState, dependencies.templates(dialog.projectId))),
-			onConfirmTemplateSwitch: dependencies.confirmTemplateSwitch,
-			onIconsChanged: dependencies.onIconsChanged
+			onConfirmTemplateSwitch: dependencies.confirmTemplateSwitch
 		});
 	}
 

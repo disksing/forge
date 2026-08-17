@@ -116,5 +116,4 @@ export interface DetailPanelModel {
   onSaveTaskDefault: (projectId: string, binding: ResourceAgentBindingModel | null) => Promise<void>;
   onRefreshScheduler?: () => Promise<void>;
   onToast: (message: string) => void;
-  onIconsChanged: () => void;
 }

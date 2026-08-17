@@ -58,7 +58,6 @@ export interface SettingsControllerDependencies {
 	renderWorkspace(): void;
 	renderAgentViews(): void;
 	toast(message: string): void;
-	onIconsChanged(): void;
 }
 
 export function configWithAgentHubCatalog(base: PUASettingsConfig, agentHub: AgentHubData): PUASettingsConfig {
@@ -168,8 +167,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			onSaveAgentHub: async (draft) => { syncDraft(draft); await saveAgentSettings(); },
 			onBrowserNotifications: dependencies.setBrowserNotifications,
 			onCompletionSound: dependencies.setCompletionSound,
-			onToast: dependencies.toast,
-			onIconsChanged: dependencies.onIconsChanged
+			onToast: dependencies.toast
 		});
 	}
 
@@ -321,7 +319,6 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		state.agentDirty = false;
 		dependencies.renderAgentViews();
 		render();
-		dependencies.onIconsChanged();
 		dependencies.toast("AgentHub settings saved.");
 	}
 

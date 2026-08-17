@@ -61,7 +61,6 @@
     }
     void tick().then(() => {
       if (currentRefreshVersion === refreshVersion) restorePreviewScrollState(previewScrollState);
-      next.onIconsChanged();
     });
   }));
 
@@ -131,7 +130,6 @@
     const next = new Set(expanded);
     if (next.has(key)) next.delete(key); else next.add(key);
     expanded = next;
-    queueMicrotask(model.onIconsChanged);
   }
 
   function rawURL(section: string, path: string, download = false): string {
@@ -242,12 +240,12 @@
       {#if model.resourceType === "task" && !fileNames.has("task.md")}<div class="content-section" hidden={activeTab !== "task"}><div class="file-modal-empty detail-missing"><Icon name="file-text" /><strong>Task brief is missing</strong><span>task.md was not found in this task directory.</span></div></div>{/if}
       {#if model.resourceType === "scheduler" && model.detail.scheduler}<div hidden={activeTab !== "schedules"}><SchedulerPanel workspaceId={model.workspaceId} config={model.detail.scheduler} onChanged={model.onRefreshScheduler || (async () => undefined)} onToast={model.onToast} /></div>{/if}
       <div hidden={activeTab !== "settings"}><ResourceSettingsPanel {model} onOpenTemplate={(path) => openPreview("Templates", path)} /></div>
-      {#if activeTab === "history"}{#key model.identity}<HistoryTimeline workspaceId={model.workspaceId} resourceId={model.resourceId} artifacts={model.detail.artifacts || []} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onOpenLegacy={(path) => openPreview("Artifacts", path)} onIconsChanged={model.onIconsChanged} />{/key}{/if}
+      {#if activeTab === "history"}{#key model.identity}<HistoryTimeline workspaceId={model.workspaceId} resourceId={model.resourceId} artifacts={model.detail.artifacts || []} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onOpenLegacy={(path) => openPreview("Artifacts", path)} />{/key}{/if}
       <div hidden={activeTab !== "artifacts"}><FileBrowser title="Artifacts" entries={model.detail.artifacts || []} emptyMessage="No artifacts." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} onDelete={model.detail.archived ? undefined : deleteArtifact} showHeading={false} /></div>
       <div hidden={activeTab !== "worktrees"}><div class="content-section"><div class="worktree-list">{#if model.detail.repos?.length}{#each model.detail.repos as repo (`${repo.name}:${repo.worktreePath}`)}<div class="worktree-row"><div class="worktree-main"><Icon name="git-branch" className="worktree-icon" /><div><strong>{repo.branch || "HEAD"}</strong><span>{repo.name || "repository"}{repo.targetBranch ? ` · base ${repo.targetBranch}` : ""}</span><small>{repo.worktreePath || ""}</small></div></div><button type="button" class="secondary-button" onclick={() => diffRepo = repo}><Icon name="git-compare-arrows" /><span>View Diff</span></button></div>{/each}{:else}<div class="empty-list-row"><Icon name="git-branch" /><span>No worktrees.</span></div>{/if}</div></div></div>
     </div>
   {/if}
 {/if}
 
-<FilePreviewModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} selection={preview} editable={filePreviewEditable} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSaveMarkdown={saveMarkdownViaModal} onClose={() => preview = null} onError={toastError} onIconsChanged={model.onIconsChanged} />
-<DiffModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} repo={diffRepo} onClose={() => diffRepo = null} onError={toastError} onIconsChanged={model.onIconsChanged} />
+<FilePreviewModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} selection={preview} editable={filePreviewEditable} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSaveMarkdown={saveMarkdownViaModal} onClose={() => preview = null} onError={toastError} />
+<DiffModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} repo={diffRepo} onClose={() => diffRepo = null} onError={toastError} />

@@ -51,7 +51,7 @@ describe("HistoryTimeline", () => {
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "workspace-file-link", resourceId: "project-file-link", artifacts: [],
       resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile,
-      onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+      onOpenLegacy: () => undefined,
     } });
     cleanups.push(() => unmount(component));
 
@@ -87,7 +87,7 @@ describe("HistoryTimeline", () => {
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "workspace-cancelled", resourceId: "project-cancelled", artifacts: [],
       resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
-      onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+      onOpenLegacy: () => undefined,
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -118,7 +118,7 @@ describe("HistoryTimeline", () => {
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "workspace-trigger", resourceId: "project-trigger", artifacts: [],
       resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
-      onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+      onOpenLegacy: () => undefined,
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -162,7 +162,7 @@ describe("HistoryTimeline", () => {
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "workspace-toggle", resourceId: "project-toggle", artifacts: [],
       resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
-      onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+      onOpenLegacy: () => undefined,
     } });
     cleanups.push(() => unmount(component));
     await tick();

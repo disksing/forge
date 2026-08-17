@@ -7,7 +7,7 @@
   import Icon from "./Icon.svelte";
   import type { DiffPreviewModel, ResourceRepoModel } from "./models";
 
-  let { client, workspaceId, resourceId, repo, onClose, onError, onIconsChanged }: { client: ApiClient; workspaceId: string; resourceId: string; repo: ResourceRepoModel | null; onClose: () => void; onError: (message: string) => void; onIconsChanged: () => void } = $props();
+  let { client, workspaceId, resourceId, repo, onClose, onError }: { client: ApiClient; workspaceId: string; resourceId: string; repo: ResourceRepoModel | null; onClose: () => void; onError: (message: string) => void } = $props();
   let diff = $state<DiffPreviewModel | null>(null);
   let loading = $state(false);
   let error = $state("");
@@ -28,7 +28,7 @@
     void client.latest<DiffPreviewModel>(`/api/workspaces/${encodeURIComponent(workspaceId)}/diff?${params}`, { scope: requestScope })
       .then(async (value) => { if (repo === current) { diff = value; await tick(); renderDiff(); } })
       .catch((reason) => { if (repo !== current || reason?.name === "StaleResponseError") return; error = reason instanceof Error ? reason.message : String(reason); onError(error); })
-      .finally(() => { if (repo === current) { loading = false; queueMicrotask(onIconsChanged); } });
+      .finally(() => { if (repo === current) { loading = false; } });
   });
 
   $effect(() => { diff?.diff; viewer; renderDiff(); });

@@ -54,7 +54,7 @@ function model(resourceId: string, nextStatus = status(resourceId), projector: (
   return {
     identity: `workspace-a:${resourceId}`, workspaceId: "workspace-a", resourceId,
     status: nextStatus,
-    agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project: projector, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
+    agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project: projector, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(),
   };
 }
 
@@ -633,7 +633,7 @@ describe("EventTimeline", () => {
     const historyTarget = document.body.appendChild(document.createElement("div"));
     const historyComponent = mount(HistoryTimeline, { target: historyTarget, props: {
       workspaceId: "workspace-a", resourceId: "task-a", artifacts: [], resolveResourceTitle: () => null,
-      onNavigate: () => undefined, onOpenFile: () => undefined, onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+      onNavigate: () => undefined, onOpenFile: () => undefined, onOpenLegacy: () => undefined,
     } });
     cleanups.push(() => unmount(historyComponent));
     await vi.waitFor(() => expect(historyTarget.querySelector(".history-turn-header")).not.toBeNull());

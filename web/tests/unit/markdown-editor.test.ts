@@ -19,7 +19,6 @@ function mountEditor(overrides: Record<string, unknown> = {}) {
       mode: "edit",
       onSave,
       onToast,
-      onIconsChanged: vi.fn(),
       ...overrides,
     },
   });

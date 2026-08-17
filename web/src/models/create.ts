@@ -73,5 +73,4 @@ export interface CreateDialogModel {
   onSubmit: (draft: CreateDraft) => Promise<void>;
   previewRequestKey: (draft: CreateDraft) => string;
   onConfirmTemplateSwitch: () => Promise<boolean>;
-  onIconsChanged: () => void;
 }

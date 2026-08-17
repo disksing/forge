@@ -53,17 +53,6 @@
     workspaceId && path ? { section, path, mode: restoredMode === "edit" || restoredMode === "annotate" ? restoredMode : undefined } : null
   );
   const invalid = $derived(!workspaceId || !path || !selection);
-  let iconRefreshScheduled = false;
-
-  function refreshIcons(): void {
-    const lucide = window.lucide;
-    if (!lucide || iconRefreshScheduled) return;
-    iconRefreshScheduled = true;
-    requestAnimationFrame(() => {
-      iconRefreshScheduled = false;
-      lucide.createIcons({ attrs: { "stroke-width": 2 } });
-    });
-  }
 
   function fullscreenURL(): string {
     const next = selection;
@@ -74,7 +63,6 @@
   function openFile(nextPath: string): void {
     selection = { section: "Files", path: nextPath };
     history.replaceState(null, "", fullscreenURL());
-    queueMicrotask(refreshIcons);
   }
 
   function navigateToResource(target: string): void {
@@ -109,5 +97,5 @@
     <div class="file-modal-empty error-preview"><Icon name="triangle-alert" /><strong>File preview unavailable</strong><span>Missing workspace or file parameters in the full-screen URL.</span><a class="secondary-button" href="/">Back to PUA</a></div>
   </div>
 {:else}
-  <FilePreviewModal {client} {workspaceId} {resourceId} selection={selection} {editable} fullscreen resolveResourceTitle={(target) => target} onNavigate={navigateToResource} onOpenFile={openFile} onSaveMarkdown={saveMarkdown} onClose={() => window.close()} onError={(message) => console.warn("Full-screen preview:", message)} onIconsChanged={refreshIcons} />
+  <FilePreviewModal {client} {workspaceId} {resourceId} selection={selection} {editable} fullscreen resolveResourceTitle={(target) => target} onNavigate={navigateToResource} onOpenFile={openFile} onSaveMarkdown={saveMarkdown} onClose={() => window.close()} onError={(message) => console.warn("Full-screen preview:", message)} />
 {/if}

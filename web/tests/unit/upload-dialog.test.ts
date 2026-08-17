@@ -37,7 +37,7 @@ afterEach(async () => {
 });
 
 function model(overrides: Partial<UploadDialogModel> = {}): UploadDialogModel {
-  return { open: true, identity: "upload-1:workspace-a:task-a", workspaceId: "workspace-a", resourceId: "task-a", onDone: vi.fn(), onIconsChanged: vi.fn(), ...overrides };
+  return { open: true, identity: "upload-1:workspace-a:task-a", workspaceId: "workspace-a", resourceId: "task-a", onDone: vi.fn(), ...overrides };
 }
 
 describe("UploadDialog", () => {

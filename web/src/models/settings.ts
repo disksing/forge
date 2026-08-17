@@ -69,5 +69,4 @@ export interface SettingsModel {
   onBrowserNotifications: (enabled: boolean) => void;
   onCompletionSound: (enabled: boolean) => void;
   onToast: (message: string) => void;
-  onIconsChanged: () => void;
 }

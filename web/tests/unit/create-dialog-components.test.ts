@@ -44,7 +44,7 @@ function model(currentDraft: CreateDraft, overrides: Partial<CreateDialogModel> 
     previewError: "", templateDigest: "", submitting: false,
     agents: [], agentProfiles: [], defaultTaskBinding: { kind: "profile", name: "default" },
     onClose: vi.fn(), onPreview: vi.fn(), onSubmit: vi.fn(),
-    previewRequestKey: (next) => JSON.stringify(next), onConfirmTemplateSwitch: async () => true, onIconsChanged: vi.fn(),
+    previewRequestKey: (next) => JSON.stringify(next), onConfirmTemplateSwitch: async () => true,
     ...overrides,
   };
 }

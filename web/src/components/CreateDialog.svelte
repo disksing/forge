@@ -25,7 +25,6 @@
       identity = next.identity;
       draft = cloneDraft(next.draft);
     }
-    queueMicrotask(next.onIconsChanged);
   }));
 
   onMount(() => {

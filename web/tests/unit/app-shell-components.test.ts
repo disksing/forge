@@ -111,8 +111,8 @@ describe("AppShell responsibility components", () => {
     await tick();
 
     const button = target.querySelector<HTMLButtonElement>("#workspaceSwitcher")!;
-    expect(button.querySelector('.workspace-switcher-icon-idle i[data-lucide="chevrons-up-down"]')).not.toBeNull();
-    expect(button.querySelector('.workspace-switcher-icon-busy i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(button.querySelector('.workspace-switcher-icon-idle [data-lucide="chevrons-up-down"]')).not.toBeNull();
+    expect(button.querySelector('.workspace-switcher-icon-busy [data-lucide="loader-circle"]')).not.toBeNull();
     expect(button.classList.contains("busy")).toBe(false);
   });
 
@@ -324,8 +324,8 @@ describe("AppShell responsibility components", () => {
     expect(collapsedChevron.classList.contains("expanded")).toBe(false);
     // The chevron uses a single icon and encodes direction through the
     // expanded class (CSS rotation) so the icon itself never changes.
-    expect(expandedChevron.querySelector('i[data-lucide="chevron-right"]')).not.toBeNull();
-    expect(collapsedChevron.querySelector('i[data-lucide="chevron-right"]')).not.toBeNull();
+    expect(expandedChevron.querySelector('[data-lucide="chevron-right"]')).not.toBeNull();
+    expect(collapsedChevron.querySelector('[data-lucide="chevron-right"]')).not.toBeNull();
   });
 
   it("ProjectTree chevron toggle drops row focus so the star does not stick", async () => {

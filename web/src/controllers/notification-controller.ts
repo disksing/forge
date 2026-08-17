@@ -12,12 +12,10 @@ export interface NotificationControllerDependencies {
   storage?: Storage | null;
   selectedResourceId(): string;
   resourceProjections(): NotificationSource[];
-  hasTree(): boolean;
   findResource(id: string): NotificationResource | null | undefined;
   selectResource(id: string, options: { clearUnread: boolean; forceDetail: boolean }): Promise<void>;
   notificationsSettingsVisible(): boolean;
   renderSettings(): void;
-  refreshIcons(): void;
   flushDraft(): void;
 }
 
@@ -188,7 +186,6 @@ export function createNotificationController(dependencies: NotificationControlle
       } else {
         if (!current.unread.some((item) => item.marker === record.marker)) current.unread.push(record);
         writeStore();
-        if (dependencies.hasTree()) dependencies.refreshIcons();
       }
       return;
     }
@@ -200,7 +197,6 @@ export function createNotificationController(dependencies: NotificationControlle
       current.pending = current.pending.filter((item) => item.resourceId !== message.resourceId);
     } else return;
     writeStore();
-    if (dependencies.hasTree()) dependencies.refreshIcons();
   }
 
   function observeCompletion(item: NotificationSource, completionState = ""): boolean {
@@ -234,7 +230,6 @@ export function createNotificationController(dependencies: NotificationControlle
     writeStore();
     broadcast({ type: "record", record });
     delivery.deliver(record);
-    if (dependencies.hasTree()) dependencies.refreshIcons();
     return true;
   }
 
@@ -268,7 +263,6 @@ export function createNotificationController(dependencies: NotificationControlle
     current.pending = current.pending.filter((record) => record.marker !== value);
     writeStore();
     broadcast({ type: "clear-marker", marker: value });
-    if (dependencies.hasTree()) dependencies.refreshIcons();
   }
 
   function clearResource(resourceId: string): void {
@@ -280,14 +274,12 @@ export function createNotificationController(dependencies: NotificationControlle
     current.pending = current.pending.filter((record) => record.resourceId !== value);
     writeStore();
     broadcast({ type: "clear-resource", resourceId: value });
-    if (dependencies.hasTree()) dependencies.refreshIcons();
   }
 
   function install(): void {
     dependencies.scope.listen(window, "storage", (event) => {
       if (event.key === notificationStateKey(state.workspaceId) && event.newValue) {
         state.store = repository.readStore(state.workspaceId);
-        if (dependencies.hasTree()) dependencies.refreshIcons();
       }
       if (event.key === NOTIFICATION_SETTINGS_KEY) {
         state.settings = repository.readSettings();

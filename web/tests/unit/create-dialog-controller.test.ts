@@ -34,7 +34,6 @@ function harness(responder: (path: string, init?: RequestInit) => unknown | Prom
 		reloadTree,
 		selectResource,
 		onOpen: vi.fn(),
-		onIconsChanged: vi.fn(),
 		confirmTemplateSwitch: async () => true,
 		agents: () => [{ id: "agent-b", label: "Agent B", summary: "" }],
 		agentProfiles: () => [{ key: "default", agentName: "agent-a" }, { key: "review", agentName: "agent-b" }],

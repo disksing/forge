@@ -7,7 +7,6 @@ export interface UploadDialogModel {
   workspaceId: string;
   resourceId: string;
   onDone: (paths: string[], context: { workspaceId: string; resourceId: string }) => void;
-  onIconsChanged: () => void;
 }
 
 export interface ComposerModel {
@@ -39,7 +38,6 @@ export interface ComposerModel {
   onDismissStopNotice: () => void;
   onSteerWaiting: (messageId: string) => Promise<void>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
-  onIconsChanged: () => void;
 }
 
 export interface WaitingMessage {
@@ -269,7 +267,6 @@ export interface AgentPanelHeaderModel {
   turnNumber: number;
   /** ISO timestamp of the running turn, empty when unknown. */
   turnStartedAt: string;
-  onIconsChanged: () => void;
 }
 
 export interface EventTimelineModel {
@@ -285,5 +282,4 @@ export interface EventTimelineModel {
   onNotice: (workspaceId: string, resourceId: string, notice: AgentNotice) => void;
   onApproval: (generationId: string, approvalId: string, reply: { decision?: string; optionId?: string; text?: string }) => Promise<void>;
   onToast: (message: string) => void;
-  onIconsChanged: () => void;
 }

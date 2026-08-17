@@ -31,12 +31,10 @@ function dependencies(scope: ResourceScope, storage: Storage): NotificationContr
 		storage,
 		selectedResourceId: () => "other-task",
 		resourceProjections: () => [],
-		hasTree: () => true,
 		findResource: (id) => ({ id, title: "Task title", type: "task" }),
 		selectResource: async () => undefined,
 		notificationsSettingsVisible: () => false,
 		renderSettings: () => undefined,
-		refreshIcons: () => undefined,
 		flushDraft: () => undefined
 	};
 }

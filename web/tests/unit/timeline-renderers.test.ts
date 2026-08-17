@@ -136,9 +136,9 @@ describe("timeline rendering components", () => {
     expect(item.querySelector("small")?.textContent).toBe("shell");
     expect(item.querySelector("pre")?.textContent).toBe("ok\n\nraw");
     // Status icons are all rendered statically; the tool status class picks which one is visible.
-    expect(item.querySelector('.tool-status-icon-completed i[data-lucide="check-circle"]')).not.toBeNull();
-    expect(item.querySelector('.tool-status-icon-running i[data-lucide="loader-circle"]')).not.toBeNull();
-    expect(item.querySelector('.tool-status-icon-failed i[data-lucide="x-circle"]')).not.toBeNull();
+    expect(item.querySelector('.tool-status-icon-completed [data-lucide="check-circle"]')).not.toBeNull();
+    expect(item.querySelector('.tool-status-icon-running [data-lucide="loader-circle"]')).not.toBeNull();
+    expect(item.querySelector('.tool-status-icon-failed [data-lucide="x-circle"]')).not.toBeNull();
   });
 
   it("uses the compact tool count for single and multiple calls and keeps expansion state", async () => {

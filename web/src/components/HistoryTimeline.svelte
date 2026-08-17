@@ -17,7 +17,7 @@
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
   import type { ResourceTitleResolver } from "./markdown";
 
-  let { workspaceId, resourceId, artifacts = [], resolveResourceTitle, onNavigate, onOpenFile, onOpenLegacy, onIconsChanged }: {
+  let { workspaceId, resourceId, artifacts = [], resolveResourceTitle, onNavigate, onOpenFile, onOpenLegacy }: {
     workspaceId: string;
     resourceId: string;
     artifacts?: FileTreeModel[];
@@ -25,7 +25,6 @@
     onNavigate: (resourceId: string) => void;
     onOpenFile: (path: string) => void;
     onOpenLegacy: (path: string) => void;
-    onIconsChanged: () => void;
   } = $props();
 
   let snapshot = $state<ChatContextSnapshot>(emptySnapshot());
@@ -39,7 +38,6 @@
     controller = new ChatSessionController({ realtime: false });
     const unsubscribe = controller.subscribe((next) => {
       snapshot = next;
-      queueMicrotask(onIconsChanged);
     });
     controller.activate(workspaceId, resourceId, null);
     return () => {

@@ -56,13 +56,12 @@
     { tag: tags.monospace, color: "#8c3b2d", backgroundColor: "#f4f1ed" },
   ]);
 
-  let { identity, file, mode, onSave, onToast, onIconsChanged }: {
+  let { identity, file, mode, onSave, onToast }: {
     identity: string;
     file: FilePreviewModel;
     mode: "edit" | "annotate";
     onSave: (content: string, expectedContentHash: string) => Promise<FilePreviewModel>;
     onToast: (message: string) => void;
-    onIconsChanged: () => void;
   } = $props();
 
   let host = $state<HTMLDivElement>();
@@ -154,7 +153,6 @@
     selectionFrom = view.state.selection.main.from;
     selectionTo = view.state.selection.main.to;
     if (initialAnnotations.length) view.dispatch({ effects: replaceAnnotations.of(initialAnnotations) });
-    queueMicrotask(onIconsChanged);
   }
 
   function replaceEditorContent(content: string): void {
@@ -242,7 +240,6 @@
       error = reason instanceof Error ? reason.message : String(reason);
     } finally {
       saving = false;
-      queueMicrotask(onIconsChanged);
     }
   }
 

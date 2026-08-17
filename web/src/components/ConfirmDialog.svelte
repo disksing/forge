@@ -18,7 +18,6 @@
       model = next;
       if (next.open && !wasOpen) queueMicrotask(() => {
         confirmButton?.focus({ preventScroll: true });
-        window.lucide?.createIcons({ attrs: { "stroke-width": 2 } });
       });
     });
     const keydown = (event: KeyboardEvent) => {

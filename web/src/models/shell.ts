@@ -135,5 +135,4 @@ export interface AppShellModel {
   onMobileImmersive: (immersive: boolean) => void;
   onHistoryNavigation: (pathname: string) => Promise<void>;
   onToast: (message: string) => void;
-  onIconsChanged: () => void;
 }

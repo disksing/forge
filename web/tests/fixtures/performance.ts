@@ -34,7 +34,7 @@ export function largeTreeModel(): AppShellModel {
     onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onRefreshDoctor: noopAsync,
     onToggleProject: noopAsync, onSelectResource: noopAsync, onReorder: noopAsync, onDragState: noop, onToggleFavorite: noopAsync,
     onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
-    onMobileImmersive: noop, onHistoryNavigation: noopAsync, onToast: noop, onIconsChanged: noop,
+    onMobileImmersive: noop, onHistoryNavigation: noopAsync, onToast: noop,
   };
 }
 

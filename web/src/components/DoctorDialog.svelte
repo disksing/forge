@@ -4,11 +4,10 @@
   import Icon from "./Icon.svelte";
   import type { DoctorSnapshotModel } from "../models/shell";
 
-  let { snapshot, onClose, onRefresh, onIconsChanged }: {
+  let { snapshot, onClose, onRefresh }: {
     snapshot: DoctorSnapshotModel;
     onClose: () => void;
     onRefresh: () => Promise<void>;
-    onIconsChanged: () => void;
   } = $props();
 
   let refreshing = $state(false);
@@ -22,11 +21,6 @@
       refreshing = false;
     }
   }
-
-  $effect(() => {
-    snapshot;
-    queueMicrotask(onIconsChanged);
-  });
 </script>
 
 <div data-component-owner="doctor-dialog" class="doctor-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) onClose(); }}>

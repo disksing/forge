@@ -25,7 +25,7 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
     unavailableReason: "", sending: false, canEndTurn: false, endingTurn: false, canEndGeneration: true, endingGeneration: false, stopNotice: "",
     waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: vi.fn(),
     onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onEndTurn: vi.fn(), onEndGeneration: vi.fn(), onDismissStopNotice: vi.fn(),
-    onSteerWaiting: vi.fn(async () => undefined), onIconsChanged: vi.fn(),
+    onSteerWaiting: vi.fn(async () => undefined),
     agentBinding: { kind: "profile", name: "default" },
     agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
     agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }],
@@ -329,8 +329,8 @@ describe("ChatComposer", () => {
     const button = target.querySelector<HTMLButtonElement>("#agentEndGenerationButton")!;
     expect(button.disabled).toBe(true);
     expect(button.classList.contains("busy")).toBe(true);
-    expect(button.querySelector('i[data-lucide="archive"]')).not.toBeNull();
-    expect(button.querySelector('i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(button.querySelector('[data-lucide="archive"]')).not.toBeNull();
+    expect(button.querySelector('[data-lucide="loader-circle"]')).not.toBeNull();
   });
 
   it("keeps send and end-turn icons static and toggles busy state through classes", async () => {
@@ -344,10 +344,10 @@ describe("ChatComposer", () => {
     const endTurn = target.querySelector<HTMLButtonElement>("#agentEndTurnButton")!;
     // Idle and busy icons are both rendered statically so the lucide
     // createIcons replacement never needs a later name update.
-    expect(send.querySelector('i[data-lucide="send"]')).not.toBeNull();
-    expect(send.querySelector('i[data-lucide="loader-circle"]')).not.toBeNull();
-    expect(endTurn.querySelector('i[data-lucide="pause"]')).not.toBeNull();
-    expect(endTurn.querySelector('i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(send.querySelector('[data-lucide="send"]')).not.toBeNull();
+    expect(send.querySelector('[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(endTurn.querySelector('[data-lucide="pause"]')).not.toBeNull();
+    expect(endTurn.querySelector('[data-lucide="loader-circle"]')).not.toBeNull();
     expect(send.classList.contains("busy")).toBe(false);
     expect(endTurn.classList.contains("busy")).toBe(false);
   });
