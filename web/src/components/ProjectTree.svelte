@@ -98,7 +98,15 @@
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") hideStateTooltip();
     };
-    const onViewportChange = () => hideStateTooltip();
+    // Scrolls in unrelated containers (e.g. the chat timeline auto-scrolling
+    // on new messages) do not move the tooltip anchor; only a viewport scroll
+    // or a scroll inside a container holding the tree invalidates its
+    // position.
+    const onViewportChange = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && (!treeRoot || (target !== treeRoot && !target.contains(treeRoot)))) return;
+      hideStateTooltip();
+    };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", onViewportChange);
