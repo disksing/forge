@@ -1,14 +1,13 @@
-/* One activity disclosure owns every uninterrupted thinking/tool run. Its
-   children are content sections, not nested group disclosures, so a single
-   click reveals the full work sequence and tool details. */
+/* One activity disclosure owns every uninterrupted thinking/tool run. The
+   collapsed summary aligns with messages; only its expanded child list gets
+   one shallow rail. Individual tool details remain separate disclosures. */
 :where([data-component-owner="event-timeline"]) .agent-activity-group {
   width: auto;
   min-width: 0;
   max-width: 100%;
-  margin: 4px 0 4px 26px;
+  margin: 4px 0;
   border: 0;
-  border-left: 2px solid var(--line-soft);
-  padding-left: 12px;
+  padding: 0;
   color: #5c6b7a;
   font-size: calc(11.5px * var(--chat-font-scale, 1));
 }
@@ -16,7 +15,7 @@
 :where([data-component-owner="event-timeline"]) .agent-activity-group > summary {
   min-height: 0;
   min-width: 0;
-  padding: 5px 2px;
+  padding: 5px 0;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -54,15 +53,16 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 0 2px 8px 21px;
+  margin-left: 7px;
+  padding: 2px 0 8px 12px;
+  border-left: 2px solid var(--line-soft);
 }
 
 :where([data-component-owner="event-timeline"]) .agent-activity-thought,
 :where([data-component-owner="event-timeline"]) .agent-activity-tools {
   min-width: 0;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: #fff;
+  border: 0;
+  background: transparent;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-activity-thought header,
@@ -70,7 +70,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 9px;
+  padding: 5px 0;
   color: #657383;
   font-weight: 700;
 }
@@ -80,12 +80,12 @@
 
 :where([data-component-owner="event-timeline"]) .agent-activity-thought p {
   margin: 0;
-  padding: 0 10px 9px 30px;
+  padding: 0 0 7px 21px;
   color: #5c6b7a;
   line-height: 1.55;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-:where([data-component-owner="event-timeline"]) .agent-activity-tool-list { padding: 0 8px 8px 28px; }
-:where([data-component-owner="event-timeline"]) .agent-activity-loading { padding: 8px 9px; color: var(--faint); }
+:where([data-component-owner="event-timeline"]) .agent-activity-tool-list { padding: 0 0 4px 21px; }
+:where([data-component-owner="event-timeline"]) .agent-activity-loading { padding: 6px 0; color: var(--faint); }

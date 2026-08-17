@@ -624,6 +624,7 @@ describe("EventTimeline", () => {
     chatGroup.open = true;
     chatGroup.dispatchEvent(new Event("toggle"));
     await vi.waitFor(() => expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
+    expect([...chatTarget.querySelectorAll<HTMLDetailsElement>(".agent-tool-item")].every((tool) => !tool.open)).toBe(true);
     expect(chatTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
     expect(chatTarget.textContent).toContain("Command");
     expect(chatTarget.textContent).toContain("MCP");
@@ -643,6 +644,7 @@ describe("EventTimeline", () => {
     historyGroup.open = true;
     historyGroup.dispatchEvent(new Event("toggle"));
     await vi.waitFor(() => expect(historyTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
+    expect([...historyTarget.querySelectorAll<HTMLDetailsElement>(".agent-tool-item")].every((tool) => !tool.open)).toBe(true);
     expect(historyTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
   });
 

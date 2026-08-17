@@ -70,7 +70,7 @@
       {#if child.kind === "thinking"}
         <section class="agent-activity-thought"><header><Icon name="brain-circuit" /><span>{thoughtTitle(child)}</span></header><p>{child.text || ""}</p></section>
       {:else if child.kind === "tools"}
-        <section class="agent-activity-tools"><header><Icon name="wrench" /><span>{formatToolCallCount(toolCount(child))}</span></header><div class="agent-activity-tool-list">{#each child.calls || [] as call (String(call.callId || call.key))}<ToolItem {call} open />{/each}</div></section>
+        <section class="agent-activity-tools"><header><Icon name="wrench" /><span>{formatToolCallCount(toolCount(child))}</span></header><div class="agent-activity-tool-list">{#each child.calls || [] as call (String(call.callId || call.key))}<ToolItem {call} />{/each}</div></section>
       {/if}
     {/each}
   </div>
