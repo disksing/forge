@@ -647,4 +647,70 @@ describe("EventTimeline", () => {
     await vi.waitFor(() => expect(historyTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
     expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
   });
+
+  it("renders closed non-user turns as collapsed cards that expand on click and collapse again", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = history("task-a", [{ type: "message", role: "assistant", text: "full turn detail", startEventId: 2, endEventId: 2, startedAt: "2026-08-12T00:00:00Z", endedAt: "2026-08-12T00:00:00Z" }]);
+    Object.assign(fixture.turn, {
+      triggerRole: "agent",
+      triggerSender: { name: "project1.task2" },
+      triggerPreview: "please review my patch",
+      finalReplyPreview: "looks good, merged",
+    });
+    fixture.page.segments[0].turns = [fixture.turn];
+    fixture.detail.turn = fixture.turn;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "chat-timeline";
+    const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
+    cleanups.push(() => unmount(component));
+
+    // The collapsed card shows source, trigger and final reply previews; the
+    // detail is neither rendered nor fetched until the user clicks.
+    const card = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-card");
+      expect(value).not.toBeNull();
+      return value!;
+    });
+    expect(card.textContent).toContain("project1.task2");
+    expect(card.textContent).toContain("please review my patch");
+    expect(card.textContent).toContain("looks good, merged");
+    expect(card.textContent).toContain("Expand turn");
+    expect(target.textContent).not.toContain("full turn detail");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).some((path) => path.includes("/history/turns/ref-"))).toBe(false);
+
+    card.click();
+    await vi.waitFor(() => expect(target.textContent).toContain("full turn detail"));
+    const collapse = target.querySelector<HTMLButtonElement>(".turn-collapse-again");
+    expect(collapse).not.toBeNull();
+
+    collapse!.click();
+    await vi.waitFor(() => expect(target.querySelector(".turn-collapsed-card")).not.toBeNull());
+    expect(target.textContent).not.toContain("full turn detail");
+  });
+
+  it("marks a failed non-user turn's collapsed card with its status", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = history("task-a");
+    Object.assign(fixture.turn, { triggerRole: "system", status: "failed", finalReplyPreview: "" });
+    fixture.page.segments[0].turns = [fixture.turn];
+    fixture.detail.turn = fixture.turn;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "chat-timeline";
+    const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
+    cleanups.push(() => unmount(component));
+
+    const card = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-card");
+      expect(value).not.toBeNull();
+      return value!;
+    });
+    expect(card.querySelector(".turn-collapsed-status")?.textContent).toBe("failed");
+    expect(card.textContent).toContain("System");
+  });
 });

@@ -36,6 +36,10 @@ interface ResourceChatContext {
   details: Map<string, ResourceHistoryTurnDetail>;
   detailLoading: Set<string>;
   detailErrors: Map<string, string>;
+  // expandedTurns records the collapsed-by-policy (non-user-triggered) Turns
+  // the user explicitly opened. Membership is in-memory only: a history
+  // reload resets every such Turn back to its collapsed summary card.
+  expandedTurns: Set<string>;
   liveEvents: Map<string, AgentEvent[]>;
   orphanEvents: Map<string, AgentEvent[]>;
   detailChain: Promise<void>;
@@ -187,6 +191,22 @@ export class ChatSessionController {
     void this.loadInitial(context);
   }
 
+  // expandTurn pins a collapsed-by-policy Turn open. The emit happens before
+  // the detail request so an already-loaded Turn re-renders immediately.
+  async expandTurn(reference: string): Promise<void> {
+    const context = this.activeContext();
+    if (!context || !reference) return;
+    context.expandedTurns.add(reference);
+    this.emit();
+    await this.loadTurn(reference);
+  }
+
+  collapseTurn(reference: string): void {
+    const context = this.activeContext();
+    if (!context || !context.expandedTurns.delete(reference)) return;
+    this.emit();
+  }
+
   // Turn detail requests are serialized per context. The Chat timeline fills
   // the viewport bottom-up one Turn at a time, and its visibility observer can
   // still produce bursts when a run of collapsed Turns enters view; a chain
@@ -278,7 +298,7 @@ export class ChatSessionController {
     const context: ResourceChatContext = {
       key: contextKey(workspaceId, resourceId), workspaceId, resourceId, status: null, generationId: "",
       requestGeneration: 1, streamGeneration: 0, segments: new Map(), details: new Map(), detailLoading: new Set(),
-      detailErrors: new Map(), liveEvents: new Map(), orphanEvents: new Map(), detailChain: Promise.resolve(), notices: [], nextCursor: "", hasMoreBefore: false,
+      detailErrors: new Map(), expandedTurns: new Set(), liveEvents: new Map(), orphanEvents: new Map(), detailChain: Promise.resolve(), notices: [], nextCursor: "", hasMoreBefore: false,
       loading: false, loadingOlder: false, loaded: false, error: "", stream: null, pendingEvents: [], headRefreshing: false,
       terminalMaterializing: new Set(), flushTimer: null, statusSyncTimer: null, statusSyncInFlight: false,
     };
@@ -298,6 +318,7 @@ export class ChatSessionController {
       context.segments.clear();
       context.details.clear();
       context.detailErrors.clear();
+      context.expandedTurns.clear();
       context.liveEvents.clear();
       context.orphanEvents.clear();
       this.mergePage(context, page);
@@ -352,11 +373,15 @@ export class ChatSessionController {
       for (const turn of [...(segment.turns || [])].sort((left, right) => left.startEventId - right.startEventId)) {
         const detail = context.details.get(turn.reference);
         const raw = context.liveEvents.get(turn.reference);
+        // Closed non-user Turns stay as summary cards until the user expands
+        // them; loaded details and leftover live events stay attached to the
+        // context but out of the projection. Open Turns always stream live.
+        const collapsed = turnIsCollapsedByPolicy(turn) && !context.expandedTurns.has(turn.reference);
         generationBlocks.push({
           kind: "turn", key: `${segment.generation.generationId}:${turn.turnId}`, generation: segment.generation, turn,
-          items: detail && !raw ? compactTurnItems(detail, segment.generation.generationId) : undefined,
-          events: raw?.filter((event) => !HIDDEN_EVENT_TYPES.has(event.type)),
-          loading: context.detailLoading.has(turn.reference), error: context.detailErrors.get(turn.reference),
+          items: !collapsed && detail && !raw ? compactTurnItems(detail, segment.generation.generationId) : undefined,
+          events: collapsed ? undefined : raw?.filter((event) => !HIDDEN_EVENT_TYPES.has(event.type)),
+          loading: !collapsed && context.detailLoading.has(turn.reference), error: collapsed ? undefined : context.detailErrors.get(turn.reference),
         });
       }
       if (segment.generation.generationId === context.generationId) generationBlocks.push(...orphanBlocks);
@@ -657,6 +682,7 @@ export class ChatSessionController {
     context.details.clear();
     context.detailLoading.clear();
     context.detailErrors.clear();
+    context.expandedTurns.clear();
     context.liveEvents.clear();
     context.orphanEvents.clear();
     context.nextCursor = "";
@@ -705,6 +731,16 @@ export class ChatSessionController {
     const snapshot = this.snapshot();
     for (const listener of this.listeners) listener(snapshot);
   }
+}
+
+// turnIsCollapsedByPolicy marks closed Turns opened by a non-user trigger
+// (agent-to-agent messages, scheduler and system notifications) that the Chat
+// timeline renders as summary cards until the user expands them. Turns with
+// an empty trigger role predate role tracking and keep the legacy
+// auto-expanding behavior; open Turns always render live.
+export function turnIsCollapsedByPolicy(turn: Pick<ResourceHistoryTurnSummary, "closed" | "triggerRole">): boolean {
+  const role = String(turn.triggerRole || "").toLowerCase();
+  return turn.closed && role !== "" && role !== "user";
 }
 
 function compactTurnItems(detail: ResourceHistoryTurnDetail, generationId: string): TimelineItem[] {

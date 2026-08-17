@@ -5,13 +5,13 @@
 
   import { ApiClient } from "../api/client";
   import ApprovalCard from "./ApprovalCard.svelte";
-  import { ChatSessionController } from "./chat-state";
+  import { ChatSessionController, turnIsCollapsedByPolicy } from "./chat-state";
   import { effectiveGenerationStatus } from "./generation-status";
   import FilePreviewModal from "./FilePreviewModal.svelte";
   import LifecycleNotice from "./LifecycleNotice.svelte";
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
-  import type { ChatContextSnapshot, ConversationBlock, EventTimelineModel, FilePreviewModel, TimelineItem } from "./models";
+  import type { ChatContextSnapshot, ConversationBlock, EventTimelineModel, FilePreviewModel, ResourceHistoryTurnSummary, TimelineItem } from "./models";
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
@@ -167,6 +167,39 @@
     return block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || model.agentName || "Agent";
   }
 
+  // autoExpandReference feeds the visibility observer: only Turns that may
+  // expand on scroll return their reference; collapsed-by-policy Turns return
+  // an empty reference so the observer never requests their details.
+  function autoExpandReference(block: ConversationBlock): string {
+    const turn = block.turn;
+    if (!turn || turnIsCollapsedByPolicy(turn)) return "";
+    return turn.reference || "";
+  }
+
+  function triggerSourceLabel(turn: ResourceHistoryTurnSummary): string {
+    const name = String(turn.triggerSender?.name || "").trim();
+    if (name) return name;
+    const role = String(turn.triggerRole || "").toLowerCase();
+    if (role === "system") return "System";
+    if (role === "agent") return "Agent";
+    return "Message";
+  }
+
+  function collapsedTurnStatusLabel(turn: ResourceHistoryTurnSummary): string {
+    const status = String(turn.status || "").trim().toLowerCase();
+    return status && status !== "completed" ? status : "";
+  }
+
+  function expandCollapsedTurn(block: ConversationBlock): void {
+    const reference = block.turn?.reference || "";
+    if (reference) void controller?.expandTurn(reference);
+  }
+
+  function collapseExpandedTurn(block: ConversationBlock): void {
+    const reference = block.turn?.reference || "";
+    if (reference) controller?.collapseTurn(reference);
+  }
+
   // fillViewport expands collapsed Turns bottom-up, one at a time, stopping as
   // soon as the conversation overflows the viewport. The newest expanded Turn
   // usually fills the screen on its own, so eagerly expanding every summary
@@ -189,6 +222,7 @@
           await tick();
           continue;
         }
+        if (hasCollapsedTurnCards()) break;
         if (snapshot.hasMoreBefore && !snapshot.loadingOlder) {
           if (!await controller.loadOlder()) break;
           steps++;
@@ -212,10 +246,19 @@
     for (let index = snapshot.blocks.length - 1; index >= 0; index--) {
       const block = snapshot.blocks[index];
       if (block.kind !== "turn" || !block.turn?.reference) continue;
+      // Collapsed-by-policy (non-user) Turns expand only on explicit click.
+      if (turnIsCollapsedByPolicy(block.turn)) continue;
       if (block.items || block.events || block.loading || block.error) continue;
       return block.turn.reference;
     }
     return "";
+  }
+
+  // Collapsed-by-policy Turn cards still occupy some height, but when they
+  // are all that remains unexpanded the fill must stop instead of paging
+  // through older history just to fill the viewport.
+  function hasCollapsedTurnCards(): boolean {
+    return snapshot.blocks.some((block) => block.kind === "turn" && block.turn && !block.items && !block.events && !block.loading && !block.error);
   }
 
   function requestTurnExpand(node: HTMLElement, reference: string): void {
@@ -335,8 +378,29 @@
       {#if block.kind === "gap"}
         <div class="conversation-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History unavailable</strong><small>{block.gap?.message || "This generation could not be read."}</small></span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
       {:else}
-        <section class="conversation-turn" class:conversation-turn-loading={block.loading} data-timeline-key={block.key} use:observeTurn={block.turn?.reference || ""}>
-          {#if block.turn?.triggerPreview && !block.items && !block.events}<div class="turn-summary-preview">{block.turn.triggerPreview}</div>{/if}
+        <section class="conversation-turn" class:conversation-turn-loading={block.loading} data-timeline-key={block.key} use:observeTurn={autoExpandReference(block)}>
+          {#if block.turn && !block.items && !block.events}
+            {#if turnIsCollapsedByPolicy(block.turn)}
+              <!-- Non-user-triggered Turns (agent messages, scheduler and system
+                   notifications) render as a summary card: trigger source and
+                   time, the trigger preview, the final reply preview, and a
+                   status badge for anything that did not complete. Clicking
+                   the card loads and renders the full Turn; open Turns stream
+                   live and fold back into this card when they close. -->
+              <button type="button" class="turn-collapsed-card" onclick={() => expandCollapsedTurn(block)}>
+                <span class="turn-collapsed-meta">
+                  <strong>{triggerSourceLabel(block.turn)}</strong>
+                  {#if collapsedTurnStatusLabel(block.turn)}<span class="turn-collapsed-status" data-turn-status={String(block.turn.status || "").toLowerCase()}>{collapsedTurnStatusLabel(block.turn)}</span>{/if}
+                  {#if formatClock(block.turn.endedAt || block.turn.startedAt)}<span class="turn-collapsed-time">{formatClock(block.turn.endedAt || block.turn.startedAt)}</span>{/if}
+                </span>
+                {#if block.turn.triggerPreview}<span class="turn-collapsed-trigger">{block.turn.triggerPreview}</span>{/if}
+                {#if block.turn.finalReplyPreview}<span class="turn-collapsed-reply">{block.turn.finalReplyPreview}</span>{/if}
+                {#if block.loading}<span class="turn-collapsed-hint"><Icon name="loader-circle" /><span>Loading turn details</span></span>{:else}<span class="turn-collapsed-hint"><Icon name="chevron-down" /><span>Expand turn</span></span>{/if}
+              </button>
+            {:else if block.turn.triggerPreview}
+              <div class="turn-summary-preview">{block.turn.triggerPreview}</div>
+            {/if}
+          {/if}
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
               {#if item.agentStart}
@@ -364,6 +428,9 @@
               {/if}
             </div>
           {/each}
+          {#if block.turn && turnIsCollapsedByPolicy(block.turn) && (block.items?.length || block.events?.length)}
+            <button type="button" class="turn-collapse-again" onclick={() => collapseExpandedTurn(block)}><Icon name="chevron-up" /><span>Collapse turn</span></button>
+          {/if}
           {#if block.loading && !block.items && !block.events}<div class="turn-loading"><Icon name="loader-circle" /><span>Loading turn details</span></div>{/if}
           {#if block.error}<TimelineNotice title="Turn unavailable" text={block.error} error />{/if}
         </section>

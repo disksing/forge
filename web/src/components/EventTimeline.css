@@ -126,6 +126,106 @@
   text-overflow: ellipsis;
 }
 
+:where([data-component-owner="event-timeline"]) .turn-collapsed-card {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid #e2e7ec;
+  border-radius: 8px;
+  background: #f8fafb;
+  color: #5b6771;
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  text-align: left;
+  cursor: pointer;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-card:hover {
+  border-color: #c9d2da;
+  background: #f2f6f9;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-meta strong {
+  color: #344150;
+  font-size: calc(12px * var(--chat-font-scale, 1));
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-status {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fde8e8;
+  color: #9b2c2c;
+  font-size: calc(11px * var(--chat-font-scale, 1));
+  font-weight: 600;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-time {
+  margin-left: auto;
+  color: #8b96a1;
+  font-size: calc(11px * var(--chat-font-scale, 1));
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-trigger,
+:where([data-component-owner="event-timeline"]) .turn-collapsed-reply {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-reply {
+  color: #7c8792;
+  border-left: 2px solid #dfe4e8;
+  padding-left: 8px;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: #8b96a1;
+  font-size: calc(11px * var(--chat-font-scale, 1));
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapsed-hint svg {
+  width: 12px;
+  height: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapse-again {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 2px;
+  padding: 2px 8px;
+  border: 1px solid #e2e7ec;
+  border-radius: 999px;
+  background: transparent;
+  color: #8b96a1;
+  font-size: calc(11px * var(--chat-font-scale, 1));
+  cursor: pointer;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapse-again:hover {
+  border-color: #c9d2da;
+  color: #5b6771;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-collapse-again svg {
+  width: 12px;
+  height: 12px;
+}
+
 :where([data-component-owner="event-timeline"]) .turn-loading {
   border-color: #dfe4e8;
   color: #74808c;
