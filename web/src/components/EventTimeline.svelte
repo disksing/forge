@@ -185,6 +185,14 @@
     return "Message";
   }
 
+  // collapsedTriggerRole maps the trigger's provenance onto the message row
+  // roles (user/assistant/agent/system) so the digest's trigger message uses
+  // the same rail and name colors as a regular message of that role.
+  function collapsedTriggerRole(turn: ResourceHistoryTurnSummary): string {
+    const role = String(turn.triggerRole || "").toLowerCase();
+    return role === "system" ? "system" : "agent";
+  }
+
   function collapsedTurnStatusLabel(turn: ResourceHistoryTurnSummary): string {
     const status = String(turn.status || "").trim().toLowerCase();
     return status && status !== "completed" ? status : "";
@@ -382,21 +390,40 @@
           {#if block.turn && !block.items && !block.events}
             {#if turnIsCollapsedByPolicy(block.turn)}
               <!-- Non-user-triggered Turns (agent messages, scheduler and system
-                   notifications) render as a summary card: trigger source and
-                   time, the trigger preview, the final reply preview, and a
-                   status badge for anything that did not complete. Clicking
-                   the card loads and renders the full Turn; open Turns stream
-                   live and fold back into this card when they close. -->
-              <button type="button" class="turn-collapsed-card" onclick={() => expandCollapsedTurn(block)}>
-                <span class="turn-collapsed-meta">
-                  <strong>{triggerSourceLabel(block.turn)}</strong>
-                  {#if collapsedTurnStatusLabel(block.turn)}<span class="turn-collapsed-status" data-turn-status={String(block.turn.status || "").toLowerCase()}>{collapsedTurnStatusLabel(block.turn)}</span>{/if}
-                  {#if formatClock(block.turn.endedAt || block.turn.startedAt)}<span class="turn-collapsed-time">{formatClock(block.turn.endedAt || block.turn.startedAt)}</span>{/if}
-                </span>
-                {#if block.turn.triggerPreview}<span class="turn-collapsed-trigger">{block.turn.triggerPreview}</span>{/if}
-                {#if block.turn.finalReplyPreview}<span class="turn-collapsed-reply">{block.turn.finalReplyPreview}</span>{/if}
-                {#if block.loading}<span class="turn-collapsed-hint"><Icon name="loader-circle" /><span>Loading turn details</span></span>{:else}<span class="turn-collapsed-hint"><Icon name="chevron-down" /><span>Expand turn</span></span>{/if}
+                   notifications) render as a two-message conversation digest:
+                   the trigger message and the final reply keep the normal
+                   sender-and-time message rows, and an ellipsis row stands in
+                   for the elided middle. Clicking the ellipsis loads and
+                   renders the full Turn; open Turns stream live and fold back
+                   into this digest when they close. -->
+              {#if block.turn.triggerPreview}
+                <div class={`agent-message-row ${collapsedTriggerRole(block.turn)}`}>
+                  <div class="agent-message-main">
+                    <div class="agent-message-meta">
+                      <strong>{triggerSourceLabel(block.turn)}</strong>
+                      <span class="agent-message-tag agent-message-role-tag">{collapsedTriggerRole(block.turn)}</span>
+                      {#if formatClock(block.turn.startedAt)}<span>{formatClock(block.turn.startedAt)}</span>{/if}
+                    </div>
+                    <div class="agent-message-bubble"><p class="turn-collapsed-text">{block.turn.triggerPreview}</p></div>
+                  </div>
+                </div>
+              {/if}
+              <button type="button" class="turn-collapsed-gap" title="Expand turn" onclick={() => expandCollapsedTurn(block)}>
+                <Icon name="ellipsis" />
+                {#if collapsedTurnStatusLabel(block.turn)}<span class="turn-collapsed-status" data-turn-status={String(block.turn.status || "").toLowerCase()}>{collapsedTurnStatusLabel(block.turn)}</span>{/if}
+                {#if block.loading}<span class="turn-collapsed-gap-label">Loading turn details</span>{:else}<span class="turn-collapsed-gap-label">Expand turn</span>{/if}
               </button>
+              {#if block.turn.finalReplyPreview}
+                <div class="agent-message-row assistant final">
+                  <div class="agent-message-main">
+                    <div class="agent-message-meta">
+                      <strong>{blockAgentName(block)}</strong>
+                      {#if formatClock(block.turn.endedAt || block.turn.startedAt)}<span>{formatClock(block.turn.endedAt || block.turn.startedAt)}</span>{/if}
+                    </div>
+                    <div class="agent-message-bubble"><p class="turn-collapsed-text">{block.turn.finalReplyPreview}</p></div>
+                  </div>
+                </div>
+              {/if}
             {:else if block.turn.triggerPreview}
               <div class="turn-summary-preview">{block.turn.triggerPreview}</div>
             {/if}
