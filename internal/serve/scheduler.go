@@ -201,6 +201,19 @@ func schedulerTickTerminal(ctx context.Context, workspacePath string, message re
 }
 
 func findSchedulerTickTurn(ctx context.Context, client *agentHubClient, sessionID string, message resourceMailboxMessage) (agentHubTurn, bool, error) {
+	canonical, canonicalFound, canonicalErr := findCanonicalAgentHubMessage(ctx, client, sessionID, message)
+	if canonicalErr != nil {
+		return agentHubTurn{}, false, canonicalErr
+	}
+	if canonicalFound && strings.TrimSpace(canonical.TurnID) != "" {
+		turn, _, err := client.SessionTurn(ctx, sessionID, canonical.TurnID)
+		if err != nil {
+			return agentHubTurn{}, false, err
+		}
+		return turn, true, nil
+	}
+	// Compatibility fallback for historical materialized Turns whose opener
+	// predates stable message IDs.
 	page, err := client.SessionTurns(ctx, sessionID, 0, true, 50)
 	if err != nil {
 		return agentHubTurn{}, false, err

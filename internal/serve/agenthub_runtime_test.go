@@ -189,8 +189,9 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 		f.mu.Lock()
 		f.messageSteers = append(f.messageSteers, body.Steer)
-		f.messageRoles = append(f.messageRoles, body.Role)
-		f.messageSenders = append(f.messageSenders, body.Sender)
+		_, presentationRole, presentationSender := puaMessagePresentation(body.Text, body.Role, body.Sender, body.Payload)
+		f.messageRoles = append(f.messageRoles, presentationRole)
+		f.messageSenders = append(f.messageSenders, presentationSender)
 		f.messageIDs = append(f.messageIDs, body.MessageID)
 		if f.enforceMessageIDs && body.MessageID != "" {
 			if previous, exists := f.messageInputs[body.MessageID]; exists {
@@ -208,10 +209,7 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			}
 			f.messageInputs[body.MessageID] = body
 		}
-		inputData := fakeMessageInputData(body.Text, body.Role, body.Sender, body.Steer)
-		if body.MessageID != "" {
-			inputData["messageId"] = body.MessageID
-		}
+		inputData := fakeMessageInputData(body)
 		f.appendLocked(id, "message.input", inputData)
 		f.appendLocked(id, "turn.started", map[string]any{"text": body.Text})
 		session := f.sessions[id]
@@ -370,15 +368,15 @@ func writeRuntimeFakeJSON(w http.ResponseWriter, value any) {
 }
 
 // fakeMessageInputData mirrors the canonical message.input event a real
-// AgentHub daemon persists: the role defaults to user and the sender, when
-// present, is stored alongside the text.
-func fakeMessageInputData(text, role string, sender *agentHubMessageSender, steer bool) map[string]any {
-	if role == "" {
-		role = "user"
-	}
-	data := map[string]any{"text": text, "role": role, "steer": steer}
-	if sender != nil {
-		data["sender"] = sender
+// AgentHub daemon persists. Schema v2 is opaque; legacy inputs still receive
+// AgentHub's historical default role.
+func fakeMessageInputData(message agentHubInboundMessage) map[string]any {
+	encoded, _ := json.Marshal(message)
+	data := make(map[string]any)
+	_ = json.Unmarshal(encoded, &data)
+	data["steer"] = message.Steer
+	if message.SchemaVersion == 0 && message.Role == "" {
+		data["role"] = "user"
 	}
 	return data
 }
@@ -414,8 +412,7 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 	f.appendLocked(id, "session.created", session)
 	f.appendLocked(id, "session.state", map[string]any{"state": "ready"})
 	if request.InitialMessage != nil {
-		f.appendLocked(id, "message.input", fakeMessageInputData(
-			request.InitialMessage.Text, request.InitialMessage.Role, request.InitialMessage.Sender, request.InitialMessage.Steer))
+		f.appendLocked(id, "message.input", fakeMessageInputData(*request.InitialMessage))
 		f.appendLocked(id, "turn.started", map[string]any{"text": request.InitialMessage.Text})
 		session.State = "running"
 	}
@@ -1230,6 +1227,15 @@ func fakeEventSenderName(event agentHubEvent) string {
 	return name
 }
 
+func fakeEventMessage(event agentHubEvent) (agentHubInboundMessage, puaMessagePayload, bool) {
+	var message agentHubInboundMessage
+	if err := json.Unmarshal(event.Data, &message); err != nil {
+		return agentHubInboundMessage{}, puaMessagePayload{}, false
+	}
+	payload, ok := decodePUAMessagePayload(message.Payload)
+	return message, payload, ok
+}
+
 func TestAgentHubManualMessagesCarryBrowserUserProvenance(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
@@ -1244,14 +1250,21 @@ func TestAgentHubManualMessagesCarryBrowserUserProvenance(t *testing.T) {
 	initialEvents := append([]agentHubEvent(nil), fake.events[detail.AgentHubSessionID]...)
 	fake.mu.Unlock()
 	var initial agentHubEvent
+	var initialMessage agentHubInboundMessage
+	var initialPayload puaMessagePayload
 	for _, event := range initialEvents {
-		if event.Type == "message.input" && fakeEventText(event) == "hello" {
+		message, payload, ok := fakeEventMessage(event)
+		if event.Type == "message.input" && ok && payload.Text == "hello" {
 			initial = event
+			initialMessage = message
+			initialPayload = payload
 			break
 		}
 	}
-	if initial.Type == "" || fakeEventRole(initial) != "user" || fakeEventSenderName(initial) != "Ada Lovelace" {
-		t.Fatalf("initial user provenance = role %q sender %q; events=%#v", fakeEventRole(initial), fakeEventSenderName(initial), initialEvents)
+	if initial.Type == "" || initialMessage.SchemaVersion != agentHubOpaqueMessageSchema ||
+		initialMessage.Text != "Message from user \"Ada Lovelace\":\nhello" || initialPayload.Role != "user" ||
+		initialPayload.Sender == nil || initialPayload.Sender.Name != "Ada Lovelace" {
+		t.Fatalf("initial opaque message = message %#v payload %#v; events=%#v", initialMessage, initialPayload, initialEvents)
 	}
 	storedRecords, err := loadGenerationRecords(workspace.Path)
 	if err != nil || len(storedRecords) != 1 {

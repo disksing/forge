@@ -4,8 +4,8 @@
   "version": "2.0.0",
   "apiEventContractVersion": "agenthub.api.v1",
   "repository": "https://github.com/disksing/agenthub",
-  "revision": "e2b55b3a2d37f14899e17b952457bbaaadb467e1",
+  "revision": "7a3d86f6efb6483e10f640dbc55c314db54a5a93",
   "artifact": "index.mjs",
-  "sha256": "2efefb3bd10fa8f06ae542795520dd18e5af335831c2672612596b0e0d5368f9",
+  "sha256": "8e337b23f6f0326aca29c24f6624c59d7029097709ebb62169be40b63b3915bb",
   "license": "BSD-3-Clause"
 }

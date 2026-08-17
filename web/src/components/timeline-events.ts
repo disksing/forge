@@ -36,6 +36,7 @@ export function projectConversationEvents(events: AgentEvent[]): TimelineItem[] 
   const byID = new Map(sourceEvents.map((event) => [Number(event.id), event]));
   for (const item of items) {
     const event = byID.get(Number(item.key));
+    applyPUAMessagePayload(item, event?.data?.payload);
     const range = event?.data?.compactRange as { start?: number; end?: number } | undefined;
     if (!range) continue;
     item.compact = true;
@@ -43,6 +44,25 @@ export function projectConversationEvents(events: AgentEvent[]): TimelineItem[] 
     item.rangeEndEventId = Number(range.end) || item.rangeStartEventId;
   }
   return items;
+}
+
+export function applyPUAMessagePayload(item: TimelineItem, rawPayload: unknown): TimelineItem {
+  if (item.kind !== "message" || !rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) return item;
+  const payload = rawPayload as Record<string, unknown>;
+  if (payload.schema !== "pua.resource-message.v1") return item;
+  if (typeof payload.text === "string") item.text = payload.text;
+  if (typeof payload.role === "string" && payload.role.trim()) item.role = payload.role.trim().toLowerCase();
+  if (payload.sender && typeof payload.sender === "object" && !Array.isArray(payload.sender)) {
+    const source = payload.sender as Record<string, unknown>;
+    const sender: { name?: string; id?: string; sessionId?: string } = {};
+    if (typeof source.name === "string" && source.name.trim()) sender.name = source.name.trim();
+    if (typeof source.id === "string" && source.id.trim()) sender.id = source.id.trim();
+    if (typeof source.sessionId === "string" && source.sessionId.trim()) sender.sessionId = source.sessionId.trim();
+    item.sender = Object.keys(sender).length ? sender : undefined;
+  } else {
+    item.sender = undefined;
+  }
+  return item;
 }
 
 export function isHiddenConversationLifecycleText(value: string | undefined): boolean {

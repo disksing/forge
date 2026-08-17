@@ -257,14 +257,28 @@ func historyTurnSummary(instanceID, resourceID string, record generationRecord, 
 		value := deliveries[0]
 		trigger = &value
 	}
+	triggerPreview, triggerRole, triggerSender := turn.TriggerPreview, turn.TriggerRole, turn.TriggerSender
+	if payload, ok := decodePUAMessagePayload(turn.TriggerPayload); ok {
+		triggerPreview = resourceMessagePreview(payload.Text)
+		triggerRole, triggerSender = payload.Role, payload.Sender
+	}
 	return resourceHistoryTurnSummary{
 		Reference: reference, TurnID: turnID, Status: turn.Status, Closed: turn.Closed,
 		StartedAt: turn.StartedAt, EndedAt: turn.EndedAt, DurationMS: turn.DurationMS,
-		TriggerPreview: turn.TriggerPreview, TriggerRole: turn.TriggerRole, TriggerSender: turn.TriggerSender,
+		TriggerPreview: triggerPreview, TriggerRole: triggerRole, TriggerSender: triggerSender,
 		FinalReplyPreview: turn.FinalReplyPreview, EventCount: turn.EventCount, ToolEventCount: turn.ToolEventCount,
 		StartEventID: turn.StartEventID, LastEventID: turn.LastEventID, EndEventID: turn.EndEventID,
 		TriggerDelivery: trigger, Generation: historyGeneration(record),
 	}, nil
+}
+
+func resourceMessagePreview(value string) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) <= 160 {
+		return value
+	}
+	return string(runes[:160]) + "…"
 }
 
 func historyGapFor(record generationRecord, err error) *resourceHistoryGap {
@@ -521,6 +535,7 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 		LatestEventID: latestEventID, TurnStartedEventID: turn.TurnStartedEventID, CompletedAt: turn.CompletedAt,
 	}
 	for _, item := range turn.Items {
+		itemText, itemRole, itemSender := puaMessagePresentation(item.Text, item.Role, item.Sender, item.Payload)
 		startRef, encodeErr := encodeResourceHistoryReference(resourceHistoryReference{
 			Kind: "event", InstanceID: instanceID, ResourceID: resourceID, GenerationID: record.GenerationID, EventID: item.StartEventID,
 		})
@@ -534,7 +549,7 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 			return resourceHistoryTurnDetail{}, encodeErr
 		}
 		detail.Items = append(detail.Items, resourceHistoryTurnItem{
-			Type: item.Type, Role: item.Role, Sender: item.Sender, Steer: item.Steer, Text: item.Text,
+			Type: item.Type, Role: itemRole, Sender: itemSender, Steer: item.Steer, Text: itemText,
 			StartEventID: item.StartEventID, EndEventID: item.EndEventID, StartEventRef: startRef, EndEventRef: endRef,
 			StartedAt: item.StartedAt, EndedAt: item.EndedAt, DurationMS: item.DurationMS, Count: item.Count, Data: item.Data,
 			ThinkingCount: item.ThinkingCount, ReasoningUpdateCount: item.ReasoningUpdateCount, ToolCallCount: item.ToolCallCount,
