@@ -2,10 +2,10 @@
 set -eu
 
 repo=${1:?usage: scripts/update-agenthub-event-timeline /path/to/agenthub [revision]}
-revision=${2:-fca6c780b58b7af9134252a9354cf8f60bb8801e}
-expected_revision=fca6c780b58b7af9134252a9354cf8f60bb8801e
-expected_iife_sha=bd5bbd4229e147c64efca1ac516670ac4134c71e4ce882118d40d645d20ac847
-expected_esm_sha=1849280f8ef700a226284a239d9a83999628a145fd51940d5de86077e6f09bd8
+revision=${2:-402c286bbf38e190b03e99f17d91baef74119b18}
+expected_revision=402c286bbf38e190b03e99f17d91baef74119b18
+expected_iife_sha=6211dce0fc50d79b120ccda283e119e1c56743c3fa03440e75b5fbc80ea9da52
+expected_esm_sha=b2cfd1ce274028fc9b9037d6ccacbcfa712eee2f55b482dd012235cdac3ce1fc
 
 resolved=$(git -C "$repo" rev-parse "$revision^{commit}")
 if [ "$resolved" != "$expected_revision" ]; then
