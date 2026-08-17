@@ -89,8 +89,12 @@
     return "neutral";
   }
 
-  function loadTurn(block: ConversationBlock): void {
-    if (block.kind === "turn" && block.turn?.reference) void controller?.loadTurn(block.turn.reference);
+  function expandTurn(block: ConversationBlock): void {
+    if (block.kind === "turn" && block.turn?.reference) void controller?.expandTurn(block.turn.reference);
+  }
+
+  function collapseTurn(block: ConversationBlock): void {
+    if (block.kind === "turn" && block.turn?.reference) controller?.collapseTurn(block.turn.reference);
   }
 
   function blockLoaded(block: ConversationBlock): boolean {
@@ -110,10 +114,11 @@
       const next = new Set(expandedTurns);
       next.delete(key);
       expandedTurns = next;
+      collapseTurn(block);
       return;
     }
     expandedTurns = new Set(expandedTurns).add(key);
-    loadTurn(block);
+    expandTurn(block);
   }
 
   // Expanded Turns render through the same item components as the live Chat
