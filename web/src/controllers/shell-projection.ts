@@ -151,6 +151,19 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     return { session: status, statusPresentation, className: statusPresentation.className, label };
   }
 
+  function resourceNavigationState(item: ResourceRecord | null | undefined): TaskOperationalState {
+    if (item?.runtime?.sessionState !== "working") return noTaskOperationalState();
+    const status: TaskStatusState = {
+      kind: "resource-working",
+      className: "task-status-session-running",
+      iconName: "loader-circle",
+      label: "Working",
+      recentOutput: false,
+    };
+    const statusPresentation = operationalStatusPresentation([status]);
+    return { session: status, statusPresentation, className: statusPresentation.className, label: status.label };
+  }
+
   function noTaskOperationalState(): TaskOperationalState {
     return { session: null, className: "", label: "", statusPresentation: operationalStatusPresentation([]) };
   }
@@ -171,9 +184,14 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     const tree = dependencies.tree();
     if (!tree) return "";
     const parts: string[] = [];
+    const workspaceState = resourceNavigationState(tree.workspace);
+    parts.push(`workspace:session=${taskStatusKey(workspaceState.session)}`);
+    const schedulerState = resourceNavigationState(tree.scheduler);
+    parts.push(`scheduler:session=${taskStatusKey(schedulerState.session)}`);
     for (const project of tree.projects) {
+      const projectState = resourceNavigationState(project);
       const summary = projectTaskSummary(project);
-      parts.push(`${project.id}:tasks=${summary.taskCount}:${summary.runningCount}`);
+      parts.push(`${project.id}:session=${taskStatusKey(projectState.session)}:tasks=${summary.taskCount}:${summary.runningCount}`);
       for (const task of project.children || []) {
         const taskState = taskWorkflowState(task);
         parts.push(`${task.id}:state=${taskStatusKey(taskState.session)}:${taskState.label}`);
@@ -212,6 +230,7 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     noTaskOperationalState,
     operationalStatusPresentation,
     projectTaskSummary,
+    resourceNavigationState,
     resourceRefText,
     resourceStatusState,
     statusModel,

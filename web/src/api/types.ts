@@ -40,6 +40,7 @@ export interface ResourceSummary {
 
 export interface WorkspaceTreeResponse {
   root: string;
+  workspace?: ResourceSummary;
   scheduler?: ResourceSummary;
   projects: ResourceSummary[];
 }

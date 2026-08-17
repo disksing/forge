@@ -53,6 +53,8 @@ export interface ShellAttentionItem {
 
 export interface ShellWorkspaceItem extends WorkspaceOption {
   iconSrc: string;
+  status?: ShellStatusPresentation;
+  statusLabel?: string;
 }
 
 export interface DoctorIssueModel {

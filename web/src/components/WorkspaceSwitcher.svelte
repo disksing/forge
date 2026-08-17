@@ -4,6 +4,7 @@
   import { onMount } from "svelte";
 
   import Icon from "./Icon.svelte";
+  import StatusPresentation from "./StatusPresentation.svelte";
   import type { ShellWorkspaceItem } from "./models";
 
   let {
@@ -84,8 +85,8 @@
 <section class="workspace-switcher" data-component-owner="workspace-switcher">
   <div class="workspace-select-row">
     <div class="workspace-switcher-head">
-      <button id="workspaceOpen" class="workspace-open" type="button" title="Open workspace" onclick={openWorkspace}>
-        <span class="workspace-avatar" id="workspaceAvatar"><img src={activeWorkspace?.iconSrc || "/favicon.svg"} alt="" aria-hidden="true" /></span>
+      <button id="workspaceOpen" class="workspace-open" type="button" title="Open workspace" aria-label={activeWorkspace?.statusLabel ? `Open workspace. ${activeWorkspace.statusLabel}` : "Open workspace"} onclick={openWorkspace}>
+        <span class="workspace-avatar" id="workspaceAvatar">{#if activeWorkspace?.status?.hasTaskState}<StatusPresentation status={activeWorkspace.status} className="workspace-runtime-status" />{:else}<img src={activeWorkspace?.iconSrc || "/favicon.svg"} alt="" aria-hidden="true" />{/if}</span>
         <span class="workspace-switcher-name" id="workspaceSwitcherName">{activeWorkspace?.name || "Workspace"}</span>
         <Icon name="arrow-up-right" className="workspace-open-icon" />
       </button>

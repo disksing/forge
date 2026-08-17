@@ -5,6 +5,7 @@ import MobileToolbar from "../../src/components/MobileToolbar.svelte";
 import AttentionList from "../../src/components/AttentionList.svelte";
 import ProjectTree from "../../src/components/ProjectTree.svelte";
 import PaneResizeHandle from "../../src/components/PaneResizeHandle.svelte";
+import SchedulerNav from "../../src/components/SchedulerNav.svelte";
 import WorkspaceSwitcher from "../../src/components/WorkspaceSwitcher.svelte";
 import type { ShellAttentionItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
@@ -113,6 +114,25 @@ describe("AppShell responsibility components", () => {
     expect(button.querySelector('.workspace-switcher-icon-idle i[data-lucide="chevrons-up-down"]')).not.toBeNull();
     expect(button.querySelector('.workspace-switcher-icon-busy i[data-lucide="loader-circle"]')).not.toBeNull();
     expect(button.classList.contains("busy")).toBe(false);
+  });
+
+  it("WorkspaceSwitcher replaces the active Workspace icon while its Session is working", async () => {
+    const workingStatus: ShellStatusPresentation = {
+      hasTaskState: true, className: "task-status-session-running", layoutClassName: "has-task-status", slotClassName: "task-status-single",
+      statuses: [{ key: "resource-working", className: "task-status-session-running", iconName: "loader-circle", recentOutput: false }],
+    };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(WorkspaceSwitcher, { target, props: {
+      identity: "workspace-a", mobileSidebarOpen: false, activeWorkspaceId: "workspace-a",
+      workspaces: [{ id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg", status: workingStatus, statusLabel: "Working" }],
+      onSwitch: vi.fn(async () => undefined), onOpen: vi.fn(async () => undefined), onAdd: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const avatar = target.querySelector<HTMLElement>("#workspaceAvatar")!;
+    expect(avatar.querySelector('[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(avatar.querySelector("img")).toBeNull();
   });
 
   it("WorkspaceSwitcher opens the workspace from the name zone and keeps the menu on the chevron", async () => {
@@ -228,6 +248,43 @@ describe("AppShell responsibility components", () => {
     await tick();
     expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("ProjectTree replaces a working Project folder with a Session spinner", async () => {
+    const project = resource("project-a");
+    project.statusLabel = "Working";
+    project.status = {
+      hasTaskState: true, className: "task-status-session-running", layoutClassName: "has-task-status", slotClassName: "task-status-single",
+      statuses: [{ key: "resource-working", className: "task-status-session-running", iconName: "loader-circle", recentOutput: false }],
+    };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle: vi.fn(), onSelect: vi.fn(), onReorder: vi.fn(), onDragState: vi.fn(), onToggleAttention: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const row = target.querySelector<HTMLElement>(".project-tree > .tree-item")!;
+    expect(row.querySelector('[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(row.querySelector('[data-lucide="folder"]')).toBeNull();
+  });
+
+  it("SchedulerNav replaces its clock with a Session spinner only while working", async () => {
+    const scheduler = resource("scheduler") as ShellResourceItem;
+    scheduler.type = "scheduler";
+    scheduler.statusLabel = "Working";
+    scheduler.status = {
+      hasTaskState: true, className: "task-status-session-running", layoutClassName: "has-task-status", slotClassName: "task-status-single",
+      statuses: [{ key: "resource-working", className: "task-status-session-running", iconName: "loader-circle", recentOutput: false }],
+    };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SchedulerNav, { target, props: { item: scheduler, onSelect: vi.fn(), onToast: vi.fn() } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector('[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(target.querySelector('[data-lucide="clock-3"]')).toBeNull();
   });
 
   it("ProjectTree chevron keeps a stable icon and reflects expansion with its class", async () => {

@@ -716,8 +716,16 @@ func TestResourceEndTurnCancelsQueuedSteersBeforeNextTurn(t *testing.T) {
 	if err := json.Unmarshal(endRecorder.Body.Bytes(), &endResponse); err != nil {
 		t.Fatal(err)
 	}
-	if endResponse.Status != "interrupted" || endResponse.PendingSteerPolicy != "cancel" || endResponse.CancelledPendingSteerCount != 1 {
+	if endResponse.Status != "interrupted" || endResponse.PendingSteerPolicy != "cancel" || endResponse.CancelledPendingSteerCount != 1 || endResponse.TaskState != app.TaskStatePaused || endResponse.TaskStateError != "" {
 		t.Fatalf("stop policy response mismatch: %#v", endResponse)
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := puaWorkspace.Resource("project1.task1")
+	if err != nil || detail.State != app.TaskStatePaused || detail.StateNote != "Current Turn ended by user" {
+		t.Fatalf("manually stopped Task was not paused: detail=%#v err=%v", detail, err)
 	}
 
 	cancelled, found, err := mailboxMessageByID(workspace.Path, pending.ID)
@@ -750,6 +758,40 @@ func TestResourceEndTurnCancelsQueuedSteersBeforeNextTurn(t *testing.T) {
 		if input.MessageID == pending.ID || input.Text == pending.Text {
 			t.Fatalf("cancelled steer crossed the AgentHub input boundary: %#v", input)
 		}
+	}
+}
+
+func TestResourceEndTurnFailureDoesNotPauseTask(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	started, record := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"long running turn"}`)
+	if started.Code != http.StatusOK || record.GenerationID == "" {
+		t.Fatalf("failed to start resource turn: code=%d body=%s run=%#v", started.Code, started.Body.String(), record)
+	}
+	fake.mu.Lock()
+	session := fake.sessions[record.AgentHubSessionID]
+	session.State = "running"
+	session.CurrentTurnID = "turn-active"
+	fake.sessions[session.ID] = session
+	fake.failNextInterrupt = true
+	fake.mu.Unlock()
+
+	endRecorder := httptest.NewRecorder()
+	endRequest := httptest.NewRequest(http.MethodPost, "/resources/project1.task1/turn/end?generationId="+record.GenerationID, nil)
+	manager.handleResourceEndTurn(endRecorder, endRequest, workspace.ID, "project1.task1")
+	if endRecorder.Code == http.StatusOK {
+		t.Fatalf("ambiguous interrupt unexpectedly succeeded: %s", endRecorder.Body.String())
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := puaWorkspace.Resource("project1.task1")
+	if err != nil || detail.State != app.TaskStateInProgress {
+		t.Fatalf("failed interrupt changed Task state: detail=%#v err=%v", detail, err)
 	}
 }
 

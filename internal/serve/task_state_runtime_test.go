@@ -54,6 +54,18 @@ func TestTaskContinuationMessageIDIsStablePerAttempt(t *testing.T) {
 	}
 }
 
+func TestPauseTaskAfterManualTurnStopIgnoresNonTasks(t *testing.T) {
+	_, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	state, err := pauseTaskAfterManualTurnStop(workspace, "project1")
+	if err != nil || state != "" {
+		t.Fatalf("Project manual stop tried to set Task state: state=%q err=%v", state, err)
+	}
+	state, err = pauseTaskAfterManualTurnStop(workspace, "workspace")
+	if err != nil || state != "" {
+		t.Fatalf("Workspace manual stop tried to set Task state: state=%q err=%v", state, err)
+	}
+}
+
 func TestTaskTurnCompletionOutsideInProgressIsHandledSynchronously(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	record := generationRecord{

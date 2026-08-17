@@ -23,8 +23,7 @@
 
 <section class="scheduler-nav" data-component-owner="scheduler-nav">
   <button type="button" class:active={item?.active} disabled={!item} title={item?.statusLabel || "Workspace Scheduler"} onclick={activate}>
-    {#if item}<StatusPresentation status={item.status} />{/if}
-    <Icon name="clock-3" className="scheduler-nav-icon" />
+    {#if item?.status.hasTaskState}<StatusPresentation status={item.status} className="scheduler-nav-status" />{:else}<Icon name="clock-3" className="scheduler-nav-icon" />{/if}
     <span><strong>Scheduler</strong><small>Natural-language schedules</small></span>
     <Icon name="chevron-right" className="scheduler-nav-chevron" />
   </button>

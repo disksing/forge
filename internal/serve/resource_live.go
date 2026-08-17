@@ -130,14 +130,42 @@ func (m *agentManager) handleResourceEndTurn(w http.ResponseWriter, r *http.Requ
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	response, interruptErr := m.interruptGenerationWithPostAction(r.Context(), workspaceID, record.ID, func(workspace serveWorkspace, targetResourceID string) (cancelledResourceMessages, error) {
-		return cancelPendingSteerMessages(workspace.Path, targetResourceID)
+	response, interruptErr := m.interruptGenerationWithPostAction(r.Context(), workspaceID, record.ID, func(workspace serveWorkspace, targetResourceID string) interruptGenerationPostActionResult {
+		cancelled, cancellationErr := cancelPendingSteerMessages(workspace.Path, targetResourceID)
+		taskState, taskStateErr := pauseTaskAfterManualTurnStop(workspace, targetResourceID)
+		return interruptGenerationPostActionResult{
+			CancelledPendingSteers: cancelled,
+			CancellationError:      cancellationErr,
+			TaskState:              taskState,
+			TaskStateError:         taskStateErr,
+		}
 	})
 	if interruptErr != nil {
 		writeInterruptGenerationError(w, interruptErr)
 		return
 	}
 	writeJSON(w, response)
+}
+
+func pauseTaskAfterManualTurnStop(workspace serveWorkspace, resourceID string) (app.TaskState, error) {
+	if !strings.Contains(normalizedResourceID(resourceID), ".task") {
+		return "", nil
+	}
+	detail, task, err := taskDetail(workspace.Path, resourceID)
+	if err != nil {
+		return "", err
+	}
+	if !task {
+		return "", nil
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		return "", err
+	}
+	if _, err := puaWorkspace.SetTaskState(detail.ID, app.TaskStatePaused, "Current Turn ended by user"); err != nil {
+		return "", err
+	}
+	return app.TaskStatePaused, nil
 }
 
 func (m *agentManager) handleResourceEndGeneration(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {

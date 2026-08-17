@@ -498,7 +498,8 @@ func (s *server) currentResourceTurnNumber(workspacePath, resourceID string) (in
 func resourceRuntimeSnapshotForGeneration(record generationRecord) *resourceRuntimeSnapshot {
 	return &resourceRuntimeSnapshot{
 		Generation: record.Generation, GenerationID: record.GenerationID, Status: record.Status,
-		AgentName: record.AgentHubAgentName, UpdatedAt: record.UpdatedAt, LastOutputAt: record.LastOutputAt,
+		SessionState: publicSessionState(false, "", &resourceGenerationStatus{Status: record.Status}, nil, ""),
+		AgentName:    record.AgentHubAgentName, UpdatedAt: record.UpdatedAt, LastOutputAt: record.LastOutputAt,
 		CompletionMarker: record.CompletionMarker, CompletionState: record.CompletionState, CompletionHasFinalReply: record.CompletionHasFinalReply,
 		CompletionAt: record.CompletionAt, ReplacementPending: record.ReplacementPending,
 		Resumable:         (record.Status == "stopped" || record.Status == "idle-suspended") && record.AgentHubSessionID != "" && !record.SessionResumeUnavailable && !record.ReplacementPending && !record.ArchivedTaskStopRequested,
@@ -558,6 +559,7 @@ func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspa
 			applyState(&item.Children[i])
 		}
 	}
+	applyState(&tree.Workspace)
 	applyState(&tree.Scheduler)
 	for i := range tree.Projects {
 		applyState(&tree.Projects[i])
@@ -571,16 +573,13 @@ func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspa
 			applyRuntime(&item.Children[i])
 		}
 	}
+	applyRuntime(&tree.Workspace)
 	applyRuntime(&tree.Scheduler)
 	for i := range tree.Projects {
 		applyRuntime(&tree.Projects[i])
 	}
 
-	workspaceItem := resourceSnapshot{ID: "workspace", Type: "workspace", Title: workspaceName(workspacePath), Path: ".", AgentBinding: tree.AgentBinding}
-	if record, ok := records["workspace"]; ok {
-		workspaceItem.Runtime = resourceRuntimeSnapshotForGeneration(record)
-	}
-	applyState(&workspaceItem)
+	workspaceItem := tree.Workspace
 
 	candidates := make([]resourceSnapshot, 0, 2+len(tree.Projects))
 	candidates = append(candidates, workspaceItem, tree.Scheduler)

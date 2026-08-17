@@ -35,6 +35,7 @@ export interface ResourceRuntime {
   generation?: number;
   generationId?: string;
   status?: string;
+  sessionState?: "idle" | "working" | "attention_required" | "unavailable" | "archived";
   agentName?: string;
   updatedAt?: string;
   lastOutputAt?: string;
@@ -81,6 +82,7 @@ export interface WorkspaceTree {
 	agentBinding?: { kind: "profile" | "agent"; name: string };
 	resourceDefaults?: ResourceAgentDefaultsRecord;
 	generationPolicy?: GenerationPolicyRecord;
+  workspace?: ResourceRecord;
   scheduler?: ResourceRecord;
   projects: ResourceRecord[];
   attentionList?: ResourceRecord[];

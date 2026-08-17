@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/disksing/pua/internal/app"
 )
 
 func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) {
@@ -246,14 +248,23 @@ func (rt *agentRuntime) addPUANotice(m *agentManager, level, method, text string
 }
 
 type interruptGenerationResponse struct {
-	Status                        string   `json:"status"`
-	PendingSteerPolicy            string   `json:"pendingSteerPolicy"`
-	CancelledPendingSteerCount    int      `json:"cancelledPendingSteerCount,omitempty"`
-	CancelledPendingSteerIDs      []string `json:"cancelledPendingSteerIds,omitempty"`
-	PendingSteerCancellationError string   `json:"pendingSteerCancellationError,omitempty"`
+	Status                        string        `json:"status"`
+	PendingSteerPolicy            string        `json:"pendingSteerPolicy"`
+	CancelledPendingSteerCount    int           `json:"cancelledPendingSteerCount,omitempty"`
+	CancelledPendingSteerIDs      []string      `json:"cancelledPendingSteerIds,omitempty"`
+	PendingSteerCancellationError string        `json:"pendingSteerCancellationError,omitempty"`
+	TaskState                     app.TaskState `json:"taskState,omitempty"`
+	TaskStateError                string        `json:"taskStateError,omitempty"`
 }
 
-type interruptGenerationPostAction func(serveWorkspace, string) (cancelledResourceMessages, error)
+type interruptGenerationPostActionResult struct {
+	CancelledPendingSteers cancelledResourceMessages
+	CancellationError      error
+	TaskState              app.TaskState
+	TaskStateError         error
+}
+
+type interruptGenerationPostAction func(serveWorkspace, string) interruptGenerationPostActionResult
 
 func (m *agentManager) interruptGeneration(w http.ResponseWriter, r *http.Request, workspaceID, recordID string) {
 	response, err := m.interruptGenerationWithPostAction(r.Context(), workspaceID, recordID, nil)
@@ -279,14 +290,26 @@ func (m *agentManager) interruptGenerationWithPostAction(ctx context.Context, wo
 		}
 		response.PendingSteerPolicy = "cancel"
 		if postAction != nil {
-			cancelled, actionErr := postAction(rt.workspace, record.ResourceID)
-			response.CancelledPendingSteerCount = cancelled.Count
-			response.CancelledPendingSteerIDs = cancelled.IDs
-			if actionErr != nil {
+			result := postAction(rt.workspace, record.ResourceID)
+			response.CancelledPendingSteerCount = result.CancelledPendingSteers.Count
+			response.CancelledPendingSteerIDs = result.CancelledPendingSteers.IDs
+			response.TaskState = result.TaskState
+			if result.CancellationError != nil {
 				// The interrupt itself succeeded. Keep that durable result visible,
 				// but surface a mailbox failure instead of silently allowing a
 				// pending steer to affect a later Turn.
-				response.PendingSteerCancellationError = actionErr.Error()
+				response.PendingSteerCancellationError = result.CancellationError.Error()
+			}
+			if result.TaskStateError != nil {
+				// The Turn is already stopped, so this error cannot make the
+				// interrupt fail retroactively. Surface it explicitly and mark
+				// this terminal observation handled so an in-progress Task is not
+				// restarted after a failed pause write.
+				response.TaskStateError = result.TaskStateError.Error()
+				current := rt.snapshotGeneration()
+				if current.CompletionMarker != "" {
+					_ = markTaskTurnCompletionHandled(rt, current.CompletionMarker)
+				}
 			}
 		}
 		return nil

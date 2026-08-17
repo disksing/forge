@@ -318,6 +318,7 @@ const {
 	resourceRefText,
 	statusModel: appShellStatusModel,
 	noTaskOperationalState,
+	resourceNavigationState,
 	taskOperationalState,
 	taskWorkflowState,
 	taskOperationalStateKey,
@@ -720,7 +721,7 @@ function renderWorkspaceSelect() {
 	renderAppShell();
 }
 function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", projectId = ""): ShellResourceItem {
-	const taskState = kind === "task" ? taskWorkflowState(item) : noTaskOperationalState();
+	const taskState = kind === "task" ? taskWorkflowState(item) : resourceNavigationState(item);
 	const expanded = kind === "project" && isProjectExpanded(item.id);
 	const summary = kind === "project" ? projectTaskSummary(item) : null;
 	const title = item.title || item.id;
@@ -750,7 +751,7 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 }
 function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellResourceItem | null {
 	if (!item) return null;
-	const state = noTaskOperationalState();
+	const state = resourceNavigationState(item);
 	return {
 		id: item.id || "scheduler",
 		type: "scheduler",
@@ -787,6 +788,7 @@ function renderAppShell() {
 	const projects = controllerState.tree ? applyCustomOrder(controllerState.tree.projects || [], controllerState.projectOrder).map((project) => appShellResourceModel(project, "project")) : [];
 	const attentionList = controllerState.tree?.attentionList?.map((item) => appShellAttentionModel(item)) || [];
 	if (controllerState.tree) controllerState.taskOperationalStateKey = taskOperationalStateKey();
+	const workspaceState = resourceNavigationState(controllerState.tree?.workspace);
 	publisher.renderAppShell({
 		identity: controllerState.activeWorkspaceId || "no-workspace",
 		loading: Boolean(controllerState.navigationLoading),
@@ -799,7 +801,9 @@ function renderAppShell() {
 			name: workspace.name || workspace.id,
 			path: workspace.path || "",
 			icon: workspace.icon || "",
-			iconSrc: workspaceIconOption(workspace).src
+			iconSrc: workspaceIconOption(workspace).src,
+			status: workspace.id === controllerState.activeWorkspaceId ? appShellStatusModel(workspaceState.statusPresentation) : undefined,
+			statusLabel: workspace.id === controllerState.activeWorkspaceId ? workspaceState.label : ""
 		})),
 		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
@@ -1491,19 +1495,23 @@ async function stopAgentTurn(): Promise<void> {
 		const query = generationId ? `?generationId=${encodeURIComponent(generationId)}` : "";
 		const response = await api<{
 			status?: string;
+			taskState?: string;
+			taskStateError?: string;
 			pendingSteerPolicy?: string;
 			cancelledPendingSteerCount?: number;
 			pendingSteerCancellationError?: string;
 		}>(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/turn/end${query}`, { method: "POST" });
 		const cancelledCount = Math.max(0, Number(response.cancelledPendingSteerCount || 0));
-		let notice = cancelledCount === 1
+		let notice = response.taskState === "paused" ? "Task paused. " : "";
+		notice += cancelledCount === 1
 			? "Turn stopped. 1 pending steer was cancelled and will not affect the next turn."
 			: cancelledCount > 1
 				? `Turn stopped. ${cancelledCount} pending steers were cancelled and will not affect the next turn.`
 				: "Turn stopped. No pending steer remained; any steer already delivered to this turn was not changed.";
 		if (response.pendingSteerCancellationError) notice += ` Pending steer cancellation needs attention: ${response.pendingSteerCancellationError}`;
+		if (response.taskStateError) notice += ` Task pause needs attention: ${response.taskStateError}`;
 		controllerState.stopNotice = { key: `${workspaceId}:${resourceId}`, text: notice };
-		await refreshResourceMessageStatus(workspaceId, resourceId);
+		await Promise.all([refreshResourceMessageStatus(workspaceId, resourceId), refreshTreeAfterResourceMutation()]);
 		publishViewModels();
 	} finally {
 		agentOperations.finish(operation);

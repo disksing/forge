@@ -188,7 +188,7 @@
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.has-task-status {
-  grid-template-columns: 16px 16px 16px minmax(0, 1fr) auto auto;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto auto;
 }
 
 :where([data-component-owner="project-tree"]) .task-item.has-task-status {

@@ -35,6 +35,24 @@ describe("shell projection", () => {
     expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ taskCount: 2, runningCount: 1 });
   });
 
+  it("uses Session working only for non-Task navigation state", () => {
+    const project = tree.projects[0];
+    for (const sessionState of ["idle", "attention_required", "unavailable", "archived"] as const) {
+      project.runtime = { generationId: "gen-project1", status: "running", sessionState };
+      expect(projection.resourceNavigationState(project)).toMatchObject({
+        session: null,
+        label: "",
+        statusPresentation: { hasTaskState: false, statuses: [] },
+      });
+    }
+
+    project.runtime = { generationId: "gen-project1", status: "idle", sessionState: "working" };
+    expect(projection.resourceNavigationState(project)).toMatchObject({
+      session: { kind: "resource-working", iconName: "loader-circle", label: "Working" },
+      statusPresentation: { hasTaskState: true, statuses: [{ className: "task-status-session-running" }] },
+    });
+  });
+
   it("shows the approval icon for a resource waiting for approval", () => {
     const task = tree.projects[0].children![0];
     task.runtime = { generationId: "gen-task1", status: "waiting_approval" };

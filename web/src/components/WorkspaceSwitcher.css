@@ -149,6 +149,10 @@
   object-fit: cover;
 }
 
+:where([data-component-owner="workspace-switcher"]) .workspace-avatar .workspace-runtime-status {
+  justify-content: center;
+}
+
 :where([data-component-owner="workspace-switcher"]) .workspace-menu {
   position: absolute;
   z-index: 30;

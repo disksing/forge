@@ -31,6 +31,26 @@ func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 	}
 }
 
+func TestEnrichTreeResourceRuntimeIncludesWorkspaceSessionState(t *testing.T) {
+	workspace := t.TempDir()
+	record := generationRecord{
+		ID: "gen-workspace", WorkspaceID: "workspace-one", ResourceID: "workspace",
+		Generation: 1, GenerationID: "gen-workspace", AgentHubSessionID: "ses_workspace",
+		Title: "Workspace run", Cwd: workspace, Status: "running",
+		CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:01Z",
+	}
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	tree := workspaceTree{Workspace: resourceSnapshot{ID: "workspace", Type: "workspace"}}
+	if err := (&server{}).enrichTreeResourceRuntime(workspace, &tree); err != nil {
+		t.Fatal(err)
+	}
+	if tree.Workspace.Runtime == nil || tree.Workspace.Runtime.GenerationID != record.GenerationID || tree.Workspace.Runtime.SessionState != "working" {
+		t.Fatalf("Workspace runtime was not enriched: %#v", tree.Workspace.Runtime)
+	}
+}
+
 func TestGenerationCwdDefaultsToResourceDirectory(t *testing.T) {
 	workspace := t.TempDir()
 	puaWorkspace, err := app.Initialize(workspace, "en")

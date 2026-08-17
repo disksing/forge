@@ -61,6 +61,8 @@ PUT  /api/workspaces/{workspaceId}/users/{name}
 DELETE /api/workspaces/{workspaceId}/users/{name}
 ```
 
+手动结束当前 Task Turn 时，Server 会在 AgentHub Interrupt 成功后把持久化 Task state 设为 `paused`，并在同一个资源控制器临界区取消尚未送达的 steer；这样 terminal event 不会把用户刚停止的 Task 自动续推。Workspace、Project 和 Scheduler 的 End Turn 不写 Task state。响应中的 `taskState` / `taskStateError` 分别报告自动暂停结果和异常。
+
 `POST .../generation/end?generationId={currentGenerationId}` 只在没有活动 Turn/approval 时接受。它以 generation ID 防止过期页面误操作，随后沿统一 lifecycle 完成 Session Stop、stopped 确认、Archive 和 generation retire；不会立即创建空 successor，下一条 mailbox 消息会按资源当前绑定懒创建新 generation。
 
 `GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含当前用户的 `attention.followed` 与 `attention.readTurnNumber`，runtime 快照包含资源级的 `turnNumber`、`activeTurn` 和 `turnStartedAt`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准。Turn 结束后，只有已关注且资源最新 Turn 编号大于当前用户已读游标的资源继续保留。`POST .../attention/dismiss` 与 Web 自动已读都只单调推进当前用户的游标。个人 UI/关注状态保存在 `<control-dir>/users/{name}/ui-state.json`；公共 Turn 编号高水位保存在 `<control-dir>/resource-state.json`。用户级请求通过 `X-PUA-User` 指定用户，未提供时兼容使用默认 `User`。

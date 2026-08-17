@@ -78,6 +78,7 @@ type workspaceTree struct {
 	AgentBinding     app.AgentBinding          `json:"agentBinding"`
 	ResourceDefaults app.ResourceAgentDefaults `json:"resourceDefaults"`
 	GenerationPolicy app.GenerationPolicy      `json:"generationPolicy"`
+	Workspace        resourceSnapshot          `json:"workspace"`
 	Scheduler        resourceSnapshot          `json:"scheduler"`
 	Projects         []resourceSnapshot        `json:"projects"`
 	AttentionList    []resourceSnapshot        `json:"attentionList"`
@@ -1639,6 +1640,9 @@ func (s *server) treeAt(ctx context.Context, path string, userNames ...string) (
 			MaxAccumulatedTurnMinutes: app.DefaultGenerationMaxAccumulatedTurnMinutes,
 		}
 	}
+	tree.Workspace = resourceSnapshot{
+		ID: "workspace", Type: "workspace", Title: workspaceName(path), Path: ".", AgentBinding: tree.AgentBinding,
+	}
 	if err := s.enrichTreeResourceRuntime(path, &tree); err != nil {
 		return workspaceTree{}, err
 	}
@@ -1652,6 +1656,7 @@ type resourceRuntimeSnapshot struct {
 	Generation              int    `json:"generation,omitempty"`
 	GenerationID            string `json:"generationId"`
 	Status                  string `json:"status"`
+	SessionState            string `json:"sessionState"`
 	AgentName               string `json:"agentName,omitempty"`
 	UpdatedAt               string `json:"updatedAt,omitempty"`
 	LastOutputAt            string `json:"lastOutputAt,omitempty"`
@@ -1690,21 +1695,13 @@ func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspace
 	attach = func(item *resourceSnapshot) {
 		resourceID := normalizedResourceID(item.ID)
 		if record, ok := byResourceID[resourceID]; ok {
-			item.Runtime = &resourceRuntimeSnapshot{
-				Generation: record.Generation, GenerationID: record.GenerationID, Status: record.Status,
-				AgentName: record.AgentHubAgentName, UpdatedAt: record.UpdatedAt, LastOutputAt: record.LastOutputAt,
-				CompletionMarker: record.CompletionMarker, CompletionState: record.CompletionState, CompletionHasFinalReply: record.CompletionHasFinalReply,
-				CompletionAt: record.CompletionAt, ReplacementPending: record.ReplacementPending,
-				Resumable:         (record.Status == "stopped" || record.Status == "idle-suspended") && record.AgentHubSessionID != "" && !record.SessionResumeUnavailable && !record.ReplacementPending && !record.ArchivedTaskStopRequested,
-				IdleSuspended:     record.Status == "idle-suspended" || (record.IdleSleepStopRequested && record.Status == "stopped"),
-				ResumeUnavailable: record.SessionResumeUnavailable,
-				TurnNumber:        record.TurnNumber, ActiveTurn: generationHasActiveTurn(record), TurnStartedAt: record.TurnStartedAt,
-			}
+			item.Runtime = resourceRuntimeSnapshotForGeneration(record)
 		}
 		for i := range item.Children {
 			attach(&item.Children[i])
 		}
 	}
+	attach(&tree.Workspace)
 	attach(&tree.Scheduler)
 	for i := range tree.Projects {
 		attach(&tree.Projects[i])
