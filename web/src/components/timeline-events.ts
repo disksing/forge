@@ -86,7 +86,7 @@ export function markTurnFinalAssistant(items: TimelineItem[]): TimelineItem[] {
 export function markTurnAgentRuns(items: TimelineItem[]): TimelineItem[] {
   let inRun = false;
   return items.map((item) => {
-    const attributed = item.kind === "thinking" || item.kind === "tools" || item.kind === "approval" ||
+    const attributed = item.kind === "activity" || item.kind === "thinking" || item.kind === "tools" || item.kind === "approval" ||
       (item.kind === "message" && item.role === "assistant");
     if (!attributed) {
       inRun = false;
@@ -96,6 +96,78 @@ export function markTurnAgentRuns(items: TimelineItem[]): TimelineItem[] {
     inRun = true;
     return (item.agentStart ?? false) === agentStart ? item : { ...item, agentStart };
   });
+}
+
+// groupTimelineActivities is the compatibility seam between AgentHub Turn
+// projection generations. Event-timeline v2 and new compact Turns already
+// provide activity items; legacy compact Turns expose adjacent thinking/tool
+// items. Grouping here gives both inputs the same one-level UI without
+// rewriting old materialized history or requiring a canonical Event scan.
+export function groupTimelineActivities(items: TimelineItem[]): TimelineItem[] {
+  const grouped: TimelineItem[] = [];
+  let run: TimelineItem[] = [];
+  const flush = () => {
+    if (!run.length) return;
+    if (run.length === 1 && run[0].kind === "activity") grouped.push(run[0]);
+    else grouped.push(activityFromRun(run));
+    run = [];
+  };
+  for (const item of items) {
+    if (item.kind === "activity" || item.kind === "thinking" || item.kind === "tools") run.push(item);
+    else {
+      flush();
+      grouped.push(item);
+    }
+  }
+  flush();
+  return grouped;
+}
+
+function activityFromRun(run: TimelineItem[]): TimelineItem {
+  const first = run[0];
+  const last = run[run.length - 1];
+  const children = run.flatMap((item) => item.kind === "activity" ? item.items || [] : [item]);
+  const thinkingCount = run.reduce((total, item) => total + activityThinkingCount(item), 0);
+  const reasoningUpdateCount = run.reduce((total, item) => total + activityReasoningUpdateCount(item), 0);
+  const toolCallCount = run.reduce((total, item) => total + activityToolCallCount(item), 0);
+  const starts = run.map((item) => Number(item.rangeStartEventId) || 0).filter((value) => value > 0);
+  const ends = run.map((item) => Number(item.rangeEndEventId) || 0).filter((value) => value > 0);
+  return {
+    kind: "activity",
+    key: first.key,
+    generationId: first.generationId,
+    items: children,
+    time: last.time || first.time,
+    startTime: first.startTime || first.time,
+    active: run.some((item) => Boolean(item.active)) || children.some((item) => Boolean(item.active)),
+    compact: run.some((item) => Boolean(item.compact)),
+    rangeStartEventId: starts.length ? Math.min(...starts) : undefined,
+    rangeEndEventId: ends.length ? Math.max(...ends) : undefined,
+    thinkingCount,
+    reasoningUpdateCount,
+    toolCallCount,
+  };
+}
+
+function activityThinkingCount(item: TimelineItem): number {
+  if (item.kind === "thinking") return 1;
+  if (item.kind !== "activity") return 0;
+  if (item.thinkingCount !== undefined) return Math.max(0, Number(item.thinkingCount) || 0);
+  return (item.items || []).filter((child) => child.kind === "thinking").length;
+}
+
+function activityReasoningUpdateCount(item: TimelineItem): number {
+  if (item.kind === "thinking") return Math.max(1, Number(item.count) || 1);
+  if (item.kind !== "activity") return 0;
+  if (item.reasoningUpdateCount !== undefined) return Math.max(0, Number(item.reasoningUpdateCount) || 0);
+  return (item.items || []).filter((child) => child.kind === "thinking").reduce((total, child) => total + Math.max(1, Number(child.count) || 1), 0);
+}
+
+function activityToolCallCount(item: TimelineItem): number {
+  if (item.kind === "tools") return Math.max(0, Number(item.toolCallCount) || item.calls?.length || 0);
+  if (item.kind !== "activity") return 0;
+  if (item.toolCallCount !== undefined) return Math.max(0, Number(item.toolCallCount) || 0);
+  return (item.items || []).filter((child) => child.kind === "tools").reduce((total, child) => total + Math.max(0, Number(child.toolCallCount) || child.calls?.length || 0), 0);
 }
 
 // formatClock renders the short wall-clock label shared by message meta
