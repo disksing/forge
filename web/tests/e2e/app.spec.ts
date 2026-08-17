@@ -1196,8 +1196,7 @@ test("keeps narrow chat content inside the column while code blocks scroll local
   await expect(log.locator(".agent-message-row.user")).toHaveCount(1);
   await expect(log.locator(".markdown-rendered table")).toHaveCount(1);
   await expect(log.locator(".markdown-rendered pre")).toHaveCount(1);
-  await expect(log.locator(".agent-reasoning-note")).toHaveCount(1);
-  await expect(log.locator(".agent-tool-group")).toHaveCount(1);
+  await expect(log.locator(".agent-activity-group")).toHaveCount(1);
 
   await expect.poll(() => log.evaluate((element) => {
     const widthDelta = (node: Element | null) => {
@@ -1208,7 +1207,7 @@ test("keeps narrow chat content inside the column while code blocks scroll local
     const messages = [...element.querySelectorAll<HTMLElement>(".agent-message-row")];
     const content = [...element.querySelectorAll<HTMLElement>(".agent-message-content")];
     const nonCodeContent = content.filter((node) => !node.querySelector("pre"));
-    const activity = [...element.querySelectorAll<HTMLElement>(".agent-reasoning-note, .agent-tool-group")];
+    const activity = [...element.querySelectorAll<HTMLElement>(".agent-activity-group")];
     const table = element.querySelector<HTMLElement>(".markdown-rendered table");
     const code = element.querySelector<HTMLElement>(".markdown-rendered pre");
     return {

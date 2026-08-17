@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "package": "@agenthub/event-timeline",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "apiEventContractVersion": "agenthub.api.v1",
   "repository": "https://github.com/disksing/agenthub",
-  "revision": "402c286bbf38e190b03e99f17d91baef74119b18",
+  "revision": "e2b55b3a2d37f14899e17b952457bbaaadb467e1",
   "artifact": "index.mjs",
-  "sha256": "b2cfd1ce274028fc9b9037d6ccacbcfa712eee2f55b482dd012235cdac3ce1fc",
+  "sha256": "2efefb3bd10fa8f06ae542795520dd18e5af335831c2672612596b0e0d5368f9",
   "license": "BSD-3-Clause"
 }

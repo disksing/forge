@@ -753,11 +753,25 @@ function compactTurnItem(item: AgentTurnItem, generationId: string): TimelineIte
   const data = item.data && typeof item.data === "object" ? item.data : {};
   switch (item.type) {
     case "message": return [{ ...base, kind: "message", role: item.role || "user", sender: item.sender, steer: item.steer, text: item.text || "" }];
-    case "thinking": return [{ ...base, kind: "thinking", text: `Reasoning details omitted from compact history · ${Math.max(1, Number(item.count) || 1)} update(s)`, compact: true, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId }];
+    case "thinking": {
+      const count = Math.max(1, Number(item.count) || 1);
+      return [{ ...base, kind: "thinking", count, text: `Reasoning details omitted from compact history · ${count} update(s)`, compact: true, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId }];
+    }
     case "tool": {
       const count = normalizeToolCallCount(item.count, 1);
       return [{ ...base, kind: "tools", compact: true, toolCallCount: count, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId, calls: [{ key, callId: key, name: "Tool activity", summary: `${formatToolCallCount(count)} · details omitted`, status: "completed" }] }];
     }
+    case "activity": return [{
+      ...base,
+      kind: "activity",
+      items: [],
+      compact: true,
+      thinkingCount: Math.max(0, Number(item.thinkingCount) || 0),
+      reasoningUpdateCount: Math.max(0, Number(item.reasoningUpdateCount) || 0),
+      toolCallCount: Math.max(0, Number(item.toolCallCount) || 0),
+      rangeStartEventId: item.startEventId,
+      rangeEndEventId: item.endEventId,
+    }];
     case "approval": return [{ ...base, kind: "approval", approvalId: String(data.requestId || data.approvalId || key), title: String(data.title || "Approval"), question: String(data.question || ""), status: String(data.status || (data.decision ? "resolved" : "pending")), decision: String(data.decision || "") }];
     case "error": return [{ ...base, kind: "error", text: item.text || String(data.message || "Provider error") }];
     case "lifecycle": return item.text && !isHiddenConversationLifecycleText(item.text) ? [{ ...base, kind: "lifecycle", type: item.text, text: item.text }] : [];

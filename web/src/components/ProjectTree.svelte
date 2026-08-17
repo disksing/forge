@@ -409,7 +409,7 @@
           {:else}
             <Icon name="folder" className="tree-icon" />
           {/if}
-          <span class="name"><span class="name-text">{project.title}</span><span class="resource-ref">{project.ref}</span>{#if !editing && project.unreadCount > 0}<span class="unread-badge" aria-label={`${project.unreadCount} unread ${project.unreadCount === 1 ? "Turn" : "Turns"}`}>{project.unreadCount > 99 ? "99+" : project.unreadCount}</span>{/if}{#if !editing && project.summary && !project.expanded}<span class="project-task-summary" aria-hidden="true"><span class="project-task-summary-count">{project.summary.taskLabel}</span><span class="project-task-summary-separator">·</span><span class="project-task-summary-running">{project.summary.runningLabel}</span></span>{/if}</span>
+          <span class="name"><span class="name-text">{project.title}</span><span class="resource-ref">{project.ref}</span>{#if !editing && project.summary && !project.expanded}<span class="project-task-summary" aria-hidden="true"><span class="project-task-summary-count">{project.summary.taskLabel}</span><span class="project-task-summary-separator">·</span><span class="project-task-summary-running">{project.summary.runningLabel}</span></span>{/if}{#if !editing && project.unreadCount > 0}<span class="unread-badge" aria-label={`${project.unreadCount} unread ${project.unreadCount === 1 ? "Turn" : "Turns"}`}>{project.unreadCount > 99 ? "99+" : project.unreadCount}</span>{/if}</span>
           {#if editing}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <span class="row-actions"><span class="row-action-button" role="button" tabindex="0" aria-label={`New folder in ${project.title}`} title="New folder" onclick={(event) => addFolder(event, project)} onkeydown={(event) => actionKeydown(event, (e) => void addFolder(e, project))}><Icon name="folder-plus" /></span></span>
@@ -430,11 +430,11 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div role="button" tabindex="0" class={`tree-item folder-item ${drag?.id === child.id ? "drag-source" : ""} ${rowDropClass(child.id)}`} aria-label={child.ariaLabel || undefined} onclick={(event) => activate(event, child)} onkeydown={(event) => { if (event.key === "Enter" && event.target === event.currentTarget) void activate(event as unknown as MouseEvent, child); }} ondragover={(event) => updateDrop(event, { kind: "folder", id: child.id, projectId: project.id })} ondrop={(event) => commitDrop(event, { kind: "folder", id: child.id, projectId: project.id })}>
                   <span class="chevron" class:expanded={child.expanded} data-folder-toggle={child.id}><Icon name="chevron-right" /></span>
-                  <Icon name="folder" className="tree-icon" />
+                  <Icon name="folders" className="tree-icon" />
                   {#if renamingId === child.id}
                     <span class="name"><input class="folder-rename-input" data-folder-rename={child.id} bind:value={renameDraft} maxlength="80" placeholder="Folder name" aria-label={`Rename ${child.title}`} onclick={(event) => event.stopPropagation()} onkeydown={(event) => renameKeydown(event, child)} onblur={() => void commitRename(child)} /></span>
                   {:else}
-                    <span class="name"><span class="name-text">{child.title}</span><span class="folder-count" aria-hidden="true">{child.children.length}</span></span>
+                    <span class="name"><span class="name-text">{child.title}</span><span class="folder-count" aria-hidden="true">{child.children.length}</span>{#if !editing && child.unreadCount > 0}<span class="unread-badge" aria-label={`${child.unreadCount} unread ${child.unreadCount === 1 ? "Turn" : "Turns"}`}>{child.unreadCount > 99 ? "99+" : child.unreadCount}</span>{/if}</span>
                   {/if}
                   {#if editing}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->

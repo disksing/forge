@@ -165,8 +165,13 @@ func TestResourceHistoryPaginatesAcrossGenerationsWithGap(t *testing.T) {
 	for _, record := range records[1:] {
 		saveRetiredGenerationForTest(t, workspace.Path, record, "history_fixture")
 	}
+	turnA := historyTestTurn("turn-a", 1, true)
+	turnA.Items = []agentHubTurnItem{{
+		Type: "activity", StartEventID: 1, EndEventID: 2, StartedAt: now, EndedAt: now,
+		Count: 4, ThinkingCount: 2, ReasoningUpdateCount: 5, ToolCallCount: 2,
+	}}
 	fake.mu.Lock()
-	fake.turns["ses-3"] = []agentHubTurn{historyTestTurn("turn-a", 1, true), historyTestTurn("turn-b", 5, false)}
+	fake.turns["ses-3"] = []agentHubTurn{turnA, historyTestTurn("turn-b", 5, false)}
 	fake.turns["ses-1"] = []agentHubTurn{historyTestTurn("turn-old", 1, true)}
 	fake.mu.Unlock()
 	fake.base.mu.Lock()
@@ -233,7 +238,9 @@ func TestResourceHistoryPaginatesAcrossGenerationsWithGap(t *testing.T) {
 	if err := json.Unmarshal(detailRecorder.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Turn.TurnID != "turn-a" || len(detail.Items) != 1 || detail.Items[0].StartEventRef == "" {
+	if detail.Turn.TurnID != "turn-a" || len(detail.Items) != 1 || detail.Items[0].StartEventRef == "" ||
+		detail.Items[0].Type != "activity" || detail.Items[0].ThinkingCount != 2 ||
+		detail.Items[0].ReasoningUpdateCount != 5 || detail.Items[0].ToolCallCount != 2 {
 		t.Fatalf("Turn detail mismatch: %#v", detail)
 	}
 

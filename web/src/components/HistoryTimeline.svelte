@@ -3,16 +3,14 @@
 
   import { onMount } from "svelte";
 
+  import ActivityGroup from "./ActivityGroup.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController } from "./chat-state";
   import Icon from "./Icon.svelte";
   import LifecycleNotice from "./LifecycleNotice.svelte";
-  import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
-  import { toolGroupKey } from "./tool-group";
-  import { formatClock, markTurnAgentRuns, markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
-  import ToolGroup from "./ToolGroup.svelte";
+  import { formatClock, groupTimelineActivities, markTurnAgentRuns, markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
   import UnknownEvent from "./UnknownEvent.svelte";
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
   import type { ResourceTitleResolver } from "./markdown";
@@ -30,7 +28,6 @@
   let snapshot = $state<ChatContextSnapshot>(emptySnapshot());
   let controller: ChatSessionController | undefined;
   let notice = $state("");
-  let openTools = $state(new Map<string, boolean>());
   let expandedTurns = $state(new Set<string>());
   const legacyArtifact = $derived(findArtifact(artifacts, "legacy-log.md"));
 
@@ -92,8 +89,12 @@
     return "neutral";
   }
 
-  function loadTurn(block: ConversationBlock): void {
-    if (block.kind === "turn" && block.turn?.reference) void controller?.loadTurn(block.turn.reference);
+  function expandTurn(block: ConversationBlock): void {
+    if (block.kind === "turn" && block.turn?.reference) void controller?.expandTurn(block.turn.reference);
+  }
+
+  function collapseTurn(block: ConversationBlock): void {
+    if (block.kind === "turn" && block.turn?.reference) controller?.collapseTurn(block.turn.reference);
   }
 
   function blockLoaded(block: ConversationBlock): boolean {
@@ -113,10 +114,11 @@
       const next = new Set(expandedTurns);
       next.delete(key);
       expandedTurns = next;
+      collapseTurn(block);
       return;
     }
     expandedTurns = new Set(expandedTurns).add(key);
-    loadTurn(block);
+    expandTurn(block);
   }
 
   // Expanded Turns render through the same item components as the live Chat
@@ -125,7 +127,7 @@
     const items = block.events
       ? projectConversationEvents(block.events).map((item) => ({ ...item, generationId: block.generation.generationId }))
       : block.items || [];
-    return markTurnAgentRuns(markTurnFinalAssistant(items));
+    return markTurnAgentRuns(groupTimelineActivities(markTurnFinalAssistant(items)));
   }
 
   function blockAgentName(block: ConversationBlock): string {
@@ -133,17 +135,10 @@
   }
 
   function timelineKey(item: TimelineItem): string {
-    const key = item.kind === "tools" ? toolGroupKey(item) : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
+    const key = item.kind === "activity" && item.rangeStartEventId
+      ? String(item.rangeStartEventId)
+      : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
     return `${item.generationId || snapshot.generationId}:${item.kind}:${key}`;
-  }
-
-  function toolOpen(item: TimelineItem): boolean {
-    return openTools.get(timelineKey(item)) ?? false;
-  }
-
-  function rememberToolOpen(item: TimelineItem, open: boolean): void {
-    openTools = new Map(openTools).set(timelineKey(item), open);
-    if (open) void expandCompact(item);
   }
 
   function expandCompact(item: TimelineItem): Promise<void> | undefined {
@@ -255,10 +250,8 @@
                       {/if}
                       {#if item.kind === "message"}
                         <TimelineMessage {item} agentName={blockAgentName(block)} {workspaceId} {resolveResourceTitle} {onNavigate} {onOpenFile} />
-                      {:else if item.kind === "thinking"}
-                        <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
-                      {:else if item.kind === "tools"}
-                        <ToolGroup {item} generationId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
+                      {:else if item.kind === "activity"}
+                        <ActivityGroup {item} onExpand={() => expandCompact(item)} />
                       {:else if item.kind === "approval"}
                         <ApprovalCard {item} generationId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={readOnlyApproval} onToast={(message) => (notice = message)} />
                       {:else if item.kind === "lifecycle"}

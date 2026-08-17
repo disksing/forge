@@ -4,6 +4,7 @@
   import { onDestroy, onMount, tick } from "svelte";
 
   import { ApiClient } from "../api/client";
+  import ActivityGroup from "./ActivityGroup.svelte";
   import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController, turnIsCollapsedByPolicy } from "./chat-state";
   import { effectiveGenerationStatus } from "./generation-status";
@@ -12,12 +13,9 @@
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { ChatContextSnapshot, ConversationBlock, EventTimelineModel, FilePreviewModel, ResourceHistoryTurnSummary, TimelineItem } from "./models";
-  import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
-  import { formatClock, markTurnAgentRuns, markTurnFinalAssistant } from "./timeline-events";
-  import { toolGroupKey } from "./tool-group";
-  import ToolGroup from "./ToolGroup.svelte";
+  import { formatClock, groupTimelineActivities, markTurnAgentRuns, markTurnFinalAssistant } from "./timeline-events";
   import UnknownEvent from "./UnknownEvent.svelte";
 
   let { channel }: { channel: ModelChannel<EventTimelineModel> } = $props();
@@ -40,8 +38,6 @@
   let follow = true;
   let preview = $state<{ section: string; path: string } | null>(null);
   const client = new ApiClient();
-  const openCache = new Map<string, Map<string, boolean>>();
-  let openTools = $state(new Map<string, boolean>());
   // Viewport fill state. Collapsed Turns expand bottom-up one at a time until
   // the conversation overflows the viewport (FILL_STEP_LIMIT bounds a
   // pathological run of tiny Turns); visibility-triggered expansions arriving
@@ -79,7 +75,6 @@
         contextChanged = true;
         deferredSnapshot = null;
         preview = null;
-        openTools = new Map(openCache.get(next.identity) ?? []);
         fillArmed = false;
         deferredTurnExpands.clear();
       }
@@ -160,7 +155,7 @@
 
   function blockItems(block: ConversationBlock): TimelineItem[] {
     const items = block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
-    return markTurnAgentRuns(markTurnFinalAssistant(items));
+    return markTurnAgentRuns(groupTimelineActivities(markTurnFinalAssistant(items)));
   }
 
   function blockAgentName(block: ConversationBlock): string {
@@ -183,6 +178,14 @@
     if (role === "system") return "System";
     if (role === "agent") return "Agent";
     return "Message";
+  }
+
+  // collapsedTriggerRole maps the trigger's provenance onto the message row
+  // roles (user/assistant/agent/system) so the digest's trigger message uses
+  // the same rail and name colors as a regular message of that role.
+  function collapsedTriggerRole(turn: ResourceHistoryTurnSummary): string {
+    const role = String(turn.triggerRole || "").toLowerCase();
+    return role === "system" ? "system" : "agent";
   }
 
   function collapsedTurnStatusLabel(turn: ResourceHistoryTurnSummary): string {
@@ -302,20 +305,9 @@
     else scroll.scrollTop = previousTop + (scroll.scrollHeight - previousHeight);
   }
 
-  function rememberToolOpen(item: TimelineItem, open: boolean): void {
-    const key = timelineKey(item);
-    openTools = new Map(openTools).set(key, open);
-    openCache.set(snapshot.identity, new Map(openTools));
-    if (open) void expandCompact(item);
-  }
-
   function expandCompact(item: TimelineItem): Promise<void> | undefined {
     if (!item.compact || !item.generationId || !item.rangeStartEventId || !item.rangeEndEventId) return;
     return controller?.expandRange(item.generationId, item.rangeStartEventId, item.rangeEndEventId);
-  }
-
-  function toolOpen(item: TimelineItem): boolean {
-    return openTools.get(timelineKey(item)) ?? false;
   }
 
   function openLinkedFile(path: string): void {
@@ -353,7 +345,9 @@
   }
 
   function timelineKey(item: TimelineItem): string {
-    const key = item.kind === "tools" ? toolGroupKey(item) : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
+    const key = item.kind === "activity" && item.rangeStartEventId
+      ? String(item.rangeStartEventId)
+      : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
     return `${item.generationId || snapshot.generationId}:${item.kind}:${key}`;
   }
 
@@ -382,21 +376,40 @@
           {#if block.turn && !block.items && !block.events}
             {#if turnIsCollapsedByPolicy(block.turn)}
               <!-- Non-user-triggered Turns (agent messages, scheduler and system
-                   notifications) render as a summary card: trigger source and
-                   time, the trigger preview, the final reply preview, and a
-                   status badge for anything that did not complete. Clicking
-                   the card loads and renders the full Turn; open Turns stream
-                   live and fold back into this card when they close. -->
-              <button type="button" class="turn-collapsed-card" onclick={() => expandCollapsedTurn(block)}>
-                <span class="turn-collapsed-meta">
-                  <strong>{triggerSourceLabel(block.turn)}</strong>
-                  {#if collapsedTurnStatusLabel(block.turn)}<span class="turn-collapsed-status" data-turn-status={String(block.turn.status || "").toLowerCase()}>{collapsedTurnStatusLabel(block.turn)}</span>{/if}
-                  {#if formatClock(block.turn.endedAt || block.turn.startedAt)}<span class="turn-collapsed-time">{formatClock(block.turn.endedAt || block.turn.startedAt)}</span>{/if}
-                </span>
-                {#if block.turn.triggerPreview}<span class="turn-collapsed-trigger">{block.turn.triggerPreview}</span>{/if}
-                {#if block.turn.finalReplyPreview}<span class="turn-collapsed-reply">{block.turn.finalReplyPreview}</span>{/if}
-                {#if block.loading}<span class="turn-collapsed-hint"><Icon name="loader-circle" /><span>Loading turn details</span></span>{:else}<span class="turn-collapsed-hint"><Icon name="chevron-down" /><span>Expand turn</span></span>{/if}
+                   notifications) render as a two-message conversation digest:
+                   the trigger message and the final reply keep the normal
+                   sender-and-time message rows, and an ellipsis row stands in
+                   for the elided middle. Clicking the ellipsis loads and
+                   renders the full Turn; open Turns stream live and fold back
+                   into this digest when they close. -->
+              {#if block.turn.triggerPreview}
+                <div class={`agent-message-row ${collapsedTriggerRole(block.turn)}`}>
+                  <div class="agent-message-main">
+                    <div class="agent-message-meta">
+                      <strong>{triggerSourceLabel(block.turn)}</strong>
+                      <span class="agent-message-tag agent-message-role-tag">{collapsedTriggerRole(block.turn)}</span>
+                      {#if formatClock(block.turn.startedAt)}<span>{formatClock(block.turn.startedAt)}</span>{/if}
+                    </div>
+                    <div class="agent-message-bubble"><p class="turn-collapsed-text">{block.turn.triggerPreview}</p></div>
+                  </div>
+                </div>
+              {/if}
+              <button type="button" class="turn-collapsed-gap" title="Expand turn" onclick={() => expandCollapsedTurn(block)}>
+                <Icon name="ellipsis" />
+                {#if collapsedTurnStatusLabel(block.turn)}<span class="turn-collapsed-status" data-turn-status={String(block.turn.status || "").toLowerCase()}>{collapsedTurnStatusLabel(block.turn)}</span>{/if}
+                {#if block.loading}<span class="turn-collapsed-gap-label">Loading turn details</span>{:else}<span class="turn-collapsed-gap-label">Expand turn</span>{/if}
               </button>
+              {#if block.turn.finalReplyPreview}
+                <div class="agent-message-row assistant final">
+                  <div class="agent-message-main">
+                    <div class="agent-message-meta">
+                      <strong>{blockAgentName(block)}</strong>
+                      {#if formatClock(block.turn.endedAt || block.turn.startedAt)}<span>{formatClock(block.turn.endedAt || block.turn.startedAt)}</span>{/if}
+                    </div>
+                    <div class="agent-message-bubble"><p class="turn-collapsed-text">{block.turn.finalReplyPreview}</p></div>
+                  </div>
+                </div>
+              {/if}
             {:else if block.turn.triggerPreview}
               <div class="turn-summary-preview">{block.turn.triggerPreview}</div>
             {/if}
@@ -413,10 +426,8 @@
               {/if}
               {#if item.kind === "message"}
                 <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} />
-              {:else if item.kind === "thinking"}
-                <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
-              {:else if item.kind === "tools"}
-                <ToolGroup {item} generationId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
+              {:else if item.kind === "activity"}
+                <ActivityGroup {item} onExpand={() => expandCompact(item)} />
               {:else if item.kind === "approval"}
                 <ApprovalCard {item} generationId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={model.onApproval} onToast={model.onToast} />
               {:else if item.kind === "lifecycle"}

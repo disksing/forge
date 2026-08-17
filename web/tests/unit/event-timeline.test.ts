@@ -339,21 +339,19 @@ describe("EventTimeline", () => {
     await vi.waitFor(() => expect(target.textContent).toContain("final reply"));
     const section = target.querySelector<HTMLElement>("section.conversation-turn")!;
     const rows = [...section.querySelectorAll<HTMLElement>(":scope > [data-timeline-key]")];
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(3);
 
     // Reasoning and tool calls precede the reply: the run header introduces
-    // the thinking block, carrying both the agent's name and the run's
-    // start time.
+    // combined activity group, carrying both the agent's name and the run's
+    // start time while preserving the legacy compact input.
     const header = rows[1].querySelector<HTMLElement>(".agent-run-header");
     expect(header?.querySelector("strong")?.textContent).toBe("Test Agent");
     expect(header?.querySelector("span")?.textContent).toBe(formatClock(startedAt));
-    expect(rows[1].querySelector(".agent-reasoning-note")).not.toBeNull();
-    expect(rows[2].querySelector(".agent-run-header")).toBeNull();
-    expect(rows[2].querySelector(".agent-tool-group")).not.toBeNull();
+    expect(rows[1].querySelector(".agent-activity-group")).not.toBeNull();
 
     // The reply belongs to the same run but still renders its own meta row
     // with the agent's name and the message's timestamp.
-    const reply = rows[3].querySelector<HTMLElement>(".agent-message-row.assistant");
+    const reply = rows[2].querySelector<HTMLElement>(".agent-message-row.assistant");
     expect(reply?.querySelector(".agent-message-meta strong")?.textContent).toBe("Test Agent");
     expect(reply?.querySelector(".agent-message-meta span")?.textContent).toBe(formatClock(startedAt));
     expect(reply?.classList.contains("final")).toBe(true);
@@ -617,16 +615,17 @@ describe("EventTimeline", () => {
     chatTarget.className = "chat-timeline";
     const chat = mount(EventTimeline, { target: chatTarget, props: { channel: createModelChannel(model("task-a", status("task-a"), projectConversationEvents)) } });
     cleanups.push(() => unmount(chat));
-    await vi.waitFor(() => expect(chatTarget.querySelector(".agent-tool-group")).not.toBeNull());
-    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
-    expect(chatTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
+    await vi.waitFor(() => expect(chatTarget.querySelector(".agent-activity-group")).not.toBeNull());
+    expect(chatTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
+    expect(chatTarget.querySelector(".agent-activity-preview")?.textContent).toContain("2 tool calls");
     expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(1);
 
-    const chatGroup = chatTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    const chatGroup = chatTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")!;
     chatGroup.open = true;
     chatGroup.dispatchEvent(new Event("toggle"));
     await vi.waitFor(() => expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
-    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect([...chatTarget.querySelectorAll<HTMLDetailsElement>(".agent-tool-item")].every((tool) => !tool.open)).toBe(true);
+    expect(chatTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
     expect(chatTarget.textContent).toContain("Command");
     expect(chatTarget.textContent).toContain("MCP");
 
@@ -638,17 +637,18 @@ describe("EventTimeline", () => {
     cleanups.push(() => unmount(historyComponent));
     await vi.waitFor(() => expect(historyTarget.querySelector(".history-turn-header")).not.toBeNull());
     historyTarget.querySelector<HTMLButtonElement>(".history-turn-header")!.click();
-    await vi.waitFor(() => expect(historyTarget.querySelector(".agent-tool-group")).not.toBeNull());
-    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
-    expect(historyTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
-    const historyGroup = historyTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    await vi.waitFor(() => expect(historyTarget.querySelector(".agent-activity-group")).not.toBeNull());
+    expect(historyTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
+    expect(historyTarget.querySelector(".agent-activity-preview")?.textContent).toContain("2 tool calls");
+    const historyGroup = historyTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")!;
     historyGroup.open = true;
     historyGroup.dispatchEvent(new Event("toggle"));
     await vi.waitFor(() => expect(historyTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
-    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect([...historyTarget.querySelectorAll<HTMLDetailsElement>(".agent-tool-item")].every((tool) => !tool.open)).toBe(true);
+    expect(historyTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 tool calls");
   });
 
-  it("renders closed non-user turns as collapsed cards that expand on click and collapse again", async () => {
+  it("renders closed non-user turns as a two-message digest that expands on click and collapses again", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     const fixture = history("task-a", [{ type: "message", role: "assistant", text: "full turn detail", startEventId: 2, endEventId: 2, startedAt: "2026-08-12T00:00:00Z", endedAt: "2026-08-12T00:00:00Z" }]);
@@ -667,32 +667,38 @@ describe("EventTimeline", () => {
     const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
     cleanups.push(() => unmount(component));
 
-    // The collapsed card shows source, trigger and final reply previews; the
-    // detail is neither rendered nor fetched until the user clicks.
-    const card = await vi.waitFor(() => {
-      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-card");
+    // The digest keeps the normal message rows: trigger message with the
+    // sender's name and role tag, an ellipsis expander, then the final reply
+    // with the agent's name. The detail is neither rendered nor fetched
+    // until the user clicks.
+    const gap = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-gap");
       expect(value).not.toBeNull();
       return value!;
     });
-    expect(card.textContent).toContain("project1.task2");
-    expect(card.textContent).toContain("please review my patch");
-    expect(card.textContent).toContain("looks good, merged");
-    expect(card.textContent).toContain("Expand turn");
+    const triggerRow = target.querySelector<HTMLElement>(".agent-message-row.agent");
+    expect(triggerRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("project1.task2");
+    expect(triggerRow?.querySelector(".agent-message-role-tag")?.textContent).toBe("agent");
+    expect(triggerRow?.textContent).toContain("please review my patch");
+    const replyRow = target.querySelector<HTMLElement>(".agent-message-row.assistant.final");
+    expect(replyRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("Test Agent");
+    expect(replyRow?.textContent).toContain("looks good, merged");
+    expect(gap.textContent).toContain("Expand turn");
     expect(target.textContent).not.toContain("full turn detail");
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(fetchMock.mock.calls.map(([input]) => String(input)).some((path) => path.includes("/history/turns/ref-"))).toBe(false);
 
-    card.click();
+    gap.click();
     await vi.waitFor(() => expect(target.textContent).toContain("full turn detail"));
     const collapse = target.querySelector<HTMLButtonElement>(".turn-collapse-again");
     expect(collapse).not.toBeNull();
 
     collapse!.click();
-    await vi.waitFor(() => expect(target.querySelector(".turn-collapsed-card")).not.toBeNull());
+    await vi.waitFor(() => expect(target.querySelector(".turn-collapsed-gap")).not.toBeNull());
     expect(target.textContent).not.toContain("full turn detail");
   });
 
-  it("marks a failed non-user turn's collapsed card with its status", async () => {
+  it("marks a failed non-user turn's digest with its status", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     const fixture = history("task-a");
@@ -705,12 +711,15 @@ describe("EventTimeline", () => {
     const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a")) } });
     cleanups.push(() => unmount(component));
 
-    const card = await vi.waitFor(() => {
-      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-card");
+    const gap = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLButtonElement>(".turn-collapsed-gap");
       expect(value).not.toBeNull();
       return value!;
     });
-    expect(card.querySelector(".turn-collapsed-status")?.textContent).toBe("failed");
-    expect(card.textContent).toContain("System");
+    expect(gap.querySelector(".turn-collapsed-status")?.textContent).toBe("failed");
+    const triggerRow = target.querySelector<HTMLElement>(".agent-message-row.system");
+    expect(triggerRow?.querySelector(".agent-message-meta strong")?.textContent).toBe("System");
+    // No final reply preview: the digest renders only the trigger message.
+    expect(target.querySelector(".agent-message-row.assistant.final")).toBeNull();
   });
 });

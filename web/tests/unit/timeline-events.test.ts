@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTimeline as buildAgentHubTimeline } from "../../vendor/agenthub-event-timeline";
 import type { AgentEvent, TimelineItem } from "../../src/components/models";
-import { compactTimelineEvents, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
+import { compactTimelineEvents, groupTimelineActivities, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
@@ -80,7 +80,7 @@ describe("timeline event algorithms", () => {
     expect(items.map((item) => item.text)).not.toContain("Turn started");
     expect(items.map((item) => item.text)).not.toContain("Turn completed");
     expect(items.find((item) => item.kind === "message")?.text).toBe("hello");
-    expect(items.find((item) => item.kind === "tools")?.calls?.[0].status).toBe("completed");
+    expect(items.find((item) => item.kind === "activity")?.items?.find((item) => item.kind === "tools")?.calls?.[0].status).toBe("completed");
     expect(items.find((item) => item.kind === "lifecycle")?.text).toBe("Session stopped · provider completed");
   });
 
@@ -92,6 +92,23 @@ describe("timeline event algorithms", () => {
       "turn.started",
       "turn.completed",
     ].every((value) => isHiddenConversationLifecycleText(value))).toBe(true);
+  });
+
+  it("groups legacy compact thinking and tools without crossing visible boundaries", () => {
+    const legacy: TimelineItem[] = [
+      { kind: "thinking", key: "thought-a", count: 2, compact: true, rangeStartEventId: 2, rangeEndEventId: 3 },
+      { kind: "tools", key: "tools-a", compact: true, toolCallCount: 2, rangeStartEventId: 4, rangeEndEventId: 6, calls: [] },
+      { kind: "thinking", key: "thought-b", count: 1, compact: true, rangeStartEventId: 7, rangeEndEventId: 7 },
+      { kind: "message", key: "reply", role: "assistant", text: "done" },
+      { kind: "tools", key: "tools-b", compact: true, toolCallCount: 1, rangeStartEventId: 9, rangeEndEventId: 10, calls: [] },
+    ];
+
+    const grouped = groupTimelineActivities(legacy);
+
+    expect(grouped.map((item) => item.kind)).toEqual(["activity", "message", "activity"]);
+    expect(grouped[0]).toMatchObject({ thinkingCount: 2, reasoningUpdateCount: 3, toolCallCount: 2, rangeStartEventId: 2, rangeEndEventId: 7, compact: true });
+    expect(grouped[0].items?.map((item) => item.kind)).toEqual(["thinking", "tools", "thinking"]);
+    expect(grouped[2]).toMatchObject({ thinkingCount: 0, toolCallCount: 1, rangeStartEventId: 9, rangeEndEventId: 10 });
   });
 
   it("marks only the last assistant message of a turn as final", () => {

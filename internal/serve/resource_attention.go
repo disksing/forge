@@ -511,6 +511,22 @@ func (s *server) handleResourceRead(w http.ResponseWriter, r *http.Request, work
 	writeJSON(w, resourceUserStateSnapshotForState(resourceState))
 }
 
+// markResourceReadOnUserMessage clears a resource's unread state when a user
+// sends it a message: sending implies the sender has seen every Turn completed
+// so far, and the Turn the message triggers becomes the next unread one once
+// it completes. The read state is per user, so the acting user must be known.
+func (s *server) markResourceReadOnUserMessage(workspacePath, resourceID, userName string) {
+	completed, err := s.currentCompletedResourceTurnNumber(workspacePath, resourceID)
+	if err != nil || completed <= 0 {
+		return
+	}
+	_, _ = s.mutateResourceUserStateAtPath(workspacePath, resourceID, func(state *resourceUserState) {
+		if state.ReadTurnNumber == nil || *state.ReadTurnNumber < completed {
+			state.ReadTurnNumber = cloneIntPointer(&completed)
+		}
+	}, userName)
+}
+
 func (s *server) resourceUserStateForResource(path, resourceID string, userNames ...string) (resourceUserState, error) {
 	resourceStates, err := s.loadResourceStatesAtPath(path, userNames...)
 	if err != nil {
@@ -701,7 +717,9 @@ func (s *server) enrichTreeResourceActivity(workspacePath string, tree *workspac
 		if state.ReadTurnNumber != nil {
 			readTurnNumber = *state.ReadTurnNumber
 		}
-		if item.LatestTurnNumber > readTurnNumber {
+		// The Scheduler is an automation entry point rather than a
+		// conversation the user reads, so it never counts as unread.
+		if resourceID != app.SchedulerResourceID && item.LatestTurnNumber > readTurnNumber {
 			item.UnreadCount = item.LatestTurnNumber - readTurnNumber
 		}
 		for i := range item.Children {

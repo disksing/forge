@@ -2,10 +2,10 @@
 set -eu
 
 repo=${1:?usage: scripts/update-agenthub-event-timeline /path/to/agenthub [revision]}
-revision=${2:-402c286bbf38e190b03e99f17d91baef74119b18}
-expected_revision=402c286bbf38e190b03e99f17d91baef74119b18
-expected_iife_sha=6211dce0fc50d79b120ccda283e119e1c56743c3fa03440e75b5fbc80ea9da52
-expected_esm_sha=b2cfd1ce274028fc9b9037d6ccacbcfa712eee2f55b482dd012235cdac3ce1fc
+revision=${2:-e2b55b3a2d37f14899e17b952457bbaaadb467e1}
+expected_revision=e2b55b3a2d37f14899e17b952457bbaaadb467e1
+expected_iife_sha=c30b03b1cc54941be79fc39bfe509e5b79751f45c0f130c2e8177136bfe3d0c8
+expected_esm_sha=2efefb3bd10fa8f06ae542795520dd18e5af335831c2672612596b0e0d5368f9
 
 resolved=$(git -C "$repo" rev-parse "$revision^{commit}")
 if [ "$resolved" != "$expected_revision" ]; then
@@ -42,4 +42,4 @@ cp "$package/fixtures/pagination-fragments.json" "$fixtures/pagination-fragments
 cp "$package/snapshots/canonical-events.timeline.json" "$fixtures/canonical-events.timeline.json"
 cp "$package/snapshots/pagination-fragments.timeline.json" "$fixtures/pagination-fragments.timeline.json"
 
-echo "updated @agenthub/event-timeline 1.0.0 from $resolved ($actual_esm_sha)"
+echo "updated @agenthub/event-timeline 2.0.0 from $resolved ($actual_esm_sha)"
