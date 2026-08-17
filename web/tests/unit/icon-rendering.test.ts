@@ -106,7 +106,9 @@ describe("Icon component", () => {
     expect(svg).not.toBeNull();
     expect(svg!.getAttribute("class")).toContain("lucide-clock-3");
     expect(svg!.getAttribute("class")).toContain("scheduler-nav-icon");
-    expect(svg!.querySelector("circle")).not.toBeNull();
+    const circle = svg!.querySelector("circle");
+    expect(circle).not.toBeNull();
+    expect(circle!.namespaceURI).toBe("http://www.w3.org/2000/svg");
     expect(target.querySelector("i")).toBeNull();
   });
 });
