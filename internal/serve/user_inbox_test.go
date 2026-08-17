@@ -126,6 +126,12 @@ func TestUserInboxSendListReadAndReply(t *testing.T) {
 	if delivered.Status != resourceMessageDelivered {
 		t.Fatalf("reply status = %q, want delivered: %#v", delivered.Status, delivered)
 	}
+	// The text delivered to the agent quotes the original inbox message.
+	quoted := userInboxReplyText(userInboxMessage{ID: sent.MessageID, Text: "hello user"}, "got it, thanks")
+	want := "[Reply to your Inbox message " + sent.MessageID + "]\n> hello user\n\ngot it, thanks"
+	if quoted != want {
+		t.Fatalf("reply text = %q, want %q", quoted, want)
+	}
 
 	recorder = userInboxRequest(t, server, http.MethodGet, base, "")
 	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
@@ -188,6 +194,41 @@ func TestUserInboxReplyToArchivedResourceFails(t *testing.T) {
 	recorder = userInboxRequest(t, server, http.MethodPost, base+"/"+sent.MessageID+"/reply", `{"text":"late reply"}`)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("reply to archived resource returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestUserInboxDelete(t *testing.T) {
+	manager, workspace, instanceID := userInboxTestManager(t)
+	server := manager.server
+	base := "/api/workspaces/" + workspace.ID + "/users/disksing/messages"
+
+	recorder := userInboxRequest(t, server, http.MethodPost, base, userInboxSendBody(instanceID, "project1.task1", "disposable"))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("send returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var sent userInboxMessageResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &sent); err != nil {
+		t.Fatal(err)
+	}
+	// Deleting without reading or replying is allowed.
+	recorder = userInboxRequest(t, server, http.MethodDelete, base+"/"+sent.MessageID, "")
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("delete returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	recorder = userInboxRequest(t, server, http.MethodGet, base, "")
+	var listed struct {
+		Messages []userInboxMessageResponse `json:"messages"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Messages) != 0 {
+		t.Fatalf("deleted message remains listed: %#v", listed.Messages)
+	}
+	// Deleting twice reports not found.
+	recorder = userInboxRequest(t, server, http.MethodDelete, base+"/"+sent.MessageID, "")
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("second delete returned %d, want 404", recorder.Code)
 	}
 }
 

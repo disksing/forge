@@ -226,6 +226,10 @@ func (m *agentManager) handleUserMessages(w http.ResponseWriter, r *http.Request
 		m.replyUserInboxMessage(w, r, workspaceID, workspace, userName, parts[0])
 		return
 	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		m.deleteUserInboxMessage(w, workspace.Path, userName, parts[0])
+		return
+	}
 	http.NotFound(w, r)
 }
 
@@ -357,7 +361,9 @@ func (m *agentManager) markUserInboxMessageRead(w http.ResponseWriter, workspace
 // replyUserInboxMessage turns a user's inline reply into an ordinary
 // role=user resource mailbox message addressed to the source resource, so
 // delivery, generation wake-up, and steer/enqueue handling reuse the existing
-// mailbox pipeline unchanged. The inbox entry records the reply time.
+// mailbox pipeline unchanged. The delivered text quotes the original message
+// so the receiving agent can tell which inbox message is being answered. The
+// inbox entry records the reply time.
 func (m *agentManager) replyUserInboxMessage(w http.ResponseWriter, r *http.Request, workspaceID string, workspace serveWorkspace, userName, messageID string) {
 	var request struct {
 		Text string `json:"text"`
@@ -393,7 +399,7 @@ func (m *agentManager) replyUserInboxMessage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	accepted, err := m.acceptResourceMessage(r.Context(), workspace, source.SourceResourceID, resourceMessageRequest{
-		Text: request.Text, Role: "user",
+		Text: userInboxReplyText(source, request.Text), Role: "user",
 		Sender: &agentHubMessageSender{Name: userName},
 	})
 	if err != nil {
@@ -424,4 +430,48 @@ func (m *agentManager) replyUserInboxMessage(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (m *agentManager) deleteUserInboxMessage(w http.ResponseWriter, workspacePath, userName, messageID string) {
+	messageID = strings.TrimSpace(messageID)
+	found := false
+	_, err := mutateUserInbox(workspacePath, userName, func(inbox *userInbox) error {
+		for index := range inbox.Messages {
+			if inbox.Messages[index].ID != messageID {
+				continue
+			}
+			inbox.Messages = append(inbox.Messages[:index], inbox.Messages[index+1:]...)
+			found = true
+			return nil
+		}
+		return nil
+	})
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		writeError(w, &resourceAPIError{Code: "message_not_found", Message: fmt.Sprintf("user inbox message not found: %s", messageID)}, http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxInboxReplyQuoteBytes bounds the original-message excerpt embedded in a
+// reply so a very long inbox message cannot flood the agent's prompt.
+const maxInboxReplyQuoteBytes = 1024
+
+// userInboxReplyText prefixes the user's reply with a quoted excerpt of the
+// original agent message. Agents only ever see message text, so the quote is
+// the reliable way to show which inbox message the reply answers.
+func userInboxReplyText(source userInboxMessage, reply string) string {
+	quote := strings.TrimSpace(source.Text)
+	if len(quote) > maxInboxReplyQuoteBytes {
+		quote = quote[:maxInboxReplyQuoteBytes] + "\n[original message truncated]"
+	}
+	lines := strings.Split(quote, "\n")
+	for index, line := range lines {
+		lines[index] = "> " + line
+	}
+	return fmt.Sprintf("[Reply to your Inbox message %s]\n%s\n\n%s", source.ID, strings.Join(lines, "\n"), strings.TrimSpace(reply))
 }
