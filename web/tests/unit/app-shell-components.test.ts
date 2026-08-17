@@ -218,7 +218,8 @@ describe("AppShell responsibility components", () => {
 
     const rows = target.querySelectorAll<HTMLElement>(".folder-item");
     expect(rows).toHaveLength(2);
-    const collapsedBadge = rows[0].querySelector<HTMLElement>(".unread-badge");
+    // The aggregated badge follows the folder's task count.
+    const collapsedBadge = rows[0].querySelector<HTMLElement>(".folder-count + .unread-badge");
     expect(collapsedBadge?.textContent).toBe("5");
     expect(collapsedBadge?.getAttribute("aria-label")).toBe("5 unread Turns");
     // An expanded folder carries no aggregate badge; its visible Tasks render
