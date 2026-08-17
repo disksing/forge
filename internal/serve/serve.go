@@ -54,6 +54,14 @@ type serveWorkspace struct {
 	Icon string `json:"icon,omitempty"`
 }
 
+// workspacesResponse is the GET /api/workspaces payload: the persisted serve
+// configuration plus a revision marker the frontend polls to detect settings
+// changes made by other clients.
+type workspacesResponse struct {
+	config
+	Revision string `json:"revision"`
+}
+
 var workspaceIconFiles = map[string]string{
 	"home-base":               "01-home-base.png",
 	"personal-tasks":          "02-personal-tasks.png",
@@ -284,7 +292,7 @@ func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cfg.Workspaces = resolvedWorkspaceSummaries(cfg.Workspaces)
-		writeJSON(w, cfg)
+		writeJSON(w, workspacesResponse{config: cfg, Revision: settingsRevision(cfg, cfg.Workspaces)})
 	case http.MethodPost:
 		var body struct {
 			Path   string `json:"path"`

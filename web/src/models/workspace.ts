@@ -133,6 +133,9 @@ export interface WorkspaceConfig {
   agents: AgentConfig[];
   agentProfiles: AgentProfile[];
   agentHubProviders?: Array<{ id: string; name?: string }>;
+  // Content hash of the serve configuration; polled via /api/settings/revision
+  // to detect settings changes made by other tabs or clients.
+  revision?: string;
 }
 
 export interface WorkspaceUser {

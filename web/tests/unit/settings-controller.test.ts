@@ -139,4 +139,92 @@ describe("SettingsController", () => {
 		expect(workspaceRenders).toBeGreaterThan(0);
 		expect(toasts).toContain("Workspace name saved.");
 	});
+
+	it("externalSync refreshes an open modal with the latest server settings", async () => {
+		const published: SettingsModel[] = [];
+		let current: PUASettingsConfig = {
+			activeId: "workspace-a",
+			workspaces: [{ id: "workspace-a", name: "a", path: "/tmp/a" }],
+			agents: [],
+			agentProfiles: [{ key: "default", description: "", agentName: "old-agent" }],
+		};
+		const dependencies = settingsDependencies("workspace-a", current, (model) => published.push(model));
+		let settingsReads = 0;
+		const baseRequest = dependencies.request;
+		dependencies.request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+			if (path === "/api/workspaces" && !init) return current as T;
+			if (path === "/api/settings/agenthub") {
+				settingsReads++;
+				return { config: { agentProfiles: current.agentProfiles } } as T;
+			}
+			return baseRequest<T>(path, init);
+		};
+		const controller = createSettingsController(dependencies);
+
+		await controller.open();
+		expect(published.at(-1)?.profiles[0]?.agentName).toBe("old-agent");
+
+		// Another tab saved new profile routes; the next external sync must pick
+		// them up without reopening the modal.
+		current = { ...current, agentProfiles: [{ key: "default", description: "", agentName: "new-agent" }] };
+		const readsBefore = settingsReads;
+		await controller.externalSync();
+
+		expect(settingsReads).toBe(readsBefore + 1);
+		expect(published.at(-1)?.profiles[0]?.agentName).toBe("new-agent");
+	});
+
+	it("externalSync keeps an unsaved agent draft untouched", async () => {
+		const published: SettingsModel[] = [];
+		const config: PUASettingsConfig = {
+			activeId: "workspace-a",
+			workspaces: [{ id: "workspace-a", name: "a", path: "/tmp/a" }],
+			agents: [],
+			agentProfiles: [{ key: "default", description: "", agentName: "old-agent" }],
+		};
+		const dependencies = settingsDependencies("workspace-a", config, (model) => published.push(model));
+		let settingsReads = 0;
+		const baseRequest = dependencies.request;
+		dependencies.request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+			if (path === "/api/settings/agenthub") {
+				settingsReads++;
+				return { config: { agentProfiles: config.agentProfiles } } as T;
+			}
+			if (init?.method === "PUT" && path === "/api/workspaces/workspace-a") return { ...config.workspaces[0], icon: "research-lab" } as T;
+			return baseRequest<T>(path, init);
+		};
+		const controller = createSettingsController(dependencies);
+
+		await controller.open();
+		// Editing the agent settings marks the modal dirty through the draft that
+		// accompanies every settings action.
+		const dirtyDraft = { ...createSettingsDraft(published.at(-1)!), dirty: true };
+		await published.at(-1)!.onWorkspaceIcon("workspace-a", "research-lab", dirtyDraft);
+
+		const readsBefore = settingsReads;
+		await controller.externalSync();
+
+		expect(settingsReads).toBe(readsBefore);
+	});
+
+	it("externalSync is a no-op while the modal is closed", async () => {
+		const config: PUASettingsConfig = {
+			activeId: "workspace-a",
+			workspaces: [{ id: "workspace-a", name: "a", path: "/tmp/a" }],
+			agents: [],
+			agentProfiles: [],
+		};
+		const dependencies = settingsDependencies("workspace-a", config, () => undefined);
+		let requests = 0;
+		const baseRequest = dependencies.request;
+		dependencies.request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+			requests++;
+			return baseRequest<T>(path, init);
+		};
+		const controller = createSettingsController(dependencies);
+
+		await controller.externalSync();
+
+		expect(requests).toBe(0);
+	});
 });

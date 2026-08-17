@@ -1,6 +1,9 @@
 package serve
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strings"
 )
@@ -8,6 +11,7 @@ import (
 type settingsResponse struct {
 	Workspaces []serveWorkspace `json:"workspaces"`
 	ActiveID   string           `json:"activeId,omitempty"`
+	Revision   string           `json:"revision"`
 }
 
 const agentOptionModel = "model"
@@ -26,6 +30,14 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		s.handleAgentHubSettings(w, r)
 		return
 	}
+	if path == "revision" {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.writeSettingsRevision(w)
+		return
+	}
 	http.NotFound(w, r)
 }
 
@@ -35,7 +47,52 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, settingsResponse{Workspaces: resolvedWorkspaceSummaries(cfg.Workspaces), ActiveID: cfg.ActiveID})
+	workspaces := resolvedWorkspaceSummaries(cfg.Workspaces)
+	writeJSON(w, settingsResponse{Workspaces: workspaces, ActiveID: cfg.ActiveID, Revision: settingsRevision(cfg, workspaces)})
+}
+
+// settingsRevision computes a cheap content hash over the parts of the serve
+// configuration the Web UI renders: workspaces (with resolved display names),
+// the active Workspace, the AgentHub endpoint, and the Agent Profile routes.
+// The frontend polls /api/settings/revision during auto refresh and only
+// refetches the full settings payloads when this value changes, so edits made
+// from another browser tab, another client, or the CLI propagate without a
+// page reload.
+func settingsRevision(cfg config, workspaces []serveWorkspace) string {
+	payload := struct {
+		ActiveID   string              `json:"activeId,omitempty"`
+		Workspaces []serveWorkspace    `json:"workspaces"`
+		Endpoint   string              `json:"agentHubEndpoint,omitempty"`
+		Profiles   []agentProfileRoute `json:"agentProfiles,omitempty"`
+	}{
+		ActiveID:   cfg.ActiveID,
+		Workspaces: workspaces,
+		Endpoint:   cfg.AgentHubEndpoint,
+		Profiles:   cfg.AgentProfiles,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
+}
+
+func (s *server) currentSettingsRevision() (string, error) {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return "", err
+	}
+	return settingsRevision(cfg, resolvedWorkspaceSummaries(cfg.Workspaces)), nil
+}
+
+func (s *server) writeSettingsRevision(w http.ResponseWriter) {
+	revision, err := s.currentSettingsRevision()
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"revision": revision})
 }
 
 func findAgentProfileRoute(routes []agentProfileRoute, key string) (agentProfileRoute, bool) {

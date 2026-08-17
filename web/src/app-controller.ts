@@ -40,6 +40,7 @@ let lifecycle: ResourceScope | null = null;
 
 interface ControllerState {
 	config: WorkspaceConfig | null;
+	settingsRevision: string;
 	doctor: DoctorSnapshotModel;
 	tree: WorkspaceTree | null;
 	details: Record<string, ResourceRecord>;
@@ -96,6 +97,7 @@ interface ControllerState {
 
 const controllerState: ControllerState = {
 	config: null,
+	settingsRevision: "",
 	doctor: { checking: true, complete: false, summary: { errors: 0, warnings: 0 }, workspaces: [] },
 	tree: null,
 	details: {},
@@ -330,7 +332,10 @@ const {
 let uploadDialogIdentity = 0;
 const settingsController = createSettingsController({
 	config: () => controllerState.config || { workspaces: [], agents: [], agentProfiles: [] },
-	setConfig: (config) => { controllerState.config = config; },
+	setConfig: (config) => {
+		controllerState.config = config;
+		if (config.revision) controllerState.settingsRevision = config.revision;
+	},
 	activeWorkspaceId: () => controllerState.activeWorkspaceId,
 	setActiveWorkspaceId: (id) => { controllerState.activeWorkspaceId = id; },
 	selectWorkspaceResource: () => { controllerState.selectedId = "workspace"; },
@@ -485,6 +490,34 @@ async function fetchDoctorSnapshot(): Promise<DoctorSnapshotModel> {
 	}
 }
 
+// fetchSettingsRevision is the cheap auto-refresh probe for serve settings
+// changes. It returns an empty string when the server predates the revision
+// endpoint or the request fails, in which case polling is skipped silently.
+async function fetchSettingsRevision(): Promise<string> {
+	try {
+		const response = await api<{ revision?: string }>("/api/settings/revision");
+		return String(response.revision || "");
+	} catch {
+		return "";
+	}
+}
+
+// refreshServerSettings reloads the workspace configuration and AgentHub
+// catalog after the settings revision changed, so profile routes, workspace
+// names, and agent availability edited from another tab or client propagate
+// without a page reload.
+async function refreshServerSettings(): Promise<void> {
+	const [base, agentHub] = await Promise.all([
+		api<WorkspaceConfig>("/api/workspaces"),
+		api<AgentHubData>("/api/settings/agenthub"),
+	]);
+	controllerState.config = configWithAgentHubCatalog(base, agentHub);
+	controllerState.settingsRevision = String(base.revision || "");
+	applyAgentConfig();
+	renderWorkspaceSelect();
+	await settingsController.externalSync();
+}
+
 async function requestDoctorRefresh(): Promise<void> {
 	if (controllerState.doctor.checking) return;
 	controllerState.doctor = { ...controllerState.doctor, checking: true };
@@ -504,6 +537,7 @@ async function load() {
 		fetchDoctorSnapshot(),
 	]);
 	controllerState.config = configWithAgentHubCatalog(base, agentHub);
+	controllerState.settingsRevision = String(base.revision || "");
 	controllerState.doctor = doctor;
 	applyAgentConfig();
 	controllerState.activeWorkspaceId = workspaceExists(route.workspaceId) ? route.workspaceId || "" : controllerState.config?.activeId || controllerState.config?.workspaces[0]?.id || "";
@@ -641,13 +675,20 @@ async function autoRefresh() {
 	let selectedId = controllerState.selectedId;
 	controllerState.autoRefreshInFlight = true;
 	try {
-		const [tree, doctor] = await Promise.all([fetchCurrentTree(workspaceId), fetchDoctorSnapshot()]);
+		const [tree, doctor, settingsRevision] = await Promise.all([fetchCurrentTree(workspaceId), fetchDoctorSnapshot(), fetchSettingsRevision()]);
 		if (!tree || !isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
 		let changed = !sameJSON(controllerState.tree, tree);
 		if (changed) controllerState.tree = tree;
 		if (!sameJSON(controllerState.doctor, doctor)) {
 			controllerState.doctor = doctor;
 			changed = true;
+		}
+		if (settingsRevision && controllerState.settingsRevision && settingsRevision !== controllerState.settingsRevision) {
+			await refreshServerSettings();
+			if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
+			changed = true;
+		} else if (settingsRevision) {
+			controllerState.settingsRevision = settingsRevision;
 		}
 		observeCompletionProjections(resourceNotificationProjections(tree));
 		if (ensureValidSelection()) {
