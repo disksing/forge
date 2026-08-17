@@ -555,4 +555,80 @@ describe("resource conversation controller", () => {
     expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a", "gen-3:current:8"]);
     expect(latest.blocks[1].events?.map((event) => event.id)).toEqual([8]);
   });
+
+  it("keeps closed non-user turns collapsed until explicitly expanded, then re-collapses", async () => {
+    const summary = { ...turn(3, "turn-a", 1, 3), triggerRole: "agent", triggerSender: { name: "project1.task2" }, finalReplyPreview: "reply done" };
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/ref-")) return response(detail(summary));
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [summary] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", null);
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(1));
+    expect(latest.blocks[0].items).toBeUndefined();
+    expect(latest.blocks[0].events).toBeUndefined();
+
+    // The legacy auto-expand path may still fetch the detail, but the policy
+    // keeps it out of the projection until the user expands the card.
+    await value.loadTurn(summary.reference);
+    expect(latest.blocks[0].items).toBeUndefined();
+
+    await value.expandTurn(summary.reference);
+    expect(latest.blocks[0].items?.find((item) => item.kind === "message")?.text).toBe("detail turn-a");
+
+    value.collapseTurn(summary.reference);
+    expect(latest.blocks[0].items).toBeUndefined();
+    expect(latest.blocks[0].events).toBeUndefined();
+  });
+
+  it("keeps user-triggered turns on the legacy expand-on-load behavior", async () => {
+    const summary = { ...turn(3, "turn-a", 1, 3), triggerRole: "user" };
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/ref-")) return response(detail(summary));
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [summary] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", null);
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(1));
+    await value.loadTurn(summary.reference);
+    expect(latest.blocks[0].items?.find((item) => item.kind === "message")?.text).toBe("detail turn-a");
+  });
+
+  it("streams an open non-user turn live and folds it into a summary card when it closes", async () => {
+    const open = { ...turn(3, "turn-a", 5, 7, false), triggerRole: "system" };
+    const closed = { ...turn(3, "turn-a", 5, 8), triggerRole: "system", finalReplyPreview: "done" };
+    let historyCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/ref-")) return response(detail(closed));
+      historyCalls++;
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [historyCalls === 1 ? open : closed] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const stream = FakeEventSource.instances[0];
+
+    // The open turn renders live even though its trigger is not the user.
+    stream.emit({ id: 6, type: "message.assistant.delta", turnId: "turn-a", sessionId: "session-3", data: { text: "working" } });
+    await vi.waitFor(() => expect(latest.blocks[0].events?.map((event) => event.id)).toEqual([6]));
+
+    // Once the terminal event materializes the closed summary, the turn folds
+    // back into a collapsed card instead of staying expanded.
+    stream.emit({ id: 8, type: "turn.completed", turnId: "turn-a", sessionId: "session-3" });
+    await vi.waitFor(() => expect(latest.blocks[0].turn?.closed).toBe(true));
+    expect(latest.blocks[0].items).toBeUndefined();
+    expect(latest.blocks[0].events).toBeUndefined();
+
+    await value.expandTurn(closed.reference);
+    await vi.waitFor(() => expect(latest.blocks[0].items?.find((item) => item.kind === "message")?.text).toBe("detail turn-a"));
+  });
 });
