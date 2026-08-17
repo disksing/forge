@@ -802,6 +802,33 @@ test("fits binding menu columns to the longest labels", async ({ page }) => {
   expect(truncated).toEqual([]);
 });
 
+test("shows the full binding menu from the settings panel", async ({ page }) => {
+  const extraAgents = ["gpt-5.3-codex-spark", "gpt-5.6-sol", "kimi-k3", "grok-4.5", "gemini-3.1-pro", "gpt-5.6-luna", "pi-kimi", "deepseek-v4-pro"];
+  const harness = await installMockApi(page, "project1.task1", false, false, false, extraAgents);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.getByRole("tab", { name: "Settings" }).click();
+  const bindingSelector = page.getByRole("button", { name: "Task Agent binding" });
+  await bindingSelector.click();
+  const bindingMenu = page.getByRole("listbox", { name: "Task Agent binding" });
+  await expect(bindingMenu.getByRole("option")).toHaveCount(13);
+
+  // The settings list card clips absolutely positioned content, so the menu
+  // must escape it: every option stays fully visible and clickable instead of
+  // only a slice showing below the row.
+  const options = bindingMenu.getByRole("option");
+  for (let index = 0; index < 13; index += 1) {
+    await expect(options.nth(index)).toBeInViewport();
+  }
+  const menuBox = (await bindingMenu.boundingBox())!;
+  const listBox = (await page.locator(".resource-settings-list").last().boundingBox())!;
+  expect(menuBox.y + menuBox.height).toBeGreaterThan(listBox.y + listBox.height);
+
+  await options.last().click();
+  await expect.poll(() => harness.bindingBodies.length).toBe(1);
+  expect(harness.bindingBodies[0]).toMatchObject({ kind: "agent", name: "deepseek-v4-pro" });
+});
+
 test("navigates to a newly created project", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");

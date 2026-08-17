@@ -47,19 +47,22 @@
 /* The menu scrolls within its own bounds instead of clipping off-screen. The
    260px cap is a fallback; AgentBindingSelector measures the space on the
    opening side of the button and raises the cap so long agent lists stay
-   visible. The menu hugs its content: AgentBindingSelector measures the
-   longest primary and secondary labels and pins both columns to those widths
-   so every row shares the same column boundary. A fixed 340px cap proved too
-   small for long name pairs (e.g. a long agent id next to a long profile
-   list), so the only width cap left is the viewport. */
+   visible. The menu is position:fixed with coordinates set by the component:
+   an absolutely positioned menu gets clipped by ancestors with
+   overflow:hidden (settings list card) or overflow:auto (detail panel
+   scroll), leaving only a slice of the options visible and unreachable. The
+   menu hugs its content: AgentBindingSelector measures the longest primary
+   and secondary labels and pins both columns to those widths so every row
+   shares the same column boundary. A fixed 340px cap proved too small for
+   long name pairs (e.g. a long agent id next to a long profile list), so the
+   only width cap left is the viewport. */
 :where([data-component-owner="agent-binding-selector"]) .agent-binding-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
   z-index: 40;
   box-sizing: border-box;
   width: max-content;
-  min-width: 100%;
   max-width: calc(100vw - 24px);
   max-height: 260px;
   overflow-y: auto;
@@ -68,11 +71,6 @@
   border-radius: 8px;
   background: var(--bg, #fff);
   box-shadow: 0 6px 20px rgba(44, 62, 80, 0.18);
-}
-
-:where([data-component-owner="agent-binding-selector"][data-placement="down"]) .agent-binding-menu {
-  bottom: auto;
-  top: calc(100% + 6px);
 }
 
 :where([data-component-owner="agent-binding-selector"]) .agent-binding-group-title {
