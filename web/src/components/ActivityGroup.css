@@ -89,3 +89,17 @@
 
 :where([data-component-owner="event-timeline"]) .agent-activity-tool-list { padding: 0 0 4px 21px; }
 :where([data-component-owner="event-timeline"]) .agent-activity-loading { padding: 6px 0; color: var(--faint); }
+
+/* While work is streaming there is no aggregate disclosure yet: reasoning
+   and individual tool calls sit directly on the conversation column. Once
+   the activity settles, the regular collapsed disclosure above takes over. */
+:where([data-component-owner="event-timeline"]) .agent-activity-live .agent-activity-list {
+  gap: 7px;
+  margin-left: 0;
+  padding: 0;
+  border-left: 0;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-activity-live .agent-activity-tool-list {
+  padding: 0;
+}

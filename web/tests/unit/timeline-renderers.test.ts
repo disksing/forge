@@ -153,11 +153,16 @@ describe("timeline rendering components", () => {
     const activeTarget = target();
     const active = mount(ActivityGroupHarness, { target: activeTarget, props: { item: { ...item, active: true }, onExpand: vi.fn() } });
     cleanups.push(() => unmount(active));
-    expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")?.open).toBe(true);
+    expect(activeTarget.querySelector(".agent-activity-group")?.tagName).toBe("DIV");
+    expect(activeTarget.querySelector(".agent-activity-title")).toBeNull();
+    expect(activeTarget.querySelector(".agent-activity-tools")).toBeNull();
     expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-tool-item")?.open).toBe(false);
     active.replaceItem({ ...item, active: false });
     await tick();
-    expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")?.open).toBe(false);
+    const settled = activeTarget.querySelector<HTMLDetailsElement>(".agent-activity-group")!;
+    expect(settled.tagName).toBe("DETAILS");
+    expect(settled.open).toBe(false);
+    expect(activeTarget.querySelector(".agent-activity-title")?.textContent).toBe("2 thoughts · 1 tool call");
   });
 
   it("renders tool groups and tool items with stable summaries, statuses, details, and toggle callbacks", async () => {
