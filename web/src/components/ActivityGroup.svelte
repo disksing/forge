@@ -68,7 +68,11 @@
       {/if}
       {#each children as child, index (`${String(child.key ?? index)}:${child.kind}`)}
         {#if child.kind === "thinking"}
-          <section class="agent-activity-thought"><header><Icon name="brain-circuit" /><span>{thoughtTitle(child)}</span></header><p>{child.text || ""}</p></section>
+          {#if child.active}
+            <section class="agent-activity-thought"><header><Icon name="brain" /><span>{thoughtTitle(child)}</span></header><p>{child.text || ""}</p></section>
+          {:else}
+            <details class="agent-activity-thought agent-activity-thought-complete"><summary><Icon name="brain" /><span>{thoughtTitle(child)}</span><span class="agent-activity-thought-chevron"><Icon name="chevron-right" /></span></summary><p>{child.text || ""}</p></details>
+          {/if}
         {:else if child.kind === "tools"}
           <div class="agent-activity-tool-list">{#each child.calls || [] as call (String(call.callId || call.key))}<ToolItem {call} />{/each}</div>
         {/if}
@@ -84,7 +88,7 @@
     {/if}
     {#each children as child, index (`${String(child.key ?? index)}:${child.kind}`)}
       {#if child.kind === "thinking"}
-        <section class="agent-activity-thought"><header><Icon name="brain-circuit" /><span>{thoughtTitle(child)}</span></header><p>{child.text || ""}</p></section>
+        <section class="agent-activity-thought"><header><Icon name="brain" /><span>{thoughtTitle(child)}</span></header><p>{child.text || ""}</p></section>
       {:else if child.kind === "tools"}
         <section class="agent-activity-tools"><header><Icon name="wrench" /><span>{formatToolCallCount(toolCount(child))}</span></header><div class="agent-activity-tool-list">{#each child.calls || [] as call (String(call.callId || call.key))}<ToolItem {call} />{/each}</div></section>
       {/if}

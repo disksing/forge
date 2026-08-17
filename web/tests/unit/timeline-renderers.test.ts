@@ -86,6 +86,7 @@ describe("timeline rendering components", () => {
     const active = mounted(ThinkingBlock, { item: { kind: "thinking", active: true, text: "working" } });
     expect(active.querySelector("details")?.open).toBe(true);
     expect(active.textContent).toContain("Thinking…");
+    expect(active.querySelector('[data-lucide="brain"]')).not.toBeNull();
 
     const completed = mounted(ThinkingBlock, { item: { kind: "thinking", startTime: "2026-01-01T00:00:00Z", time: "2026-01-01T00:01:05Z" } });
     expect(completed.textContent).toContain("Thought for 1m5s");
@@ -120,7 +121,7 @@ describe("timeline rendering components", () => {
     expect(details?.open).toBe(false);
   });
 
-  it("renders one activity disclosure with collapsed tool details and folds when live work ends", async () => {
+  it("renders a settled activity disclosure and flattens live children until work ends", async () => {
     const onExpand = vi.fn();
     const item = {
       kind: "activity", key: 2, thinkingCount: 2, reasoningUpdateCount: 3, toolCallCount: 1,
@@ -151,11 +152,22 @@ describe("timeline rendering components", () => {
     expect(completedTool.open).toBe(true);
 
     const activeTarget = target();
-    const active = mount(ActivityGroupHarness, { target: activeTarget, props: { item: { ...item, active: true }, onExpand: vi.fn() } });
+    const activeItem = { ...item, active: true, items: [item.items[0], item.items[1], { ...item.items[2], active: true }] };
+    const active = mount(ActivityGroupHarness, { target: activeTarget, props: { item: activeItem, onExpand: vi.fn() } });
     cleanups.push(() => unmount(active));
     expect(activeTarget.querySelector(".agent-activity-group")?.tagName).toBe("DIV");
     expect(activeTarget.querySelector(".agent-activity-title")).toBeNull();
     expect(activeTarget.querySelector(".agent-activity-tools")).toBeNull();
+    const completedThought = activeTarget.querySelector<HTMLDetailsElement>("details.agent-activity-thought")!;
+    expect(completedThought.open).toBe(false);
+    expect(completedThought.querySelector("summary")?.textContent).toContain("Thought for 2 seconds");
+    expect(completedThought.querySelector('[data-lucide="brain"]')).not.toBeNull();
+    completedThought.open = true;
+    completedThought.dispatchEvent(new Event("toggle"));
+    await tick();
+    expect(completedThought.open).toBe(true);
+    expect(activeTarget.querySelectorAll("section.agent-activity-thought")).toHaveLength(1);
+    expect(activeTarget.querySelector("section.agent-activity-thought")?.textContent).toContain("Thinking…");
     expect(activeTarget.querySelector<HTMLDetailsElement>(".agent-tool-item")?.open).toBe(false);
     active.replaceItem({ ...item, active: false });
     await tick();

@@ -31,6 +31,6 @@
 </script>
 
 <details data-component-owner="event-timeline" class="agent-reasoning-note" open={open} ontoggle={(event) => { open = event.currentTarget.open; if (event.currentTarget.open) onExpand(); }}>
-  <summary><Icon name="brain-circuit" /><span>{title()}</span><span class="agent-reasoning-chevron"><Icon name="chevron-right" /></span></summary>
+  <summary><Icon name="brain" /><span>{title()}</span><span class="agent-reasoning-chevron"><Icon name="chevron-right" /></span></summary>
   <p>{item.text || ""}</p>
 </details>
