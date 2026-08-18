@@ -119,11 +119,21 @@
 :where([data-component-owner="workspace-settings-panel"]) .settings-row-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  flex: 0 0 auto;
+  /* The row may shrink and wrap so the icon button label plus the rename and
+     remove buttons stay reachable inside narrow cards (e.g. a 220px mobile
+     viewport) instead of overflowing past the card's left edge. */
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-icon-button {
+  /* Allow the button to shrink below its content width; the label span
+     already carries min-width:0 so the text ellipsizes. */
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 190px;
   height: 30px;
   display: inline-flex;
@@ -326,9 +336,5 @@
   :where([data-component-owner="workspace-settings-panel"]) .settings-list-row {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  :where([data-component-owner="workspace-settings-panel"]) .settings-row-actions {
-    justify-content: flex-end;
   }
 }
