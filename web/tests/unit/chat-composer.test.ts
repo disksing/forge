@@ -35,6 +35,31 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
 }
 
 describe("ChatComposer", () => {
+  it("disables send for empty or whitespace-only drafts while keeping the input editable", async () => {
+    const onSend = vi.fn(async () => ({ accepted: true, clear: true }));
+    const channel = createModelChannel(model({ onSend }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
+    const send = target.querySelector<HTMLButtonElement>(".chat-send-button")!;
+    expect(input.disabled).toBe(false);
+    expect(send.disabled).toBe(true);
+
+    input.value = " \n ";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+    expect(send.disabled).toBe(true);
+    expect(onSend).not.toHaveBeenCalled();
+
+    input.value = "hello";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+    expect(send.disabled).toBe(false);
+  });
+
   it("does not overwrite input entered before the mount subscription settles", async () => {
     const channel = createModelChannel(model());
     const target = document.body.appendChild(document.createElement("div"));
