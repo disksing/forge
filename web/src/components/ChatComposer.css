@@ -224,7 +224,12 @@
   gap: 8px;
 }
 
+/* The options group must be allowed to shrink below its content width on
+   very narrow viewports (e.g. 220px): with the default min-width:auto the
+   agent binding label pins the group to its full content width and pushes
+   the send button past the right edge of the composer card. */
 :where([data-component-owner="chat-composer"]) .chat-composer-options {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -232,7 +237,8 @@
 
 :where([data-component-owner="chat-composer"]) .chat-agent-binding {
   position: relative;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
 }

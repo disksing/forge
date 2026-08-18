@@ -207,6 +207,51 @@ describe("CSS ownership", () => {
     expect(row).toContain("min-width: 0;");
   });
 
+  it("keeps the chat composer send button inside very narrow viewports", () => {
+    const body = (path: string, selector: string) => {
+      const css = read(path);
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    // At ~220px the agent binding label (e.g. "default (current: codex)") is
+    // wider than the composer card; every flex box on the chain from the
+    // composer bar to the label must allow shrinking so the label ellipsizes
+    // instead of pushing the send button past the right edge.
+    const options = body("src/components/ChatComposer.css", ':where([data-component-owner="chat-composer"]) .chat-composer-options');
+    expect(options).toContain("min-width: 0;");
+
+    const binding = body("src/components/ChatComposer.css", ':where([data-component-owner="chat-composer"]) .chat-agent-binding');
+    expect(binding).toContain("flex: 0 1 auto;");
+    expect(binding).toContain("min-width: 0;");
+
+    const button = body("src/components/AgentBindingSelector.css", ':where([data-component-owner="agent-binding-selector"]) .agent-binding-button');
+    expect(button).toContain("flex: 0 1 auto;");
+    expect(button).toContain("min-width: 0;");
+    expect(button).toContain("max-width: 100%;");
+
+    const label = body("src/components/AgentBindingSelector.css", ':where([data-component-owner="agent-binding-selector"]) .agent-binding-label');
+    expect(label).toContain("min-width: 0;");
+    expect(label).toContain("overflow: hidden;");
+    expect(label).toContain("text-overflow: ellipsis;");
+    expect(label).toContain("white-space: nowrap;");
+  });
+
+  it("wraps overlong chat message tokens without stranding trailing characters", () => {
+    // overflow-wrap:anywhere breaks a token at the exact overflow point and
+    // can leave a single trailing character on its own line; break-word only
+    // splits tokens that cannot fit on a line of their own.
+    const body = (selector: string) => {
+      const css = read("src/components/TimelineMessage.css");
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+    expect(body('.agent-message-bubble>p')).toContain("overflow-wrap: break-word;");
+    expect(body(':where([data-component-owner="event-timeline"]) .agent-message-content {')).toContain("overflow-wrap: break-word;");
+  });
+
   it("marks nested component roots with the same owner used by their CSS", () => {
 	    for (const component of ["AgentPanelHeader", "ActivityGroup", "AppearanceSettingsPanel", "ActivityPanel", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskWizard", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);

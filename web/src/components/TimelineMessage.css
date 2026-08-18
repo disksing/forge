@@ -113,7 +113,11 @@
   white-space: nowrap;
 }
 
-:where([data-component-owner="event-timeline"]) .agent-message-bubble>p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* break-word only splits an overlong token when it cannot fit on a line of
+   its own; anywhere breaks at the exact overflow point and can strand a
+   single trailing character on its own line (e.g. FIRST_SEND_RETRY_PROBE
+   losing its final "E" on a 220px viewport). */
+:where([data-component-owner="event-timeline"]) .agent-message-bubble>p { margin: 0; white-space: pre-wrap; overflow-wrap: break-word; }
 
 :where([data-component-owner="event-timeline"]) .agent-message-content {
   min-width: 0;
@@ -121,7 +125,7 @@
   color: inherit;
   font-size: calc(13px * var(--chat-font-scale, 1));
   line-height: 1.6;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-content pre { white-space: pre; }
