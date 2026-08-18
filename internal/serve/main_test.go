@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -296,6 +297,49 @@ func TestAddingExistingWorkspacePreservesIcon(t *testing.T) {
 	}
 	if readded.Icon != "research-lab" {
 		t.Fatalf("re-adding workspace changed icon to %q", readded.Icon)
+	}
+}
+
+func TestCreateWorkspaceUsesRequestedContentLanguage(t *testing.T) {
+	workspacePath := filepath.Join(t.TempDir(), "created-workspace")
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	body := strings.NewReader(fmt.Sprintf(`{"path":%q,"create":true,"language":"zh-CN"}`, workspacePath))
+	recorder := httptest.NewRecorder()
+	s.handleWorkspaces(recorder, httptest.NewRequest(http.MethodPost, "/api/workspaces", body))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("create Workspace returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	workspace, err := app.OpenWorkspace(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	language, err := workspace.Language()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if language != "zh-CN" {
+		t.Fatalf("created Workspace language = %q", language)
+	}
+	agents, err := os.ReadFile(filepath.Join(workspacePath, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(agents), "Agent 工作指引") {
+		t.Fatalf("created Workspace instructions were not localized:\n%s", agents)
+	}
+}
+
+func TestCreateWorkspaceRejectsInvalidLanguageBeforeCreatingDirectory(t *testing.T) {
+	workspacePath := filepath.Join(t.TempDir(), "must-not-exist")
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	body := strings.NewReader(fmt.Sprintf(`{"path":%q,"create":true,"language":"fr"}`, workspacePath))
+	recorder := httptest.NewRecorder()
+	s.handleWorkspaces(recorder, httptest.NewRequest(http.MethodPost, "/api/workspaces", body))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid language returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if _, err := os.Stat(workspacePath); !os.IsNotExist(err) {
+		t.Fatalf("invalid language created the directory: %v", err)
 	}
 }
 

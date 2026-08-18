@@ -312,14 +312,15 @@ func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, workspacesResponse{config: cfg, Revision: settingsRevision(cfg, cfg.Workspaces)})
 	case http.MethodPost:
 		var body struct {
-			Path   string `json:"path"`
-			Create bool   `json:"create"`
+			Path     string `json:"path"`
+			Create   bool   `json:"create"`
+			Language string `json:"language"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
-		workspace, err := s.addWorkspaceWithOptions(r.Context(), body.Path, body.Create)
+		workspace, err := s.addWorkspaceWithOptions(r.Context(), body.Path, body.Create, body.Language)
 		if err != nil {
 			var conflict *workspaceLockConflictError
 			if errors.As(err, &conflict) {
@@ -1421,13 +1422,22 @@ func (s *server) addCurrentDirectoryIfEmpty(ctx context.Context) {
 }
 
 func (s *server) addWorkspace(ctx context.Context, path string) (serveWorkspace, error) {
-	return s.addWorkspaceWithOptions(ctx, path, false)
+	return s.addWorkspaceWithOptions(ctx, path, false, "")
 }
 
-func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, create bool) (workspace serveWorkspace, err error) {
+func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, create bool, language string) (workspace serveWorkspace, err error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return serveWorkspace{}, errors.New("workspace path is required")
+	}
+	if !create && strings.TrimSpace(language) != "" {
+		return serveWorkspace{}, errors.New("language is only valid when creating a Workspace")
+	}
+	if create {
+		language, err = app.NormalizeLanguage(language)
+		if err != nil {
+			return serveWorkspace{}, err
+		}
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -1462,7 +1472,7 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 		if !create {
 			return serveWorkspace{}, err
 		}
-		if _, initErr := app.Initialize(canonical, ""); initErr != nil {
+		if _, initErr := app.Initialize(canonical, language); initErr != nil {
 			return serveWorkspace{}, initErr
 		}
 		tree, err = s.treeAt(ctx, canonical)

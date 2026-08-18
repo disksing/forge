@@ -46,6 +46,7 @@
       await onAddWorkspace(cloneSettingsDraft(draft));
       draft.workspacePath = "";
       draft.createWorkspace = false;
+      draft.workspaceLanguage = "en";
     } catch (error) {
       onToast(settingsErrorMessage(error));
     } finally {
@@ -135,6 +136,15 @@
       <input id="settingsWorkspaceCreate" type="checkbox" bind:checked={draft.createWorkspace} />
       <span>Create directory and run pua init</span>
     </label>
+    {#if draft.createWorkspace}
+      <label class="settings-language" for="settingsWorkspaceLanguage">
+        <span>Generated content language</span>
+        <select id="settingsWorkspaceLanguage" bind:value={draft.workspaceLanguage} disabled={Boolean(pending)}>
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+        </select>
+      </label>
+    {/if}
     <button type="submit" disabled={Boolean(pending)}><Icon name="plus" /><span>{draft.createWorkspace ? "Create" : "Add"}</span></button>
   </form>
   <div class="settings-list">

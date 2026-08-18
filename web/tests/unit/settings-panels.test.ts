@@ -90,12 +90,20 @@ describe("settings domain panels", () => {
     await tick();
 
     input(target.querySelector<HTMLInputElement>("#settingsWorkspacePath")!, " /tmp/new ");
+    expect(target.querySelector("#settingsWorkspaceLanguage")).toBeNull();
+    target.querySelector<HTMLInputElement>("#settingsWorkspaceCreate")!.click();
+    await tick();
+    const language = target.querySelector<HTMLSelectElement>("#settingsWorkspaceLanguage")!;
+    language.value = "zh-CN";
+    language.dispatchEvent(new Event("change", { bubbles: true }));
     target.querySelector<HTMLButtonElement>('[type="submit"]')!.click();
     target.querySelector<HTMLButtonElement>('[type="submit"]')!.click();
     await tick();
     expect(current.onAddWorkspace).toHaveBeenCalledTimes(1);
     expect(target.querySelector<HTMLButtonElement>('[type="submit"]')?.disabled).toBe(true);
-    expect(current.onAddWorkspace).toHaveBeenCalledWith(expect.objectContaining({ workspacePath: " /tmp/new " }));
+    expect(current.onAddWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      workspacePath: " /tmp/new ", createWorkspace: true, workspaceLanguage: "zh-CN",
+    }));
 
     add.resolve();
     await vi.waitFor(() => expect(target.querySelector<HTMLButtonElement>('[type="submit"]')?.disabled).toBe(false));

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/localize"
 )
 
 const doctorUsage = "usage: pua doctor [--json] [--server=<url>]"
@@ -42,6 +43,10 @@ func runDoctor(args []string) error {
 	if err != nil {
 		return err
 	}
+	language, languageErr := workspace.Language()
+	if languageErr != nil {
+		language = localize.English
+	}
 	options := app.DoctorOptions{}
 	client, _, clientErr := newResourceServerClient(serverURL)
 	if clientErr != nil {
@@ -72,8 +77,9 @@ func runDoctor(args []string) error {
 	}
 	report, err := app.CheckWorkspace(workspace.Root(), options)
 	if err != nil {
-		return doctorExitError{code: 2, message: "doctor could not inspect the Workspace: " + err.Error()}
+		return doctorExitError{code: 2, message: doctorCLIText(language, map[string]any{"Kind": "inspection_failed", "Error": err.Error()})}
 	}
+	language = report.Language
 	if jsonOutput {
 		if err := printJSON(report); err != nil {
 			return err
@@ -82,18 +88,22 @@ func runDoctor(args []string) error {
 		printDoctorReport(report)
 	}
 	if !report.Complete {
-		return doctorExitError{code: 2, message: "doctor checks were incomplete"}
+		return doctorExitError{code: 2, message: doctorCLIText(language, map[string]any{"Kind": "incomplete"})}
 	}
 	if report.Summary.Errors > 0 {
-		return doctorExitError{code: 1, message: "doctor found errors"}
+		return doctorExitError{code: 1, message: doctorCLIText(language, map[string]any{"Kind": "found_errors"})}
 	}
 	return nil
 }
 
 func printDoctorReport(report app.DoctorReport) {
-	fmt.Printf("Workspace: %s\n", report.Workspace)
+	language := report.Language
+	if language == "" {
+		language = localize.English
+	}
+	fmt.Println(doctorCLIText(language, map[string]any{"Kind": "workspace", "Workspace": report.Workspace}))
 	if len(report.Issues) == 0 {
-		fmt.Println("Doctor: healthy")
+		fmt.Println(doctorCLIText(language, map[string]any{"Kind": "healthy"}))
 		return
 	}
 	issues := append([]app.DoctorIssue(nil), report.Issues...)
@@ -111,12 +121,22 @@ func printDoctorReport(report app.DoctorReport) {
 		if issue.ResourceID != "" {
 			location = issue.ResourceID + " " + location
 		}
-		fmt.Printf("%s [%s] %s: %s\n", strings.ToUpper(issue.Severity), issue.Code, location, issue.Message)
+		severity := strings.ToUpper(issue.Severity)
+		if issue.Severity == app.DoctorSeverityError || issue.Severity == app.DoctorSeverityWarning {
+			severity = doctorCLIText(language, map[string]any{"Kind": issue.Severity + "_severity"})
+		}
+		fmt.Printf("%s [%s] %s: %s\n", severity, issue.Code, location, issue.Message)
 		if issue.Suggestion != "" {
-			fmt.Printf("  Suggestion: %s\n", issue.Suggestion)
+			fmt.Println(doctorCLIText(language, map[string]any{"Kind": "suggestion", "Suggestion": issue.Suggestion}))
 		}
 	}
-	fmt.Printf("Summary: %d error(s), %d warning(s)\n", report.Summary.Errors, report.Summary.Warnings)
+	fmt.Println(doctorCLIText(language, map[string]any{
+		"Kind": "summary", "Errors": report.Summary.Errors, "Warnings": report.Summary.Warnings,
+	}))
+}
+
+func doctorCLIText(language string, data map[string]any) string {
+	return strings.TrimSpace(localize.MustRender(language, "doctor-cli.txt", data))
 }
 
 func printDoctorHelp() {

@@ -119,6 +119,27 @@ func TestDoctorTextReportIncludesResourceID(t *testing.T) {
 	})
 }
 
+func TestDoctorTextReportUsesWorkspaceLanguage(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init", "--language=zh-CN")
+		if err := os.Remove(filepath.Join(root, "AGENTS.md")); err != nil {
+			t.Fatal(err)
+		}
+		server := doctorCatalogServer(t)
+		defer server.Close()
+
+		output, err := runErr(t, "doctor", "--server="+server.URL)
+		if err == nil || !strings.Contains(err.Error(), "Doctor 发现错误") {
+			t.Fatalf("localized doctor exit = %v", err)
+		}
+		for _, expected := range []string{"Workspace：", "错误 [agents_file_missing]", "AGENTS.md 缺失", "建议：", "摘要："} {
+			if !strings.Contains(output, expected) {
+				t.Fatalf("doctor output missing %q:\n%s", expected, output)
+			}
+		}
+	})
+}
+
 func errorsAsExit(err error, target *interface{ ExitCode() int }) bool {
 	value, ok := err.(interface{ ExitCode() int })
 	if ok {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/localize"
 )
 
 const doctorScanInterval = time.Minute
@@ -111,12 +112,21 @@ func (m *doctorMonitor) scan(ctx context.Context) {
 	for _, workspace := range cfg.Workspaces {
 		report, scanErr := app.CheckWorkspace(workspace.Path, options)
 		if scanErr != nil {
+			language, languageErr := workspaceContentLanguage(workspace.Path)
+			if languageErr != nil {
+				language = localize.English
+			}
+			messageData := map[string]string{"Code": "workspace_scan_failed", "Original": scanErr.Error()}
+			suggestionData := map[string]string{
+				"Code": "workspace_scan_failed", "Original": "Restore the configured Workspace path and read access.",
+			}
 			report = app.DoctorReport{
-				Workspace: workspace.Path, CheckedAt: checkedAt, Complete: false,
+				Workspace: workspace.Path, Language: language, CheckedAt: checkedAt, Complete: false,
 				Summary: app.DoctorSummary{Errors: 1},
 				Issues: []app.DoctorIssue{{
-					Severity: app.DoctorSeverityError, Code: "workspace_scan_failed", Message: scanErr.Error(),
-					Suggestion: "Restore the configured Workspace path and read access.",
+					Severity: app.DoctorSeverityError, Code: "workspace_scan_failed",
+					Message:    strings.TrimSpace(localize.MustRender(language, "doctor-message.txt", messageData)),
+					Suggestion: strings.TrimSpace(localize.MustRender(language, "doctor-suggestion.txt", suggestionData)),
 				}},
 			}
 		}
