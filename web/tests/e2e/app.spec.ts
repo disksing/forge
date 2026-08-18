@@ -1526,6 +1526,28 @@ test("manages users in the Workspace resource settings instead of System Setting
   await expect(systemSettings.getByRole("heading", { name: "Workspace users", exact: true })).toHaveCount(0);
 });
 
+test("keeps the workspace Users card actions inside a 390px mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockApi(page, "workspace");
+  await page.goto("/w/ws-test");
+
+  await page.getByRole("tab", { name: "Settings", exact: true }).click();
+  const details = page.locator("#detailsPanel");
+  const deleteButton = details.getByTitle("Switch to another user before deleting this user");
+  await expect(deleteButton).toBeVisible();
+
+  // The details scroll container must not grow a horizontal scrollbar.
+  const horizontalOverflow = await page.locator("#detailsContent").evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+
+  // The Delete action stays fully inside the 390px viewport instead of being
+  // clipped past the card's right edge.
+  const box = await deleteButton.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+});
+
 test("keeps canonical navigation synchronized across history, workspace restore, and reorder rollback", async ({ page }) => {
   const harness = await installShellMockApi(page);
   await page.goto("/w/ws-a/r/project1.task1");
