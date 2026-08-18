@@ -1864,3 +1864,51 @@ test("keeps Profiles settings cards inside the 390px mobile viewport without hor
   await expect(settings.getByLabel("Summary")).toBeVisible();
   await assertNoHorizontalOverflow();
 });
+
+test("keeps Workspace settings card actions inside a 220px mobile viewport without left clipping", async ({ page }) => {
+  await page.setViewportSize({ width: 220, height: 844 });
+  await installMockApi(page, "project1");
+  // Later-registered routes win: list several workspaces like the production
+  // environment that surfaced the clipped "PUA default" action buttons.
+  await page.route("**/api/workspaces", (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        version: 3,
+        activeId: "ws-test",
+        workspaces: [
+          { id: "ws-test", name: "Isolated E2E", path: "/tmp/pua-e2e" },
+          { id: "ws-alpha", name: "Alpha Projects", path: "/tmp/pua-alpha" },
+          { id: "ws-beta", name: "Beta Projects", path: "/tmp/pua-beta" },
+        ],
+        agentProfiles: [{ key: "default", agentName: "test-agent" }],
+      }),
+    });
+  });
+  await page.goto("/w/ws-test/r/project1");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.locator("#systemSettingsButton").click();
+  const settings = page.getByRole("dialog", { name: "System Settings" });
+  const entries = settings.locator(".settings-workspace-entry");
+  await expect(entries).toHaveCount(3);
+
+  // The settings content viewport must not grow a horizontal scrollbar.
+  const content = settings.locator(".settings-content");
+  const overflow = await content.evaluate((node) => node.scrollWidth - node.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  // Every workspace card action (icon picker, rename, remove) stays fully
+  // inside the modal content area instead of being clipped past its left edge.
+  const contentBox = (await content.boundingBox())!;
+  for (const entry of await entries.all()) {
+    for (const action of await entry.locator(".settings-row-actions button").all()) {
+      const box = await action.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(contentBox.x);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+    }
+  }
+});
