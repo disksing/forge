@@ -108,6 +108,25 @@ describe("AppShell responsibility components", () => {
     expect(target.querySelector("#workspaceMenu")).toBeNull();
   });
 
+  it("WorkspaceSwitcher exposes the full workspace name and path on menu options", async () => {
+    const name = "workspace-title-that-is-intentionally-very-long-for-ellipsis-validation-task415";
+    const path = "/Users/disksing/projects/pua-test/workspaces/workspace-title-that-is-intentionally-very-long-for-ellipsis-validation-task415";
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(WorkspaceSwitcher, { target, props: {
+      identity: "workspace-a", mobileSidebarOpen: false, activeWorkspaceId: "workspace-a",
+      workspaces: [{ id: "workspace-a", name, path, iconSrc: "/favicon.svg" }],
+      onSwitch: vi.fn(async () => undefined), onOpen: vi.fn(async () => undefined), onAdd: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelector<HTMLButtonElement>("#workspaceSwitcher")!.click();
+    await tick();
+    const option = target.querySelector<HTMLButtonElement>('[role="option"]')!;
+    expect(option.title).toBe(`${name} — ${path}`);
+    expect(option.getAttribute("aria-label")).toBe(`${name} — ${path}`);
+  });
+
   it("WorkspaceSwitcher keeps its status icon static and toggles busy through a class", async () => {
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(WorkspaceSwitcher, { target, props: {
