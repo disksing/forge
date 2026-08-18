@@ -1550,7 +1550,7 @@ test("keeps canonical navigation synchronized across history, workspace restore,
   expect(harness.uiStateBodies.some((entry) => entry.workspaceId === "ws-a" && Object.keys((entry.body.taskOrder as Record<string, unknown>) || {}).length > 0)).toBe(true);
 });
 
-test("keeps mobile navigation, view selection, and immersive preference in the Svelte app shell", async ({ page }) => {
+test("keeps mobile navigation and view selection in the Svelte app shell", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installShellMockApi(page);
   await page.goto("/w/ws-a/r/project1.task1");
@@ -1562,13 +1562,8 @@ test("keeps mobile navigation, view selection, and immersive preference in the S
   await page.locator("#mobileChatButton").click();
   await expect(page.locator("body")).toHaveClass(/mobile-chat-active/);
   await expect(page.locator("#agentPanel")).toBeVisible();
-  await page.locator("#mobileImmersiveButton").click();
-  await expect(page.locator("body")).toHaveClass(/chat-immersive/);
-  await expect(page.locator("#mobileImmersiveButton")).toHaveAttribute("aria-pressed", "true");
 
   await page.reload();
-  await expect(page.locator("body")).toHaveClass(/chat-immersive/);
-  await expect(page.locator("#mobileImmersiveButton")).toHaveAttribute("aria-pressed", "true");
   await page.locator("#mobileDetailsButton").click();
   await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
   await expect(page.locator("#detailsPanel")).toBeVisible();

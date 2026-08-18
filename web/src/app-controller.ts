@@ -1011,7 +1011,6 @@ function renderAppShell() {
 		onPaneViewport: () => syncPaneViewport(),
 		onMobileSidebar: (open) => setMobileSidebar(open),
 		onMobileView: (view) => setMobileView(view),
-		onMobileImmersive: (immersive) => setMobileImmersive(immersive),
 		onHistoryNavigation: (pathname) => handleHistoryNavigation(pathname),
 		onToast: toast
 	});
@@ -2118,9 +2117,6 @@ function setMobileSidebar(open: boolean): void {
 }
 function setMobileView(view: AppShellModel["mobile"]["view"]): void {
 	paneLayoutController.setMobileView(view);
-}
-function setMobileImmersive(immersive: boolean): void {
-	paneLayoutController.setMobileImmersive(immersive);
 }
 function installControllerListeners(): void {
 	lifecycle?.listen(document, "selectionchange", () => {
