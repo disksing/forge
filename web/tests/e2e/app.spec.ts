@@ -1732,3 +1732,83 @@ test("keeps every task details tab reachable without horizontal scrolling in a 3
   await settingsTab.click();
   await expect(settingsTab).toHaveAttribute("aria-selected", "true");
 });
+
+test("keeps Profiles settings cards inside the 390px mobile viewport without horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockApi(page, "project1.task1");
+  // Later-registered routes win: serve profiles with realistic long
+  // descriptions like the production environment that surfaced the bug.
+  const describedProfiles = [
+    { key: "default", description: "Balanced, recommended agent", agentName: "test-agent" },
+    { key: "fast", description: "Faster responses for simple tasks", agentName: "test-agent" },
+    { key: "reasoning", description: "More thorough reasoning for complex tasks", agentName: "other-agent" },
+  ];
+  await page.route("**/api/workspaces", (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        version: 3,
+        activeId: "ws-test",
+        workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/pua-e2e" }],
+        agentProfiles: describedProfiles,
+      }),
+    });
+  });
+  await page.route("**/api/settings/agenthub", (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        config: { agentProfiles: describedProfiles },
+        connected: true,
+        compatible: true,
+        catalog: {
+          providers: [{ id: "test", name: "Test Provider", enabled: true }],
+          agents: ["test-agent", "other-agent"].map((name) => ({ name, providerId: "test", available: true })),
+          probes: [],
+        },
+      }),
+    });
+  });
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.locator("#systemSettingsButton").click();
+  const settings = page.getByRole("dialog", { name: "System Settings" });
+  await settings.getByRole("button", { name: "Profiles" }).click();
+  const addProfile = settings.getByRole("button", { name: "Add profile" });
+  await expect(addProfile).toBeVisible();
+
+  const assertNoHorizontalOverflow = async () => {
+    // The settings content viewport must not grow a horizontal scrollbar.
+    const overflow = await settings.locator(".settings-content").evaluate((node) => node.scrollWidth - node.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+
+    // Every profile card, its delete action and the Add profile button stay
+    // inside the modal content area.
+    const contentBox = (await settings.locator(".settings-content").boundingBox())!;
+    for (const card of await settings.locator(".settings-profile-card").all()) {
+      const box = await card.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(contentBox.x);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+    }
+    for (const action of await settings.locator(".settings-profile-card .settings-danger-button").all()) {
+      const box = await action.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x + box!.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+    }
+    const addBox = (await addProfile.boundingBox())!;
+    expect(addBox.x + addBox.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+  };
+  await assertNoHorizontalOverflow();
+
+  // Expanding a card to edit it must not reintroduce overflow either.
+  await settings.getByRole("button", { name: "Delete profile reasoning" }).waitFor();
+  await settings.locator(".settings-profile-card-toggle", { hasText: "reasoning" }).click();
+  await expect(settings.getByLabel("Summary")).toBeVisible();
+  await assertNoHorizontalOverflow();
+});
