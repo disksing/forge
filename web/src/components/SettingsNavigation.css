@@ -54,7 +54,12 @@
 @media (max-width:980px) {
   :where([data-component-owner="settings-navigation"]) {
     flex-direction: row;
-    overflow-x: auto;
+    /* Narrow viewports cannot fit every tab in one row. Wrap the overflow
+       onto extra rows so trailing tabs (AgentHub, Profiles, Notifications)
+       stay discoverable instead of hiding behind horizontal scrolling.
+       When the tabs do fit, wrapping leaves the single-row layout unchanged. */
+    flex-wrap: wrap;
+    overflow-x: visible;
     border-right: 0;
     border-bottom: 1px solid #dcdfe4;
   }
