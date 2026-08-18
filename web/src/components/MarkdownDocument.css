@@ -40,3 +40,13 @@
 :where([data-component-owner="markdown-document"]) .markdown-preview .markdown-view {
   max-height: none;
 }
+
+@media (max-width: 980px) {
+  /* The global mobile rule forces .secondary-button to width:100%. Inside this
+     shrink-to-fit, absolutely positioned action bar that makes every button as
+     wide as the whole bar, pushing the trailing buttons outside the viewport
+     and causing horizontal overflow. Keep the buttons at content width here. */
+  :where([data-component-owner="markdown-document"]) .markdown-document-actions .secondary-button {
+    width: auto;
+  }
+}

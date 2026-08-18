@@ -780,6 +780,29 @@ test("annotates read-only Markdown through the dialog and copies the review", as
   await dialog.getByRole("button", { name: "Close" }).click();
 });
 
+test("keeps workspace Markdown actions inside the mobile viewport without horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockApi(page, "workspace");
+  await page.goto("/w/ws-test");
+  const details = page.locator("#detailsPanel");
+  const editButton = details.getByRole("button", { name: "Edit", exact: true });
+  const annotateButton = details.getByRole("button", { name: "Annotate", exact: true });
+  await expect(editButton).toBeVisible();
+  await expect(annotateButton).toBeVisible();
+
+  // The details scroll container must not grow a horizontal scrollbar.
+  const horizontalOverflow = await page.locator("#detailsContent").evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+
+  // Both actions stay fully inside the 390px viewport.
+  for (const button of [editButton, annotateButton]) {
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  }
+});
+
 test("grows the agent binding menu to fit long agent lists", async ({ page }) => {
   const extraAgents = ["gpt-5.3-codex-spark", "gpt-5.6-sol", "kimi-k3", "grok-4.5", "gemini-3.1-pro", "gpt-5.6-luna", "pi-kimi", "deepseek-v4-pro"];
   await installMockApi(page, "project1.task1", false, false, false, extraAgents);
