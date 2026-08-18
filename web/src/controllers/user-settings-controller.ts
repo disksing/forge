@@ -11,10 +11,15 @@ export function sanitizeUserNameInput(value: unknown): string {
 
 export function validateUserName(value: unknown): string {
 	const name = String(value || "");
-	if (!name) return "User";
+	if (!name) throw new Error("User name is required.");
 	if (name.length > USER_NAME_MAX_LENGTH) throw new Error(`User name must be at most ${USER_NAME_MAX_LENGTH} characters.`);
 	if (!USER_NAME_PATTERN.test(name)) throw new Error("User name may contain only letters, numbers, underscores, and hyphens.");
 	return name;
+}
+
+export function normalizeUserNameForSave(value: unknown): string {
+	const name = String(value || "");
+	return name ? validateUserName(name) : "User";
 }
 
 export function normalizeUserName(value: unknown): string {
@@ -50,7 +55,7 @@ export function createUserSettingsController(scope: ResourceScope, onChange: () 
 	}
 
 	function save(value: unknown): string {
-		const normalized = validateUserName(value);
+		const normalized = normalizeUserNameForSave(value);
 		try {
 			window.localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify({
 				version: USER_SETTINGS_VERSION,

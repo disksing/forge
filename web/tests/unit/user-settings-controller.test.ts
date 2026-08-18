@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createUserSettingsController, decodeStoredUserName, sanitizeUserNameInput, validateUserName } from "../../src/controllers/user-settings-controller";
+import { createUserSettingsController, decodeStoredUserName, normalizeUserNameForSave, sanitizeUserNameInput, validateUserName } from "../../src/controllers/user-settings-controller";
 import { ResourceScope } from "../../src/runtime/resource-scope";
 
 const storedValues = new Map<string, string>();
@@ -24,8 +24,9 @@ describe("user settings validation", () => {
     expect(sanitizeUserNameInput("Alice 张/.._2-test")).toBe("Alice_2-test");
   });
 
-  it("uses User for an empty name and rejects non-identifier names", () => {
-    expect(validateUserName("")).toBe("User");
+  it("keeps validation strict and normalizes an empty save to User", () => {
+    expect(() => validateUserName("")).toThrow("required");
+    expect(normalizeUserNameForSave("")).toBe("User");
     expect(() => validateUserName("two words")).toThrow("only letters");
     expect(() => validateUserName("name.dot")).toThrow("only letters");
     expect(validateUserName("User_2-test")).toBe("User_2-test");
