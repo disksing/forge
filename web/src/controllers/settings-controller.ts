@@ -240,7 +240,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 
 	async function addWorkspace(): Promise<void> {
 		const path = state.workspacePath.trim();
-		if (!path) throw new Error("Workspace path is required.");
+		if (!path) return;
 		const created = state.createWorkspace;
 		const workspace = await dependencies.request<SettingsWorkspace>("/api/workspaces", {
 			method: "POST", body: JSON.stringify({

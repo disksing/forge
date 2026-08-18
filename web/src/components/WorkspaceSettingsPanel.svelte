@@ -34,13 +34,15 @@
   let nameDraft = $state("");
   let nameInput = $state<HTMLInputElement | null>(null);
 
+  const workspacePathMissing = $derived(!draft.workspacePath.trim());
+
   $effect(() => {
     if (nameEditing && nameInput) nameInput.focus();
   });
 
   async function addWorkspace(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    if (!draft.workspacePath.trim() || pending) return;
+    if (workspacePathMissing || pending) return;
     pending = "workspace";
     try {
       await onAddWorkspace(cloneSettingsDraft(draft));
@@ -131,7 +133,15 @@
     <p>Add existing AgentWorkspace folders or create and initialize a new PUA workspace.</p>
   </div>
   <form id="settingsWorkspaceForm" class="settings-path-form" onsubmit={addWorkspace}>
-    <input id="settingsWorkspacePath" bind:value={draft.workspacePath} placeholder="/Users/me/Documents/AgentWorkspace" />
+    <input
+      id="settingsWorkspacePath"
+      bind:value={draft.workspacePath}
+      required
+      aria-invalid={workspacePathMissing}
+      aria-describedby={workspacePathMissing ? "settings-workspace-path-error" : undefined}
+      placeholder="/Users/me/Documents/AgentWorkspace"
+    />
+    {#if workspacePathMissing}<p id="settings-workspace-path-error" class="settings-field-error" role="alert">Workspace path is required.</p>{/if}
     <label class="settings-check">
       <input id="settingsWorkspaceCreate" type="checkbox" bind:checked={draft.createWorkspace} />
       <span>Create directory and run pua init</span>
@@ -145,7 +155,7 @@
         </select>
       </label>
     {/if}
-    <button type="submit" disabled={Boolean(pending)}><Icon name="plus" /><span>{draft.createWorkspace ? "Create" : "Add"}</span></button>
+    <button type="submit" disabled={Boolean(pending) || workspacePathMissing}><Icon name="plus" /><span>{draft.createWorkspace ? "Create" : "Add"}</span></button>
   </form>
   <div class="settings-list">
     {#each workspaces as workspace (workspace.id)}

@@ -89,7 +89,22 @@ describe("settings domain panels", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
+    const pathInput = target.querySelector<HTMLInputElement>("#settingsWorkspacePath")!;
+    const addButton = target.querySelector<HTMLButtonElement>("#settingsWorkspaceForm [type=\"submit\"]")!;
+    expect(pathInput.required).toBe(true);
+    expect(pathInput.getAttribute("aria-invalid")).toBe("true");
+    expect(pathInput.getAttribute("aria-describedby")).toBe("settings-workspace-path-error");
+    expect(target.querySelector("#settings-workspace-path-error")?.textContent).toContain("required");
+    expect(addButton.disabled).toBe(true);
+    addButton.click();
+    expect(current.onAddWorkspace).not.toHaveBeenCalled();
+
     input(target.querySelector<HTMLInputElement>("#settingsWorkspacePath")!, " /tmp/new ");
+    await tick();
+    expect(pathInput.getAttribute("aria-invalid")).toBe("false");
+    expect(pathInput.getAttribute("aria-describedby")).toBeNull();
+    expect(target.querySelector("#settings-workspace-path-error")).toBeNull();
+    expect(addButton.disabled).toBe(false);
     expect(target.querySelector("#settingsWorkspaceLanguage")).toBeNull();
     target.querySelector<HTMLInputElement>("#settingsWorkspaceCreate")!.click();
     await tick();
@@ -106,8 +121,8 @@ describe("settings domain panels", () => {
     }));
 
     add.resolve();
-    await vi.waitFor(() => expect(target.querySelector<HTMLButtonElement>('[type="submit"]')?.disabled).toBe(false));
-    expect(target.querySelector<HTMLInputElement>("#settingsWorkspacePath")?.value).toBe("");
+    await vi.waitFor(() => expect(target.querySelector<HTMLInputElement>("#settingsWorkspacePath")?.value).toBe(""));
+    expect(target.querySelector<HTMLButtonElement>('[type="submit"]')?.disabled).toBe(true);
 
     target.querySelector<HTMLButtonElement>('[title="Change workspace icon"]')!.click();
     await tick();
