@@ -341,6 +341,12 @@
 
   :where([data-component-owner="detail-panel"]) .details-tabs {
     padding: 0 10px;
+    /* Narrow panes cannot fit every tab in one row. Wrap the overflow onto
+       extra rows so trailing tabs (and the Settings tab) stay discoverable
+       instead of hiding behind horizontal scrolling. When the tabs do fit,
+       wrapping leaves the single-row layout unchanged. */
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
 
   :where([data-component-owner="detail-panel"]) .worktree-row {

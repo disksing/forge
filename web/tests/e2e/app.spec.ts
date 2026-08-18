@@ -1686,3 +1686,31 @@ test("lets users scale the text of each column independently from the Appearance
   expect(await rootStyle()).toEqual({ sidebar: "1", details: "1", chat: "1" });
   await expect(page.locator(".appearance-reset")).toBeDisabled();
 });
+
+test("keeps every task details tab reachable without horizontal scrolling in a 390px mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const panel = page.locator("#detailsPanel");
+  const tabs = panel.locator(".details-tabs");
+  await expect(tabs).toBeVisible();
+  await expect(tabs.locator('[role="tab"]')).toHaveText(["Task", "History", "Artifacts", "Worktrees", "Settings"]);
+
+  // The tab strip itself must not overflow the pane horizontally.
+  const tabStrip = await tabs.evaluate((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }));
+  expect(tabStrip.scroll).toBeLessThanOrEqual(tabStrip.client);
+
+  // Every tab, including the trailing Settings tab, stays inside the viewport.
+  for (const tab of await tabs.locator('[role="tab"]').all()) {
+    const box = await tab.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  }
+
+  // The trailing tab can be activated directly, without scrolling it into view.
+  const settingsTab = tabs.getByRole("tab", { name: "Settings" });
+  await settingsTab.click();
+  await expect(settingsTab).toHaveAttribute("aria-selected", "true");
+});
