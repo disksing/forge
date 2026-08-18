@@ -1732,3 +1732,33 @@ test("keeps every task details tab reachable without horizontal scrolling in a 3
   await settingsTab.click();
   await expect(settingsTab).toHaveAttribute("aria-selected", "true");
 });
+
+test("keeps every System Settings tab reachable without horizontal scrolling in a 390px mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+
+  await page.locator("#mobileMenuButton").click();
+  await page.locator("#systemSettingsButton").click();
+  const settings = page.getByRole("dialog", { name: "System Settings" });
+  const tabs = settings.locator(".settings-tabs");
+  await expect(tabs).toBeVisible();
+  await expect(tabs.locator(".settings-tab")).toHaveText(["Workspace", "User", "Appearance", "AgentHub", "Profiles", "Notifications"]);
+
+  // The tab strip itself must not overflow the modal horizontally.
+  const tabStrip = await tabs.evaluate((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }));
+  expect(tabStrip.scroll).toBeLessThanOrEqual(tabStrip.client);
+
+  // Every tab, including the trailing AgentHub/Profiles/Notifications tabs, stays inside the viewport.
+  for (const tab of await tabs.locator(".settings-tab").all()) {
+    const box = await tab.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  }
+
+  // The trailing tab can be activated directly, without scrolling it into view.
+  const notificationsTab = tabs.locator(".settings-tab", { hasText: "Notifications" });
+  await notificationsTab.click();
+  await expect(notificationsTab).toHaveAttribute("aria-current", "page");
+});
