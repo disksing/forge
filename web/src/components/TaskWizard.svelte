@@ -14,6 +14,7 @@
   let step = $state(0);
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
+  const hasTemplateStep = $derived(model.templates.length > 0);
   const selectedTemplate = $derived(model.templates.find((item) => item.name === draft.templateName));
   // Templates with a taskTitle pattern generate the title from their fields;
   // the wizard hides the manual title input in that case.
@@ -31,7 +32,15 @@
     (draft.startBinding.kind !== model.defaultTaskBinding.kind ||
       draft.startBinding.name.trim().toLowerCase() !== model.defaultTaskBinding.name.trim().toLowerCase()));
 
-  const stepLabels = $derived(["Template", "Title & slug", selectedTemplate ? "Template fields" : "Details", "Start options"]);
+  // A project without templates has no meaningful template-selection step.
+  // Start with the title form instead of showing an empty step that only
+  // contains a misleading "Choose a template" heading.
+  const titleStep = $derived(hasTemplateStep ? 1 : 0);
+  const detailsStep = $derived(hasTemplateStep ? 2 : 1);
+  const startStep = $derived(hasTemplateStep ? 3 : 2);
+  const stepLabels = $derived(hasTemplateStep
+    ? ["Template", "Title & slug", selectedTemplate ? "Template fields" : "Details", "Start options"]
+    : ["Title & slug", "Details", "Start options"]);
   const lastStep = $derived(stepLabels.length - 1);
   const summaryTitle = $derived(hasGeneratedTitle ? generatedTitle || "(generated on create)" : draft.title.trim() || "—");
 
@@ -94,9 +103,9 @@
 
   function canProceed(): boolean {
     if (model.submitting) return false;
-    if (step === 1 && !hasGeneratedTitle) return Boolean(draft.title.trim());
-    if (step === 2) return missingRequired.length === 0;
-    if (step === 3 && draft.startAfterCreate) return Boolean(draft.startPrompt.trim());
+    if (step === titleStep && !hasGeneratedTitle) return Boolean(draft.title.trim());
+    if (step === detailsStep) return missingRequired.length === 0;
+    if (step === startStep && draft.startAfterCreate) return Boolean(draft.startPrompt.trim());
     return true;
   }
 
@@ -145,18 +154,11 @@
   </ol>
 
   <div class="wizard-body">
-    {#if step === 0}
-      {#if model.templates.length}
-        <TemplatePicker templates={model.templates} selectedName={draft.templateName} disabled={model.submitting} onSelect={changeTemplate} />
-      {:else}
-        <section class="create-section" aria-label="Template">
-          <div class="create-section-title">Choose a template</div>
-          <p class="wizard-hint">This project has no templates yet — the task starts blank and you can write the detail in the next steps.</p>
-        </section>
-      {/if}
+    {#if hasTemplateStep && step === 0}
+      <TemplatePicker templates={model.templates} selectedName={draft.templateName} disabled={model.submitting} onSelect={changeTemplate} />
     {/if}
 
-    {#if step === 1}
+    {#if step === titleStep}
       <section class="create-section create-task-basic" aria-label="Basic information">
         <div class="create-section-title">Basic information</div>
         {#if hasGeneratedTitle}
@@ -181,7 +183,7 @@
       </section>
     {/if}
 
-    {#if step === 2}
+    {#if step === detailsStep}
       {#if selectedTemplate}
         <section class="create-section create-template-fields" aria-label="Template fields">
           <div class="create-section-title">{selectedTemplate.title || selectedTemplate.name} fields</div>
@@ -197,7 +199,7 @@
       {/if}
     {/if}
 
-    {#if step === 3}
+    {#if step === startStep}
       <section class="create-section" aria-label="Start options">
         <div class="create-section-title">Start options</div>
         <div class="wizard-start-cards" role="radiogroup" aria-label="Start options">
