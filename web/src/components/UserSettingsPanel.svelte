@@ -39,8 +39,8 @@
   <form id="settingsUserForm" class="settings-user-form" onsubmit={saveUser}>
     <label>
       <span>Name</span>
-      <input id="settingsUserName" value={userName} oninput={(event) => onUserNameInput(sanitizeUserNameInput((event.currentTarget as HTMLInputElement).value))} maxlength="80" pattern="[A-Za-z0-9_-]+" required placeholder="User" />
-      <small>Use letters, numbers, underscores, or hyphens. The selection is stored in this browser and registered in the active Workspace.</small>
+      <input id="settingsUserName" value={userName} oninput={(event) => onUserNameInput(sanitizeUserNameInput((event.currentTarget as HTMLInputElement).value))} maxlength="80" pattern="[A-Za-z0-9_-]+" placeholder="User" />
+      <small>Use letters, numbers, underscores, or hyphens. Leave blank to use User. The selection is stored in this browser and registered in the active Workspace.</small>
     </label>
     <div class="settings-form-actions"><button type="submit" disabled={pending === "user"}><Icon name="save" /><span>Save</span></button></div>
   </form>

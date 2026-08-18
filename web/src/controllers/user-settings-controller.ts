@@ -11,7 +11,7 @@ export function sanitizeUserNameInput(value: unknown): string {
 
 export function validateUserName(value: unknown): string {
 	const name = String(value || "");
-	if (!name) throw new Error("User name is required.");
+	if (!name) return "User";
 	if (name.length > USER_NAME_MAX_LENGTH) throw new Error(`User name must be at most ${USER_NAME_MAX_LENGTH} characters.`);
 	if (!USER_NAME_PATTERN.test(name)) throw new Error("User name may contain only letters, numbers, underscores, and hyphens.");
 	return name;
