@@ -25,17 +25,31 @@
 }
 
 :where([data-component-owner="settings"]) .settings-content {
-  position: relative;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The close control lives in its own header row above the scrollable panel
+   area, so it never shares a line with panel headings (even at ~220px wide)
+   and stays put while the panel content scrolls. */
+:where([data-component-owner="settings"]) .settings-header {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 14px 0;
+}
+
+:where([data-component-owner="settings"]) .settings-body {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  padding: 24px;
+  padding: 10px 24px 24px;
 }
 
 :where([data-component-owner="settings"]) .settings-close {
-  position: absolute;
-  z-index: 1;
-  top: 14px;
-  right: 14px;
+  flex: none;
   width: 32px;
   height: 32px;
   display: flex;
@@ -62,7 +76,7 @@
     grid-template-rows: auto minmax(0, 1fr);
   }
 
-  :where([data-component-owner="settings"]) .settings-content {
-    padding: 20px;
+  :where([data-component-owner="settings"]) .settings-body {
+    padding: 10px 20px 20px;
   }
 }

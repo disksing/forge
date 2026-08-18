@@ -1785,6 +1785,40 @@ test("keeps every System Settings tab reachable without horizontal scrolling in 
   await expect(notificationsTab).toHaveAttribute("aria-current", "page");
 });
 
+test("keeps the System Settings close control in the dialog header at a 220px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 220, height: 844 });
+  await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+
+  await page.locator("#mobileMenuButton").click();
+  await page.locator("#systemSettingsButton").click();
+  const settings = page.getByRole("dialog", { name: "System Settings" });
+  const close = settings.locator(".settings-close");
+  await expect(close).toBeVisible();
+  const heading = settings.locator("h2", { hasText: "Workspaces" });
+  await expect(heading).toBeVisible();
+
+  // The close control keeps its own header row above the content heading
+  // instead of sharing the heading's line (the 220px regression).
+  const closeBox = (await close.boundingBox())!;
+  const headingBox = (await heading.boundingBox())!;
+  expect(closeBox.y + closeBox.height).toBeLessThanOrEqual(headingBox.y);
+
+  // The close control stays fully inside the narrow modal.
+  const modalBox = (await settings.boundingBox())!;
+  expect(closeBox.x).toBeGreaterThanOrEqual(modalBox.x);
+  expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(modalBox.x + modalBox.width + 1);
+
+  // Scrolling the panel content does not move the close control.
+  await settings.locator(".settings-body").evaluate((node) => node.scrollTo(0, 400));
+  const scrolledCloseBox = (await close.boundingBox())!;
+  expect(scrolledCloseBox.y).toBeCloseTo(closeBox.y, 0);
+
+  // And it still closes the dialog.
+  await close.click();
+  await expect(settings).toBeHidden();
+});
+
 test("keeps Profiles settings cards inside the 390px mobile viewport without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installMockApi(page, "project1.task1");

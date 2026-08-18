@@ -61,6 +61,21 @@ function input(element: HTMLInputElement, value: string): void {
 }
 
 describe("SettingsModal coordination", () => {
+  it("keeps the close control in a header row outside the scrollable panel body", async () => {
+    const channel = createModelChannel(model());
+    const target = document.body.appendChild(document.createElement("div"));
+    target.dataset.componentOwner = "settings";
+    const component = mount(SettingsModal, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const close = target.querySelector<HTMLButtonElement>(".settings-close")!;
+    expect(close.parentElement?.classList.contains("settings-header")).toBe(true);
+    expect(close.closest(".settings-body")).toBeNull();
+    const body = target.querySelector(".settings-body")!;
+    expect(body.querySelector("h2")?.textContent).toBe("Workspaces");
+  });
+
   it("preserves a user draft while settings data refreshes and saves it", async () => {
     const initial = model({ initialTab: "user", userName: "" });
     const channel = createModelChannel(initial);
