@@ -1,11 +1,18 @@
+/* min-width:0 lets the selector shrink inside narrow flex containers (the
+   chat composer at ~220px viewports); the label ellipsizes instead of
+   pushing sibling controls out of view. */
 :where([data-component-owner="agent-binding-selector"]) {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
   display: inline-flex;
 }
 
 :where([data-component-owner="agent-binding-selector"]) .agent-binding-button {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   min-height: 28px;
   display: inline-flex;
   align-items: center;
@@ -17,6 +24,13 @@
   color: #5c6b7a;
   font-size: calc(12px * var(--chat-font-scale, 1));
   cursor: pointer;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :where([data-component-owner="agent-binding-selector"]) .agent-binding-icon {
