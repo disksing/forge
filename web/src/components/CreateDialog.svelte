@@ -18,6 +18,7 @@
   let dialogElement: HTMLElement | undefined = $state();
 
   const isTask = $derived(draft.type === "task");
+  const projectDescriptionMissing = $derived(!isTask && !draft.description.trim());
 
   onMount(() => channel.subscribe((next) => {
     model = next;
@@ -53,7 +54,7 @@
 
   async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    if (!model.submitting) await model.onSubmit(cloneDraft(draft));
+    if (!model.submitting && !projectDescriptionMissing) await model.onSubmit(cloneDraft(draft));
   }
 </script>
 
@@ -75,7 +76,7 @@
           <form id="createDialogForm" class="details-form create-dialog-form" onsubmit={submit}>
             <ProjectCreateForm {draft} />
             <div class="form-actions">
-              <button type="submit" disabled={model.submitting}>{model.submitting ? "Creating..." : "Create"}</button>
+              <button type="submit" disabled={model.submitting || projectDescriptionMissing}>{model.submitting ? "Creating..." : "Create"}</button>
               <button type="button" class="secondary" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
             </div>
           </form>
