@@ -7,6 +7,18 @@
   align-items: center;
 }
 
+:where([data-component-owner="workspace-settings-panel"]) .settings-path-form input[aria-invalid="true"] {
+  border-color: var(--red, #e74c3c);
+}
+
+:where([data-component-owner="workspace-settings-panel"]) .settings-field-error {
+  grid-column: 1 / -1;
+  margin: -4px 0 0;
+  color: var(--red, #e74c3c);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 :where([data-component-owner="workspace-settings-panel"]) .settings-check {
   grid-column: 1 / -1;
   display: flex;

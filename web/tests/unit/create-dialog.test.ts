@@ -210,9 +210,8 @@ describe("CreateDialog task wizard", () => {
     channel.publish({ ...first, identity: "dialog-2:task:project1", draft: { ...first.draft, title: "New dialog" } });
     await tick();
 
-    // A fresh dialog starts over on the template step with the new draft.
-    expect(target.querySelector(".wizard-steps li.active")?.textContent).toContain("Template");
-    await advance(target);
+    // A fresh dialog starts over on the title step with the new draft.
+    expect(target.querySelector(".wizard-steps li.active")?.textContent).toContain("Title & slug");
     expect(target.querySelector<HTMLInputElement>('input[name="title"]')?.value).toBe("New dialog");
   });
 

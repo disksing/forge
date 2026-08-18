@@ -89,6 +89,10 @@ describe("SettingsController", () => {
 		};
 		const controller = createSettingsController(dependencies);
 		await controller.open();
+		const blankDraft = createSettingsDraft(published.at(-1)!);
+		await published.at(-1)!.onAddWorkspace(blankDraft);
+		expect(requests).toHaveLength(0);
+
 		const draft = createSettingsDraft(published.at(-1)!);
 		draft.workspacePath = "/tmp/new";
 		draft.createWorkspace = true;
