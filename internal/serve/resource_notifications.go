@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/localize"
 )
 
 func notificationMessageID(parts ...string) string {
@@ -66,15 +67,16 @@ func lastAssistantText(turn agentHubTurn) string {
 
 const maxTurnResultOutputBytes = 16 * 1024
 
-func boundedTurnResultOutput(value string) string {
+func boundedTurnResultOutput(language, value string) string {
 	value = strings.TrimSpace(value)
 	if len(value) <= maxTurnResultOutputBytes {
 		return value
 	}
-	return value[:maxTurnResultOutputBytes] + "\n[final assistant response truncated]"
+	marker := strings.TrimSpace(localize.MustRender(language, "turn-response-truncated.txt", nil))
+	return value[:maxTurnResultOutputBytes] + "\n" + marker
 }
 
-func turnResultMessage(resourceID string, generationID string, turn agentHubTurn, reference string, sourceIDs []string, historyUnavailable bool) string {
+func turnResultMessage(language, resourceID string, generationID string, turn agentHubTurn, reference string, sourceIDs []string, historyUnavailable bool) string {
 	status := strings.TrimSpace(turn.Status)
 	if status == "" {
 		status = "unknown"
@@ -83,35 +85,23 @@ func turnResultMessage(resourceID string, generationID string, turn agentHubTurn
 	if turnID == "" {
 		turnID = strings.TrimSpace(turn.ID)
 	}
-	var builder strings.Builder
-	fmt.Fprintf(&builder, "Turn result for `%s`: generation `%s`, Turn `%s` ended with status `%s`.", resourceID, generationID, turnID, status)
-	if len(sourceIDs) > 0 {
-		fmt.Fprintf(&builder, "\n\nSource message IDs: `%s`", strings.Join(sourceIDs, "`, `"))
-	}
-	if reference != "" {
-		fmt.Fprintf(&builder, "\n\nTurn reference: `%s`", reference)
-	}
-	if reply := boundedTurnResultOutput(lastAssistantText(turn)); reply != "" {
-		fmt.Fprintf(&builder, "\n\nFinal assistant response:\n\n%s", reply)
-	} else if historyUnavailable {
-		builder.WriteString("\n\nThe terminal result was recorded, but canonical Turn history is unavailable; no Turn reference was manufactured.")
-	} else {
-		builder.WriteString("\n\nThe Turn produced no final assistant text.")
-	}
-	return builder.String()
+	return strings.TrimSuffix(localize.MustRender(language, "turn-result.md", map[string]any{
+		"ResourceID": resourceID, "GenerationID": generationID, "TurnID": turnID, "Status": status,
+		"SourceMessageIDs": strings.Join(sourceIDs, "`, `"), "Reference": reference,
+		"Reply": boundedTurnResultOutput(language, lastAssistantText(turn)), "HistoryUnavailable": historyUnavailable,
+	}), "\n")
 }
 
-func terminalDeliveryMessage(message resourceMailboxMessage) string {
+func terminalDeliveryMessage(language string, message resourceMailboxMessage) string {
 	status := publicResourceMessageStatus(message.Status)
 	code := strings.TrimSpace(message.LastErrorCode)
 	if code == "" {
 		code = "delivery_failed"
 	}
-	text := fmt.Sprintf("Delivery notice for message `%s` to `%s`: status `%s` (%s).", message.ID, message.ResourceID, status, code)
-	if detail := strings.TrimSpace(message.LastError); detail != "" {
-		text += "\n\n" + detail
-	}
-	return text
+	return strings.TrimSuffix(localize.MustRender(language, "delivery-notice.md", map[string]string{
+		"MessageID": message.ID, "ResourceID": message.ResourceID, "Status": status,
+		"Code": code, "Detail": strings.TrimSpace(message.LastError),
+	}), "\n")
 }
 
 func ensureNotificationReceipt(workspacePath, messageID, notificationType, targetInstanceID, targetResourceID, receiptID string) (resourceMailboxMessage, error) {
@@ -587,6 +577,10 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 			generatedModeFrozen = existingOperation.GeneratedModeFrozen
 			generatedDowngradeReason = existingOperation.GeneratedDowngradeReason
 		}
+		language, err := m.notificationContentLanguage(workspace, targetWorkspaceInstanceID)
+		if err != nil {
+			return err
+		}
 		causation := &resourceMessageCausation{
 			Type: resourceMessageTypeTurnResult, SourceWorkspaceInstanceID: instanceID, SourceResourceID: group.SourceResourceID,
 			MessageID: sourceIDs[0], SourceMessageIDs: sourceIDs, GenerationID: group.GenerationID, TurnID: turnID, TurnReference: reference,
@@ -594,7 +588,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 		}
 		generated := resourceMailboxMessage{
 			ID: generatedMessageID, ResourceID: targetResourceID,
-			Text:   turnResultMessage(group.SourceResourceID, group.GenerationID, turn, reference, sourceIDs, historyUnavailable),
+			Text:   turnResultMessage(language, group.SourceResourceID, group.GenerationID, turn, reference, sourceIDs, historyUnavailable),
 			Sender: &agentHubMessageSender{ID: group.SourceResourceID, Name: group.SourceResourceID}, SenderWorkspaceInstanceID: instanceID,
 			RequestedMode: generatedRequestedMode, ActualMode: generatedActualMode, ModeFrozen: generatedModeFrozen, DowngradeReason: generatedDowngradeReason,
 			SubscribeResult: false, ResultSubscriptionStatus: resourceResultSubscriptionDisabled,
@@ -637,8 +631,12 @@ func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace se
 	if err != nil {
 		return err
 	}
+	language, err := m.notificationContentLanguage(workspace, message.SenderWorkspaceInstanceID)
+	if err != nil {
+		return err
+	}
 	generated := resourceMailboxMessage{
-		ID: receiptID, ResourceID: message.Sender.ID, Text: terminalDeliveryMessage(message),
+		ID: receiptID, ResourceID: message.Sender.ID, Text: terminalDeliveryMessage(language, message),
 		Sender: &agentHubMessageSender{ID: message.ResourceID, Name: message.ResourceID}, SenderWorkspaceInstanceID: instanceID,
 		RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
 		Type: resourceMessageTypeDeliveryTerminal,

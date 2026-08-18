@@ -35,6 +35,7 @@ export interface SettingsDraft {
   tab: "workspace" | "user" | "appearance" | "agenthub" | "profiles" | "notifications";
   workspacePath: string;
   createWorkspace: boolean;
+  workspaceLanguage: "en" | "zh-CN";
   userName: string;
   endpoint: string;
   profiles: ProfileDraft[];

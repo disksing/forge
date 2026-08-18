@@ -55,6 +55,33 @@ func TestDoctorAcceptsHealthyOpenWorkspace(t *testing.T) {
 	}
 }
 
+func TestDoctorLocalizesHumanReadableIssuesWithoutChangingCodes(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Initialize(root, "zh-CN"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatal(err)
+	}
+	report, err := CheckWorkspace(root, DoctorOptions{BindingCatalog: healthyDoctorCatalog()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Language != "zh-CN" {
+		t.Fatalf("report language = %q", report.Language)
+	}
+	for _, issue := range report.Issues {
+		if issue.Code != "agents_file_missing" {
+			continue
+		}
+		if issue.Message != "AGENTS.md 缺失" || !strings.Contains(issue.Suggestion, "恢复") {
+			t.Fatalf("localized issue = %#v", issue)
+		}
+		return
+	}
+	t.Fatalf("agents_file_missing issue not found: %#v", report.Issues)
+}
+
 func TestDoctorDetectsModifiedManagedInstructions(t *testing.T) {
 	_, root, project, task := doctorTestWorkspace(t)
 	path, _, err := loadResource(root, task.ID)

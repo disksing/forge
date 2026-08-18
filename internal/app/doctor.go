@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/disksing/pua/internal/localize"
 )
 
 const (
@@ -57,6 +59,7 @@ type DoctorSummary struct {
 
 type DoctorReport struct {
 	Workspace string        `json:"workspace"`
+	Language  string        `json:"language"`
 	CheckedAt string        `json:"checkedAt"`
 	Complete  bool          `json:"complete"`
 	Summary   DoctorSummary `json:"summary"`
@@ -112,6 +115,7 @@ func CheckWorkspace(root string, options DoctorOptions) (DoctorReport, error) {
 		seenResources: make(map[string]string),
 		report: DoctorReport{
 			Workspace: abs,
+			Language:  defaultLanguage,
 			CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
 			Complete:  true,
 			Issues:    []DoctorIssue{},
@@ -127,6 +131,20 @@ func CheckWorkspace(root string, options DoctorOptions) (DoctorReport, error) {
 }
 
 func (s *doctorScanner) finish() {
+	s.report.Language = s.language
+	for i := range s.report.Issues {
+		issue := &s.report.Issues[i]
+		kind := ""
+		if strings.HasPrefix(issue.Code, "template_") {
+			kind = "template_validation"
+		}
+		data := map[string]string{"Code": issue.Code, "Kind": kind, "Original": issue.Message}
+		issue.Message = strings.TrimSpace(localize.MustRender(s.language, "doctor-message.txt", data))
+		if issue.Suggestion != "" {
+			data["Original"] = issue.Suggestion
+			issue.Suggestion = strings.TrimSpace(localize.MustRender(s.language, "doctor-suggestion.txt", data))
+		}
+	}
 	severityRank := func(value string) int {
 		if value == DoctorSeverityError {
 			return 0

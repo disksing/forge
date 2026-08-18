@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/localize"
 )
 
 const (
@@ -27,10 +28,10 @@ func schedulerConfigDigest(config app.SchedulerConfig) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func schedulerTickMessage(reason, messageID string) string {
-	return fmt.Sprintf(`PUA Scheduler tick %s (%s).
-
-Read ../AGENTS.md, AGENTS.md, scheduler.json, and scheduler.md. Evaluate every current schedule's natural-language condition using the current environment and durable context. For each condition you judge satisfied, send an ordinary PUA message to its target that includes the schedule id, description, and trigger reason. Messages may repeat. Re-read scheduler.json before acting when practical, and maintain scheduler.md only when durable judgment context is useful.`, messageID, reason)
+func schedulerTickMessage(language, reason, messageID string) string {
+	return strings.TrimSuffix(localize.MustRender(language, "scheduler-tick.md", map[string]string{
+		"MessageID": messageID, "Reason": reason,
+	}), "\n")
 }
 
 func pendingSchedulerTick(mailbox resourceMailbox) bool {
@@ -332,10 +333,14 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace serveWo
 	if err != nil {
 		return err
 	}
+	language, err := workspaceContentLanguage(workspace.Path)
+	if err != nil {
+		return err
+	}
 	messageID := notificationMessageID(resourceMessageTypeSchedulerTick, instanceID, reason, digest, basis)
 	message := resourceMailboxMessage{
 		ID:         messageID,
-		ResourceID: app.SchedulerResourceID, Text: schedulerTickMessage(reason, messageID),
+		ResourceID: app.SchedulerResourceID, Text: schedulerTickMessage(language, reason, messageID),
 		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue, ModeFrozen: true,
 		Type: resourceMessageTypeSchedulerTick,
 		Causation: &resourceMessageCausation{
