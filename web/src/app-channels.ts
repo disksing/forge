@@ -26,12 +26,12 @@ export function createPUAAppChannels(): PUAAppChannels {
     appShell: createModelChannel<AppShellModel>({
       identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaceName: "", workspaces: [], projects: [], treeEditing: false, activity: { running: [], favorites: [], unread: [], problems: [] }, inbox: [],
       doctor: { checking: true, complete: false, summary: { errors: 0, warnings: 0 }, workspaces: [] },
-      paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 }, mobile: { sidebarOpen: false, view: "details", immersive: false },
+      paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 }, mobile: { sidebarOpen: false, view: "details" },
       layout: { preference: "auto", effective: "three" },
       route: { path: "", revision: 0, replace: true },
       onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onRefreshDoctor: noopAsync, onToggleProject: noopAsync, onSelectResource: noopAsync,
       onReorder: noopAsync, onDragState: noop, onToggleTreeEditing: noop, onCreateFolder: async () => "", onRenameFolder: noopAsync, onDeleteFolder: noopAsync, onToggleFolder: noopAsync, onToggleFavorite: noopAsync, onOpenInboxMessage: noopAsync, onReplyInboxMessage: noopAsync, onDeleteInboxMessage: noopAsync, onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
-      onMobileImmersive: noop, onToast: noop, onHistoryNavigation: noopAsync,
+      onToast: noop, onHistoryNavigation: noopAsync,
     }),
     create: createModelChannel<CreateDialogModel>({
       open: false, identity: "", workspaceId: "", draft: { type: "project", projectId: "", templateName: "", templateFields: {}, title: "", description: "", detail: "", slug: "", startAfterCreate: false, startBinding: { kind: "profile", name: "" }, startPrompt: "" },

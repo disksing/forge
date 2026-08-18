@@ -66,6 +66,7 @@
 }
 
 :where([data-component-owner="event-timeline"]) .agent-activity-thought header,
+:where([data-component-owner="event-timeline"]) .agent-activity-thought summary,
 :where([data-component-owner="event-timeline"]) .agent-activity-tools header {
   display: flex;
   align-items: center;
@@ -76,7 +77,26 @@
 }
 
 :where([data-component-owner="event-timeline"]) .agent-activity-thought header svg,
+:where([data-component-owner="event-timeline"]) .agent-activity-thought summary svg,
 :where([data-component-owner="event-timeline"]) .agent-activity-tools header svg { width: 14px; height: 14px; }
+
+:where([data-component-owner="event-timeline"]) .agent-activity-thought summary {
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-activity-thought summary::-webkit-details-marker { display: none; }
+
+:where([data-component-owner="event-timeline"]) .agent-activity-thought-chevron {
+  display: inline-flex;
+  margin-left: auto;
+  transition: transform 120ms ease;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-activity-thought-complete[open] .agent-activity-thought-chevron {
+  transform: rotate(90deg);
+}
 
 :where([data-component-owner="event-timeline"]) .agent-activity-thought p {
   margin: 0;
@@ -89,3 +109,17 @@
 
 :where([data-component-owner="event-timeline"]) .agent-activity-tool-list { padding: 0 0 4px 21px; }
 :where([data-component-owner="event-timeline"]) .agent-activity-loading { padding: 6px 0; color: var(--faint); }
+
+/* While work is streaming there is no aggregate disclosure yet: reasoning
+   and individual tool calls sit directly on the conversation column. Once
+   the activity settles, the regular collapsed disclosure above takes over. */
+:where([data-component-owner="event-timeline"]) .agent-activity-live .agent-activity-list {
+  gap: 7px;
+  margin-left: 0;
+  padding: 0;
+  border-left: 0;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-activity-live .agent-activity-tool-list {
+  padding: 0;
+}

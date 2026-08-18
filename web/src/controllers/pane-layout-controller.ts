@@ -1,5 +1,4 @@
 const PANE_SIZE_KEY = "pua.web.paneSizes";
-const MOBILE_IMMERSIVE_KEY = "pua.web.mobileImmersive";
 const LAYOUT_PREFERENCE_KEY = "pua.web.layoutPreference";
 const FONT_SCALE_KEY = "pua.web.fontScales";
 const PANE_HANDLE_WIDTH = 8;
@@ -17,7 +16,6 @@ export interface PaneSizes {
 export interface MobilePaneState {
 	sidebarOpen: boolean;
 	view: "details" | "chat";
-	immersive: boolean;
 }
 
 export type LayoutPreference = "auto" | "three" | "two" | "split";
@@ -101,7 +99,7 @@ export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): P
 
 export function createPaneLayoutController(onChange: () => void, storage: Storage | null = window.localStorage) {
 	let paneSizes = { ...PANE_DEFAULTS };
-	let mobile: MobilePaneState = { sidebarOpen: false, view: "details", immersive: false };
+	let mobile: MobilePaneState = { sidebarOpen: false, view: "details" };
 	let layoutPreference: LayoutPreference = "auto";
 	let fontScales: FontScales = normalizeFontScales(null);
 	const mobileQuery = window.matchMedia("(max-width: 980px)");
@@ -171,12 +169,6 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 			migrated = true;
 		}
 		if (migrated) saveAllPaneSizes();
-		try {
-			mobile.immersive = storage?.getItem(MOBILE_IMMERSIVE_KEY) === "1";
-		} catch (_) {
-			mobile.immersive = false;
-		}
-		document.body.classList.toggle("chat-immersive", mobile.immersive);
 		try {
 			layoutPreference = normalizeLayoutPreference(storage?.getItem(LAYOUT_PREFERENCE_KEY));
 		} catch (_) {
@@ -264,15 +256,6 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		onChange();
 	}
 
-	function setMobileImmersive(immersive: boolean): void {
-		mobile.immersive = Boolean(immersive);
-		document.body.classList.toggle("chat-immersive", mobile.immersive);
-		try {
-			storage?.setItem(MOBILE_IMMERSIVE_KEY, mobile.immersive ? "1" : "0");
-		} catch (_) {}
-		onChange();
-	}
-
 	return {
 		initialize,
 		previewPane: setPaneSize,
@@ -283,7 +266,6 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		resetFontScales,
 		setMobileSidebar,
 		setMobileView,
-		setMobileImmersive,
 		snapshot: () => ({ paneSizes: { ...paneSizes }, mobile: { ...mobile }, layout: { preference: layoutPreference, effective: effectiveLayout() }, fontScales: { ...fontScales } })
 	};
 }

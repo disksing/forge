@@ -9,12 +9,18 @@ import (
 	"time"
 
 	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/localize"
 )
 
-const (
-	maxTaskStateRecoveryAttempts = 3
-	taskStateContinuationText    = "Task 状态仍为 in_progress。请继续推进任务，或者在本 Turn 结束前将状态设置为 waiting、blocked、paused 或 completed。"
-)
+const maxTaskStateRecoveryAttempts = 3
+
+func taskStateContinuationText(language string) string {
+	return strings.TrimSpace(localize.MustRender(language, "task-continuation.md", nil))
+}
+
+func taskStateContinuationExhaustedNote(language string) string {
+	return strings.TrimSpace(localize.MustRender(language, "task-continuation-exhausted.txt", nil))
+}
 
 func taskStateContinuationMessageID(resourceID, generationID, chainID, marker string, attempt int) string {
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", resourceID, generationID, chainID, marker, attempt)))
@@ -139,8 +145,13 @@ func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *a
 	if err != nil {
 		return err
 	}
+	language, err := puaWorkspace.Language()
+	if err != nil {
+		return err
+	}
 	if record.TaskStateContinuationCount >= maxTaskStateRecoveryAttempts {
-		if _, err := puaWorkspace.SetTaskState(record.ResourceID, app.TaskStateError, "连续 3 次自动续推后，Task 状态仍为 in_progress"); err != nil {
+		note := taskStateContinuationExhaustedNote(language)
+		if _, err := puaWorkspace.SetTaskState(record.ResourceID, app.TaskStateError, note); err != nil {
 			return err
 		}
 		return markTaskTurnCompletionHandled(rt, marker)
@@ -152,7 +163,7 @@ func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *a
 	}
 	messageID := taskStateContinuationMessageID(record.ResourceID, record.GenerationID, record.TaskStateChainID, marker, attempt)
 	generated := resourceMailboxMessage{
-		ID: messageID, ResourceID: record.ResourceID, Text: taskStateContinuationText,
+		ID: messageID, ResourceID: record.ResourceID, Text: taskStateContinuationText(language),
 		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue,
 		Type: resourceMessageTypeTaskContinuation,
 		Causation: &resourceMessageCausation{

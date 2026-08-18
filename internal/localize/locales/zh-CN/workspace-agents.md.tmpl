@@ -1,0 +1,220 @@
+# AgentWorkspace Agent 工作指引
+
+## 1. 工作环境
+
+你运行在用户的本机上，由 AgentHub 托管。AgentHub 负责启动 Agent、保持会话并记录执行事件。
+
+当前目录属于一个由 PUA 管理的 AgentWorkspace。PUA 用本地目录保存 Project、Task、文档、产物和代码 worktree，并通过 PUA Server 管理资源状态、消息、历史记录和 Agent 会话。
+
+Workspace、Project、Task 和 Scheduler 都是长期存在的资源。每个资源由自己的 Agent 持续跟踪；底层会话可能变化，但资源 ID 和历史记录保持不变。日常工作使用 PUA 资源，不需要直接操作 AgentHub Session。
+
+## 2. 开始工作
+
+### 了解当前资源
+
+正常情况下，Agent 启动工作目录内的 AGENTS.md 会说明你处于 Workspace、Project、Task 还是 Scheduler，以及还需要读取哪些上级指引和资源文件。
+
+如果不清楚自己在哪里，可以检查当前工作目录，并参考 PUA_RESOURCE_ID。PUA 通常还会注入 PUA_WORKSPACE_ROOT 和 PUA_WORKSPACE_INSTANCE_ID。这些变量用于辅助识别当前环境，也用于发送 Agent 消息时标识当前资源。
+
+根据资源类型读取上下文：
+
+- Workspace：根目录 AGENTS.md、Workspace 配置和 wiki/index.md；
+- Project：根目录与当前目录的 AGENTS.md、project.json、project.md；
+- Task：Workspace、Project、Task 三级 AGENTS.md、task.json、task.md；
+- Scheduler：Workspace 和 Scheduler 的 AGENTS.md、scheduler.json、scheduler.md。
+
+也可以使用：
+
+~~~sh
+pua project show --project=<project>
+pua task show --project=<project> --task=<task>
+pua workspace resource --id=<resource> --json
+~~~
+
+### 查看近期历史
+
+开始新的工作时，读取少量近期 History，了解之前做到哪里：
+
+~~~sh
+pua workspace history --limit=20
+pua project history --project=<project> --limit=20
+pua task history --project=<project> --task=<task> --limit=20
+~~~
+
+需要更多细节时，再展开相关 Turn 或 Event：
+
+~~~sh
+pua history turn show --ref=<turn-ref>
+pua history event show --ref=<event-ref>
+~~~
+
+History 会跨越多次 Agent 会话。使用命令返回的引用继续查询，不要使用 AgentHub Session ID。
+
+### 判断消息来源
+
+同一个 Session 中可能出现来自不同角色的消息。处理每条消息时，都要根据消息来源重新判断当前对话对象，不要沿用上一条消息的角色判断；再根据当前对象调整表达方式和语气：
+
+- 用户消息：使用自然、友好的表达，站在用户的理解角度说明结果、问题和取舍；重大范围变化需要用户确认。
+- Agent 消息：把对方当作协作者，表达可以更直接、结构化，重点说清上下文、行动和结果。如果这条消息开启了当前 Turn，在当前 Turn 的 final response 中返回结果；如果 Turn 运行期间收到的 steer 消息需要单独回复，则主动通过 PUA 发送消息。
+- Scheduler 消息：关注 schedule ID、触发原因和是否可能重复，回复以执行结果和后续调度需要的信息为主。
+- 系统通知：根据其中的结果或引用继续处理，不把它当成新的用户要求。
+
+消息来源只用于了解上下文，本身不代表权限。PUA 约定冲突时，一般按下面的顺序理解：
+
+1. 当前用户会话；
+2. 当前 Agent 协作消息；
+3. Task 约定；
+4. Project 约定；
+5. Workspace 约定。
+
+上级资源或其他 Agent 的要求本身不代表可以修改其他 Agent 管理的资源；用户明确授权时，可以在授权范围内操作。
+
+### 判断要做什么
+
+- 直接完成工作：在当前范围内调查、实现、验证并交付。
+- 讨论或制定方案：先了解情况，给出方案和取舍，等相关方确认后再进入约定中的下一阶段。
+- PUA 管理工作：使用 PUA CLI 创建、查询或归档资源，管理模板、仓库或调度项。
+- Agent 协作：查看其他资源并发送消息，不直接修改对方文件。
+- 长时间等待：使用 Scheduler，避免一直占用当前会话轮询。
+
+## 3. 查询更多信息
+
+### Wiki
+
+Workspace 的长期知识保存在 wiki/。先读 wiki/index.md，再选择与当前任务相关的页面，不要一次读取整个 Wiki。
+
+### 代码仓库
+
+- repos/ 是共享源码目录，只用于查询和创建 worktree，不得直接修改；
+- 任何代码修改都必须在 Task 自己的 worktree/ 中进行；
+- 创建 worktree 时，目标使用当前 Task worktree/ 下的绝对路径；
+- 创建 worktree 时必须同时创建并检出 Task 专用分支，例如：git worktree add -b taskN-xxx <绝对路径> master；不得直接在 Task worktree 中检出共享主干（如 master 或 main），否则即使 Task 已归档或目录已删除，残留的 worktree 登记仍可能长期占用该分支并阻塞其他 Task；
+- 如果已删除或归档的 Task 留下失效的 worktree 登记，先在对应共享仓库运行 git worktree prune 清理，再创建新的 worktree；
+- PUA 会直接根据 Task worktree/ 目录下的 worktree 识别仓库、分支和差异，无需登记。
+
+### 其他资源
+
+可以只读查看其他 Project 或 Task：
+
+~~~sh
+pua workspace tree --json
+pua workspace resource --id=<resource> --json
+pua task status --project=<project> --task=<task>
+pua task history --project=<project> --task=<task> --limit=20
+~~~
+
+也可以读取对方的 JSON、Markdown 和 artifacts/。需要对方修改内容时，给对方 Agent 发消息。
+
+在消息或 Markdown 中提到 PUA 资源时，可以使用 [[资源 ID]] 创建资源链接，例如 [[project1]] 或 [[project1.task2]]。引用 Workspace 内的文件时，必须使用以 Workspace 为根目录的链接，例如 [附件](/project1/task2/artifacts/foobar.md)；不要使用如 /Users/... 的本机绝对路径，也不要使用 file:// 链接。
+
+### 常用目录
+
+- projectN/：开放 Project；
+- projectN/taskM/：开放 Task；
+- archive/：归档的 Project 或 Task；
+- templates/：Project 的 Task 模板；
+- artifacts/：报告、截图、补丁等交付物；
+- worktree/：Task 专用代码 worktree；
+- scheduler/：Scheduler 资源。
+
+project.json 和 task.json 保存 PUA 认识的结构化信息。工作背景、范围、约束和长期决定写在 project.md 或 task.md 中。主动维护当前资源目录中的 project.md 或 task.md；需求变得明确，或关键背景、范围、约束、决定发生变化时，及时更新对应文件，不要等待用户另行提醒。临时过程通过 History、Git 和 artifacts 恢复，不需要额外维护长期进度文件。
+
+## 4. 权限和 PUA CLI
+
+你可以读写当前资源拥有的文件；Task Agent 也可以修改当前 Task 的 worktree。Workspace 中其他资源默认只读；用户明确授权时，可以在授权范围内操作其他资源或修改其管理的文件。即使获得授权，常规方式仍是给对应资源的 Agent 发消息，由其完成修改。
+
+Workspace 外的文件不受 PUA 额外限制，但仍要符合请求、任务范围和主机权限。删除、覆盖、发布等有明显影响的操作要先确认目标。
+
+通常在自己负责的资源目录运行 PUA CLI。省略 --project 或 --task 时，PUA 会根据当前目录选择对象；跨资源操作时建议显式指定资源。
+
+status、history 和 message 命令会自动找到管理当前 Workspace 的 PUA Server。一般不需要填写 --server，也不要手工修改 .pua/serve.lock。
+
+## 5. PUA 资源管理
+
+使用 PUA CLI 创建和管理资源，不要手工创建目录或修改结构化 JSON。
+
+~~~sh
+pua project list [--all]
+pua project show --project=<project>
+pua project create [--slug <slug>] <description>
+pua project archive --project=<project>
+
+pua task list --project=<project> [--all]
+pua task show --project=<project> --task=<task>
+pua task create --project=<project> ...
+pua task archive --project=<project> --task=<task>
+~~~
+
+创建前先查询，避免重复。创建 Project 或 Task 后，还需要单独发送第一条消息，PUA 才会按需启动该资源的 Agent：
+
+~~~sh
+pua message send --to=<resource> '<message>'
+~~~
+
+创建 Task 前先查看 Project 的 templates/。有合适模板时优先使用，并保留模板中的规则：
+
+~~~sh
+pua template list --project=<project>
+pua template show --project=<project> <name>
+pua task create --project=<project> --template=<name> --field <name>=<value>
+~~~
+
+需要修改代码时，必须在 Task 的 worktree/ 目录下创建专用 worktree。不得直接修改 repos/ 中的共享源码目录。Project 本身不管理代码 worktree。
+
+归档不是删除，但会结束资源的开放工作状态。归档前确认工作已经完成，必要的改动和产物已经保存。
+
+## 6. Agent 协作
+
+跨资源协作使用 Project 或 Task 的稳定资源 ID，不使用 Session ID。提到其他 Agent 时，一般使用“他”或“他们”。
+
+~~~sh
+pua task status --project=<project> --task=<task>
+pua message send --to=<resource> [--mode=steer|enqueue|interrupt] '<message>'
+pua message show --id=<message-id>
+~~~
+
+消息中写清目标、必要背景、范围和希望对方返回的结果。
+
+发现当前工作与其他 Agent 的工作冲突或可能相互影响时，及时给相关资源的 Agent 发消息，同步必要背景、范围和进展。
+
+- steer：默认选择。对方正在工作时尽量把消息加入当前 Turn，否则 PUA 会改为排队开启新 Turn；
+- enqueue：明确要求开启一个新 Turn；
+- interrupt：中断对方当前 Turn，再用这条消息开启新 Turn，仅在确实需要立即改变方向时使用。
+
+消息被 PUA 接受，不代表对方已经完成。可以用 message ID、资源状态和 History 查看进展。
+
+实际开启 Turn 的 Agent 消息默认订阅该 Turn 的结果。注入已有 Turn 的 steer 消息不订阅结果；如果其发送方需要回复，接收方应主动发送一条 PUA 消息。以 steer 请求发送、但因没有活跃 Turn 而降级为 enqueue 的消息会成为 Turn 开启消息，按开启消息处理。
+
+Turn 结束后，PUA 会自动把 final response 投递给开启 Turn 的 Agent，不要再用 pua message send 发送同一结果。收到自动投递的 Turn result 时，应把它视为此前请求的答复，不要仅为确认收到而回复；只有出现新工作或确需澄清时才发送新消息。开启方不需要结果时使用 --subscribe-result=false。消息可能重复投递，发送方和接收方都应结合 message ID 或业务状态避免重复操作。
+
+需要直接联系用户时，把 --to 换成已注册的 Workspace 用户名而不是资源 ID：
+
+~~~sh
+pua message send --to=<username> '<message>'
+~~~
+
+消息会出现在 Web GUI 的用户 Inbox 面板中；用户的回复会作为普通的 role=user 消息送达当前资源。适合主动提问或用户不应错过的结果；例行的 Turn 输出仍写在普通的 final response 中。
+
+## 7. Scheduler
+
+Scheduler 适合定时触发、条件触发，以及需要长时间等待外部事件的工作。
+
+Schedule 使用自然语言描述条件，不使用 cron 表达式：
+
+~~~sh
+pua scheduler list [--json]
+pua scheduler show --id=<schedule>
+pua scheduler add --description=<text> --condition=<text> --target=<resource>
+pua scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+pua scheduler remove --id=<schedule>
+~~~
+
+也可以直接给 Scheduler Agent 发消息：
+
+~~~sh
+pua message send --to=scheduler '<request>'
+~~~
+
+description 说明要做什么，condition 写清触发时间或条件、时区、是否重复以及何时停止，target 使用稳定资源 ID。
+
+条件满足后，Scheduler 会给目标资源发送普通消息，说明 schedule ID 和触发原因。调度消息可能重复，目标 Agent 应避免重复执行。

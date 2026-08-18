@@ -74,6 +74,30 @@ describe("SettingsController", () => {
 		expect(published.at(-1)?.activeWorkspaceId).toBe("workspace-a");
 	});
 
+	it("sends the selected generated-content language only when creating a Workspace", async () => {
+		const published: SettingsModel[] = [];
+		const requests: unknown[] = [];
+		const config: PUASettingsConfig = { activeId: "", workspaces: [], agents: [], agentProfiles: [] };
+		const dependencies = settingsDependencies("", config, (model) => published.push(model));
+		const baseRequest = dependencies.request;
+		dependencies.request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+			if (path === "/api/workspaces" && init?.method === "POST") {
+				requests.push(JSON.parse(String(init.body)));
+				return { id: "workspace-new", name: "new", path: "/tmp/new" } as T;
+			}
+			return baseRequest<T>(path);
+		};
+		const controller = createSettingsController(dependencies);
+		await controller.open();
+		const draft = createSettingsDraft(published.at(-1)!);
+		draft.workspacePath = "/tmp/new";
+		draft.createWorkspace = true;
+		draft.workspaceLanguage = "zh-CN";
+		await published.at(-1)!.onAddWorkspace(draft);
+
+		expect(requests).toEqual([{ path: "/tmp/new", create: true, language: "zh-CN" }]);
+	});
+
 	it("joins AgentHub availability and profiles into the PUA configuration without mutating the base", () => {
 		const base = {
 			activeId: "alpha",

@@ -88,6 +88,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		agentDirty: boolean;
 		workspacePath: string;
 		createWorkspace: boolean;
+		workspaceLanguage: SettingsDraft["workspaceLanguage"];
 		workspaceIconSavingId: string;
 	} = {
 		open: false,
@@ -98,6 +99,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		agentDirty: false,
 		workspacePath: "",
 		createWorkspace: false,
+		workspaceLanguage: "en",
 		workspaceIconSavingId: ""
 	};
 
@@ -204,6 +206,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		state.tab = draft.tab || state.tab;
 		state.workspacePath = String(draft.workspacePath || "");
 		state.createWorkspace = Boolean(draft.createWorkspace);
+		state.workspaceLanguage = draft.workspaceLanguage === "zh-CN" ? "zh-CN" : "en";
 		state.agentDirty = Boolean(draft.dirty);
 		state.data = {
 			...state.data,
@@ -240,11 +243,16 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		if (!path) throw new Error("Workspace path is required.");
 		const created = state.createWorkspace;
 		const workspace = await dependencies.request<SettingsWorkspace>("/api/workspaces", {
-			method: "POST", body: JSON.stringify({ path, create: created })
+			method: "POST", body: JSON.stringify({
+				path,
+				create: created,
+				...(created ? { language: state.workspaceLanguage } : {})
+			})
 		});
 		dependencies.flushDraft();
 		state.workspacePath = "";
 		state.createWorkspace = false;
+		state.workspaceLanguage = "en";
 		dependencies.setConfig(await dependencies.request("/api/workspaces"));
 		dependencies.setActiveWorkspaceId(workspace.id);
 		dependencies.resetAgentState();

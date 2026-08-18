@@ -33,6 +33,7 @@ var requiredAgentHubCapabilities = []string{
 	"session.input-capabilities",
 	"messages.idempotent",
 	"messages.at-least-once",
+	"messages.opaque-payload-v2",
 	"turns.stable-index",
 	"turns.materialized",
 	"session.launch-environment",
@@ -141,26 +142,25 @@ type agentHubSession struct {
 	UpdatedAt          string                    `json:"updatedAt"`
 }
 
-// agentHubMessageSender is provenance identity metadata attached to an
-// inbound message. It records who sent the message; it is never an
-// authentication or authorization boundary.
+// agentHubMessageSender belongs to PUA's own message payload. The top-level
+// legacy fields use the same shape only while reading old AgentHub inputs.
 type agentHubMessageSender struct {
 	ID        string `json:"id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	SessionID string `json:"sessionId,omitempty"`
 }
 
-// agentHubInboundMessage is the wire shape shared by the messages endpoint
-// and the optional initial message on session creation. Role and sender
-// describe provenance only; an omitted role persists as an ordinary user
-// message.
+// agentHubInboundMessage is the schema-v2 wire shape plus deprecated schema-v1
+// fields used to recognize existing durable inputs during rolling upgrades.
 type agentHubInboundMessage struct {
-	Text      string                 `json:"text"`
-	Role      string                 `json:"role,omitempty"`
-	Sender    *agentHubMessageSender `json:"sender,omitempty"`
-	Steer     bool                   `json:"steer,omitempty"`
-	MessageID string                 `json:"messageId,omitempty"`
-	TurnID    string                 `json:"-"`
+	SchemaVersion int                    `json:"schemaVersion,omitempty"`
+	Text          string                 `json:"text"`
+	Payload       json.RawMessage        `json:"payload,omitempty"`
+	Role          string                 `json:"role,omitempty"`
+	Sender        *agentHubMessageSender `json:"sender,omitempty"`
+	Steer         bool                   `json:"steer,omitempty"`
+	MessageID     string                 `json:"messageId,omitempty"`
+	TurnID        string                 `json:"-"`
 }
 
 type agentHubCreateSessionRequest struct {
@@ -203,6 +203,8 @@ type agentHubTurnItem struct {
 	Sender               *agentHubMessageSender `json:"sender,omitempty"`
 	Steer                bool                   `json:"steer,omitempty"`
 	Text                 string                 `json:"text,omitempty"`
+	Payload              json.RawMessage        `json:"payload,omitempty"`
+	MessageID            string                 `json:"messageId,omitempty"`
 	StartEventID         int64                  `json:"startEventId"`
 	EndEventID           int64                  `json:"endEventId"`
 	StartedAt            string                 `json:"startedAt"`
@@ -234,6 +236,8 @@ type agentHubTurn struct {
 	TriggerPreview     string                 `json:"triggerPreview,omitempty"`
 	TriggerRole        string                 `json:"triggerRole,omitempty"`
 	TriggerSender      *agentHubMessageSender `json:"triggerSender,omitempty"`
+	TriggerPayload     json.RawMessage        `json:"triggerPayload,omitempty"`
+	TriggerMessageID   string                 `json:"triggerMessageId,omitempty"`
 	FinalReplyPreview  string                 `json:"finalReplyPreview,omitempty"`
 	EventCount         int                    `json:"eventCount"`
 	ToolEventCount     int                    `json:"toolEventCount"`

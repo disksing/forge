@@ -4,7 +4,7 @@ import type {
   ResourceHistoryGeneration, ResourceHistoryPage, ResourceHistorySegment,
   ResourceHistoryTurnDetail, ResourceHistoryTurnSummary, ResourceMessageStatus, TimelineItem,
 } from "./models";
-import { compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
+import { applyPUAMessagePayload, compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
 import { formatToolCallCount, normalizeToolCallCount } from "./tool-group";
 
 // A small summary page keeps the initial history read cheap: the Chat view
@@ -14,6 +14,11 @@ const HISTORY_LIMIT = 5;
 const EVENT_LIMIT = 250;
 const STREAM_BATCH_WINDOW_MS = 80;
 const STATUS_SYNC_INTERVAL_MS = 2000;
+// Terminal materialization retries bridge the gap between a streamed terminal
+// frame and the canonical Turn projection serving it. The backoff covers slow
+// history head reads; when the budget is exhausted the Turn stays pending and
+// later status/head syncs keep retrying instead of leaving a stuck error.
+const TERMINAL_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000];
 const HIDDEN_EVENT_TYPES = new Set(["session.created", "session.provider", "session.launch-environment"]);
 
 type EventSourceFactory = (url: string) => EventSource;
@@ -54,6 +59,12 @@ interface ResourceChatContext {
   pendingEvents: AgentEvent[];
   headRefreshing: boolean;
   terminalMaterializing: Set<string>;
+  // terminalPending holds Turn ids whose terminal materialization exhausted
+  // its retry budget; later status or head syncs retry them until the compact
+  // detail lands. terminalError remembers the message such a failure put into
+  // error so a successful heal can clear exactly what it set.
+  terminalPending: Set<string>;
+  terminalError: string;
   flushTimer: ReturnType<typeof setTimeout> | null;
   statusSyncTimer: ReturnType<typeof setInterval> | null;
   statusSyncInFlight: boolean;
@@ -66,6 +77,7 @@ export interface ChatSessionControllerOptions {
   onNotice?: (workspaceId: string, resourceId: string, notice: AgentNotice) => void;
   streamBatchWindowMs?: number;
   statusSyncIntervalMs?: number;
+  terminalRetryDelaysMs?: number[];
   realtime?: boolean;
 }
 
@@ -80,6 +92,7 @@ export class ChatSessionController {
   private readonly onNotice?: ChatSessionControllerOptions["onNotice"];
   private readonly streamBatchWindowMs: number;
   private readonly statusSyncIntervalMs: number;
+  private readonly terminalRetryDelaysMs: number[];
   private readonly realtime: boolean;
   private activeKey = "";
   private disposed = false;
@@ -91,6 +104,7 @@ export class ChatSessionController {
     this.onNotice = options.onNotice;
     this.streamBatchWindowMs = Math.max(0, options.streamBatchWindowMs ?? STREAM_BATCH_WINDOW_MS);
     this.statusSyncIntervalMs = Math.max(1, options.statusSyncIntervalMs ?? STATUS_SYNC_INTERVAL_MS);
+    this.terminalRetryDelaysMs = (options.terminalRetryDelaysMs ?? TERMINAL_RETRY_DELAYS_MS).map((value) => Math.max(0, value));
     this.realtime = options.realtime !== false;
   }
 
@@ -300,7 +314,7 @@ export class ChatSessionController {
       requestGeneration: 1, streamGeneration: 0, segments: new Map(), details: new Map(), detailLoading: new Set(),
       detailErrors: new Map(), expandedTurns: new Set(), liveEvents: new Map(), orphanEvents: new Map(), detailChain: Promise.resolve(), notices: [], nextCursor: "", hasMoreBefore: false,
       loading: false, loadingOlder: false, loaded: false, error: "", stream: null, pendingEvents: [], headRefreshing: false,
-      terminalMaterializing: new Set(), flushTimer: null, statusSyncTimer: null, statusSyncInFlight: false,
+      terminalMaterializing: new Set(), terminalPending: new Set(), terminalError: "", flushTimer: null, statusSyncTimer: null, statusSyncInFlight: false,
     };
     this.contexts.set(context.key, context);
     return context;
@@ -430,7 +444,7 @@ export class ChatSessionController {
         context.pendingEvents.push(event);
         this.onEvent?.(context.workspaceId, context.resourceId, event);
         this.scheduleEventFlush(context);
-        if (isTurnTerminal(event)) void this.materializeTerminalTurn(context, String(event.turnId || ""), streamGeneration);
+        if (isTurnTerminal(event)) void this.materializeTerminalTurn(context, String(event.turnId || ""));
       } catch {
         context.error = "An Agent event could not be decoded.";
         this.emit();
@@ -500,6 +514,10 @@ export class ChatSessionController {
       if (context.loaded && !context.loading && nextSessionId && nextSessionId !== previousSessionId && this.hasUnresolvedGap(context, nextGeneration)) this.reloadGapContext(context);
       else if (!context.loaded && !context.loading) void this.loadInitial(context);
       else if (!context.stream) this.connect(context);
+      // A terminal Turn whose compact materialization exhausted its retry
+      // budget gets retried here, so a temporarily slow or unavailable history
+      // head heals by itself instead of leaving a stuck timeline error.
+      this.retryPendingTerminals(context);
       if (previousGenerationId !== nextGeneration) this.emit();
     } catch (error) {
       // A stream failure should not replace useful history with a transient
@@ -533,50 +551,82 @@ export class ChatSessionController {
     return events;
   }
 
-  private async materializeTerminalTurn(context: ResourceChatContext, turnId: string, streamGeneration: number): Promise<void> {
+  private async materializeTerminalTurn(context: ResourceChatContext, turnId: string): Promise<void> {
     if (!turnId) return;
     const generationId = context.generationId;
+    const generation = context.requestGeneration;
     const materializationKey = `${generationId}:${turnId}`;
     if (context.terminalMaterializing.has(materializationKey)) return;
     context.terminalMaterializing.add(materializationKey);
+    context.terminalPending.delete(turnId);
     try {
       this.flushEvents(context, false);
       const existing = this.findTurnById(context, generationId, turnId);
       if (existing?.closed && context.details.has(existing.reference)) {
         context.liveEvents.delete(existing.reference);
+        this.clearTerminalErrorIfHealed(context);
         return;
       }
-      for (let attempt = 0; attempt < 3; attempt++) {
+      let failure = "";
+      for (let attempt = 0; attempt <= this.terminalRetryDelaysMs.length; attempt++) {
+        if (!this.isCurrent(context, generation)) return;
         try {
-          const page = await this.api.latest<ResourceHistoryPage>(historyPath(context), { scope: requestScope(context, `terminal-head:${generationId}:${turnId}`) });
-          if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
-          this.mergePage(context, page);
-          const summary = this.findTurnById(context, generationId, turnId);
-          if (!summary?.closed) throw new Error("Turn projection is not closed yet");
-          const detail = await this.api.latest<ResourceHistoryTurnDetail>(turnPath(context, summary.reference), { scope: requestScope(context, `terminal:${generationId}:${turnId}`) });
-          if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
+          let summary = this.findTurnById(context, generationId, turnId);
+          if (!summary?.closed) {
+            const page = await this.api.latest<ResourceHistoryPage>(historyPath(context), { scope: requestScope(context, `terminal-head:${materializationKey}`) });
+            if (!this.isCurrent(context, generation)) return;
+            this.mergePage(context, page);
+            summary = this.findTurnById(context, generationId, turnId);
+          }
+          if (!summary?.closed) {
+            failure = terminalFailureMessage(context, generationId, summary);
+            throw new Error(failure);
+          }
+          const detail = await this.api.latest<ResourceHistoryTurnDetail>(turnPath(context, summary.reference), { scope: requestScope(context, `terminal:${materializationKey}`) });
+          if (!this.isCurrent(context, generation)) return;
           // A repeated terminal frame may arrive while the history requests are
           // in flight. Fold it before replacing the raw live view with the
           // canonical compact detail so a later batch flush cannot regress it.
           this.flushEvents(context, false);
           context.details.set(summary.reference, detail);
           context.liveEvents.delete(summary.reference);
+          this.clearTerminalErrorIfHealed(context);
           this.emit();
           return;
         } catch (error) {
-          if (error instanceof StaleResponseError) return;
-          if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
-          if (attempt === 2) {
-            context.error = errorMessage(error);
-            this.emit();
-            return;
-          }
-          await delay(50 * (attempt + 1));
+          if (error instanceof StaleResponseError || !this.isCurrent(context, generation)) return;
+          failure = errorMessage(error);
+          if (attempt < this.terminalRetryDelaysMs.length) await delay(this.terminalRetryDelaysMs[attempt]);
         }
       }
+      // The projection stayed unconfirmed past the retry budget (a slow or
+      // unavailable history head). Keep the raw live view, remember the Turn
+      // as pending, and let later status/head syncs retry instead of leaving
+      // the raw block and a stale error on screen forever.
+      context.terminalPending.add(turnId);
+      this.setTerminalError(context, failure);
+      this.emit();
     } finally {
       context.terminalMaterializing.delete(materializationKey);
     }
+  }
+
+  private retryPendingTerminals(context: ResourceChatContext): void {
+    if (!context.terminalPending.size || !this.isActive(context)) return;
+    for (const turnId of [...context.terminalPending]) void this.materializeTerminalTurn(context, turnId);
+  }
+
+  private setTerminalError(context: ResourceChatContext, message: string): void {
+    context.terminalError = message;
+    context.error = message;
+  }
+
+  private clearTerminalErrorIfHealed(context: ResourceChatContext): void {
+    if (!context.terminalError || context.terminalPending.size) return;
+    // Only clear the exact message this path set; an unrelated error that
+    // landed in the meantime stays visible.
+    if (context.error === context.terminalError) context.error = "";
+    context.terminalError = "";
   }
 
   private async refreshHead(context: ResourceChatContext): Promise<void> {
@@ -587,6 +637,7 @@ export class ChatSessionController {
       const page = await this.api.latest<ResourceHistoryPage>(historyPath(context), { scope: requestScope(context, "stream-head") });
       if (this.isCurrent(context, generation)) {
         this.mergePage(context, page);
+        this.retryPendingTerminals(context);
         this.emit();
       }
     } catch (_) {
@@ -693,6 +744,8 @@ export class ChatSessionController {
     context.error = "";
     context.headRefreshing = false;
     context.terminalMaterializing.clear();
+    context.terminalPending.clear();
+    context.terminalError = "";
   }
 
   private deactivate(context?: ResourceChatContext): void {
@@ -752,7 +805,7 @@ function compactTurnItem(item: AgentTurnItem, generationId: string): TimelineIte
   const base = { key, time: item.endedAt || item.startedAt, startTime: item.startedAt, generationId };
   const data = item.data && typeof item.data === "object" ? item.data : {};
   switch (item.type) {
-    case "message": return [{ ...base, kind: "message", role: item.role || "user", sender: item.sender, steer: item.steer, text: item.text || "" }];
+    case "message": return [applyPUAMessagePayload({ ...base, kind: "message", role: item.role || "user", sender: item.sender, steer: item.steer, text: item.text || "" }, item.payload)];
     case "thinking": {
       const count = Math.max(1, Number(item.count) || 1);
       return [{ ...base, kind: "thinking", count, text: `Reasoning details omitted from compact history · ${count} update(s)`, compact: true, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId }];
@@ -851,6 +904,17 @@ function isStreamable(status: ResourceMessageStatus | null): boolean {
 
 function isTurnTerminal(event: AgentEvent): boolean {
   return ["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type);
+}
+
+// terminalFailureMessage classifies why the canonical Turn is not confirmed
+// after a terminal frame: an upstream gap means the history head itself is
+// degraded, a missing summary means the head page no longer shows the Turn,
+// and an open summary means the projection has not folded the terminal yet.
+// All three are transient, so every message says the retry continues.
+function terminalFailureMessage(context: ResourceChatContext, generationId: string, summary: ResourceHistoryTurnSummary | undefined): string {
+  if (context.segments.get(generationId)?.gap) return "Turn history is temporarily unavailable; the timeline will keep retrying in the background.";
+  if (!summary) return "The completed Turn is missing from the history head; the timeline will keep retrying in the background.";
+  return "Turn projection is not closed yet; the timeline will keep retrying in the background.";
 }
 
 function delay(milliseconds: number): Promise<void> {

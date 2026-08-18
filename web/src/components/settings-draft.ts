@@ -5,6 +5,7 @@ export function createSettingsDraft(model: SettingsModel): SettingsDraft {
     tab: model.initialTab,
     workspacePath: "",
     createWorkspace: false,
+    workspaceLanguage: "en",
     userName: model.userName,
     endpoint: model.agentHub.configuredEndpoint || "http://127.0.0.1:4646",
     profiles: model.profiles.map((profile) => ({ ...profile })),

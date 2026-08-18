@@ -341,7 +341,7 @@ func TestTerminalDeliveryNoticeRoutesToResourceSenderWithoutBounce(t *testing.T)
 func TestTurnResultTerminalVariantsDoNotInventContent(t *testing.T) {
 	for _, status := range []string{"failed", "cancelled"} {
 		turn := agentHubTurn{TurnID: "turn-" + status, Status: status, Closed: true}
-		message := turnResultMessage("project1.task1", "gen-1", turn, "", []string{"msg-1"}, status == "failed")
+		message := turnResultMessage("en", "project1.task1", "gen-1", turn, "", []string{"msg-1"}, status == "failed")
 		if !strings.Contains(message, "status `"+status+"`") {
 			t.Fatalf("%s callback omitted terminal status: %q", status, message)
 		}

@@ -41,14 +41,14 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
     projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], treeEditing: false, activity: { running: [], favorites: [], unread: [], problems: [] }, inbox: [],
     doctor: { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] },
     paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
-    mobile: { sidebarOpen: false, view: "details", immersive: false },
+    mobile: { sidebarOpen: false, view: "details" },
     layout: { preference: "auto", effective: "three" },
     route: { path: "", revision: 0, replace: true },
     onSwitchWorkspace: vi.fn(async () => undefined), onAddWorkspace: vi.fn(), onCreateProject: vi.fn(), onOpenSettings: vi.fn(), onRefreshDoctor: vi.fn(async () => undefined),
     onToggleProject: vi.fn(async () => undefined), onSelectResource: vi.fn(async () => undefined), onReorder: vi.fn(async () => undefined),
     onDragState: vi.fn(), onToggleTreeEditing: vi.fn(), onCreateFolder: vi.fn(async () => ""), onRenameFolder: vi.fn(async () => undefined),
     onDeleteFolder: vi.fn(async () => undefined), onToggleFolder: vi.fn(async () => undefined), onToggleFavorite: vi.fn(async () => undefined), onOpenInboxMessage: vi.fn(async () => undefined), onReplyInboxMessage: vi.fn(async () => undefined), onDeleteInboxMessage: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
-    onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onToast: vi.fn(),
+    onMobileView: vi.fn(), onToast: vi.fn(),
     onHistoryNavigation: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -161,6 +161,41 @@ describe("AppShell", () => {
 
     expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
     matches.mockRestore();
+  });
+
+  it("keeps the Task state tooltip open when an unrelated container scrolls", async () => {
+    const blockedStatus: ShellStatusPresentation = {
+      hasTaskState: true,
+      className: "task-state-blocked",
+      layoutClassName: "has-task-status",
+      slotClassName: "task-status-single",
+      statuses: [{ key: "task-blocked", className: "task-state-blocked", iconName: "circle-alert", recentOutput: false }],
+    };
+    const taskA = { ...resource("task-a", "Task A", "task"), statusLabel: "Blocked: Need approval", status: blockedStatus };
+    const project = { ...resource("project-a", "Project A"), expanded: true, children: [taskA] };
+    const initial = model({ projects: [project] });
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AppShell, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const taskRow = target.querySelector<HTMLElement>('[data-task-id="task-a"]')!;
+    taskRow.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    await tick();
+    expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
+
+    // A scroll inside an unrelated container (e.g. the chat timeline
+    // auto-scrolling on a new message) must not dismiss the tooltip.
+    const chatScroll = document.body.appendChild(document.createElement("div"));
+    chatScroll.dispatchEvent(new Event("scroll"));
+    await tick();
+    expect(target.querySelector(".task-state-tooltip")?.textContent).toBe("Blocked: Need approval");
+
+    // A viewport scroll still invalidates the anchor position and hides it.
+    document.dispatchEvent(new Event("scroll"));
+    await tick();
+    expect(target.querySelector(".task-state-tooltip")).toBeNull();
   });
 
   it("keeps the Activity grid stable when a new resource starts its first turn", async () => {
@@ -288,7 +323,7 @@ describe("AppShell", () => {
 
   it("preserves Escape priority between the mobile sidebar and local menus", async () => {
     const onMobileSidebar = vi.fn();
-    const initial = model({ mobile: { sidebarOpen: true, view: "details", immersive: false }, onMobileSidebar });
+    const initial = model({ mobile: { sidebarOpen: true, view: "details" }, onMobileSidebar });
     const channel = createModelChannel(initial);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(AppShell, { target, props: { channel } });

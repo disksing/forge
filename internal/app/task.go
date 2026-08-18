@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/disksing/pua/internal/localize"
 )
 
 var topProjectName = regexp.MustCompile(`^project([0-9]+)$`)
@@ -517,58 +519,26 @@ func defaultTaskMD(resource Resource, language string) string {
 	case *Task:
 		description = typed.Description
 	}
-	if language == languageSimplifiedChinese && isProject(resource) {
-		return projectMarkdownZH(meta.Title, description)
+	name := "task.md"
+	if isProject(resource) {
+		name = "project.md"
 	}
-	return taskMarkdown(meta.Title, description, language)
+	return localize.MustRender(language, name, map[string]string{
+		"Title": meta.Title, "Detail": strings.TrimSpace(description),
+	})
 }
 
 func taskMarkdown(title string, detail string, language string) string {
-	if language == languageSimplifiedChinese {
-		return taskMarkdownZH(title, detail)
-	}
-	detail = strings.TrimSpace(detail)
-	if detail == "" {
-		detail = "<!-- Why this work exists. Keep the durable task contract here. -->"
-	}
-	return fmt.Sprintf(`# %s
-
-## Background
-
-%s
-
-## Scope
-
-<!-- Define what is included. Add Out of Scope, Constraints, Decisions, or Open Questions when they affect the task contract. -->
-
-## Acceptance Criteria
-
-<!-- List observable results that mean this is done. -->
-- TBD
-`, title, detail)
+	return localize.MustRender(language, "task.md", map[string]string{
+		"Title": title, "Detail": strings.TrimSpace(detail),
+	})
 }
 
 func taskAgentsPrompt(resource Resource, language string) string {
-	if language == languageSimplifiedChinese {
-		return taskAgentsPromptZH(resource)
-	}
 	meta := resource.resourceMeta()
+	name := "task-agents.md"
 	if isProject(resource) {
-		return fmt.Sprintf(`# Project Agent Instructions
-
-You are working in an AgentWorkspace Project directory.
-
-- Resource ID: %s
-- Always read the Workspace instructions in ../AGENTS.md.
-`, meta.ID)
+		name = "project-agents.md"
 	}
-	return fmt.Sprintf(`# Task Agent Instructions
-
-You are working in an AgentWorkspace Task directory.
-
-- Resource ID: %s
-- Always read the parent Project instructions in ../AGENTS.md and the Workspace instructions in ../../AGENTS.md.
-- The Server sets the Task state to in_progress at the start of every Turn. Before ending a Turn, continue the work or choose waiting, blocked, paused, or completed and run pua task state set <state> --note "...".
-- waiting needs no user intervention and may resume after an external condition; blocked needs user follow-up; paused intentionally waits for user resumption; completed means done. waiting, blocked, and paused require a short single-line note.
-`, meta.ID)
+	return localize.MustRender(language, name, map[string]string{"ResourceID": meta.ID})
 }

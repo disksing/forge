@@ -60,22 +60,19 @@ function pointerEvent(type: string, clientX: number, clientY: number): Event {
 }
 
 describe("AppShell responsibility components", () => {
-  it("MobileToolbar owns mobile view, navigation, and immersive actions", async () => {
+  it("MobileToolbar owns mobile view, navigation, and backdrop actions", async () => {
     const onSidebar = vi.fn();
     const onView = vi.fn();
-    const onImmersive = vi.fn();
     const target = document.body.appendChild(document.createElement("div"));
-    const component = mount(MobileToolbar, { target, props: { sidebarOpen: false, view: "details", immersive: false, onSidebar, onView, onImmersive } });
+    const component = mount(MobileToolbar, { target, props: { sidebarOpen: false, view: "details", onSidebar, onView } });
     cleanups.push(() => unmount(component));
 
     target.querySelector<HTMLButtonElement>("#mobileMenuButton")!.click();
     target.querySelector<HTMLButtonElement>("#mobileChatButton")!.click();
-    target.querySelector<HTMLButtonElement>("#mobileImmersiveButton")!.click();
     target.querySelector<HTMLButtonElement>("#mobileSidebarBackdrop")!.click();
 
     expect(onSidebar.mock.calls).toEqual([[true], [false]]);
     expect(onView).toHaveBeenCalledWith("chat");
-    expect(onImmersive).toHaveBeenCalledWith(true);
   });
 
   it("WorkspaceSwitcher owns menu dismissal, pending deduplication, and errors", async () => {

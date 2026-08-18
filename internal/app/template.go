@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/disksing/pua/internal/localize"
 	"gopkg.in/yaml.v3"
 )
 
@@ -620,7 +621,11 @@ func (w *Workspace) createTemplate(projectID, name, title string) (TaskTemplate,
 		return TaskTemplate{}, &APIError{Operation: "create template", Kind: "template", Workspace: w.root, ResourceID: projectID, Err: err}
 	}
 	path := filepath.Join(dir, name+".md")
-	content := fmt.Sprintf("---\nschema-version: 2\ntitle: %q\nfields: []\n---\n# %s\n", title, title)
+	language, err := workspaceLanguage(w.root)
+	if err != nil {
+		return TaskTemplate{}, &APIError{Operation: "create template", Kind: "template", Workspace: w.root, ResourceID: projectID, Err: err}
+	}
+	content := localize.MustRender(language, "task-template.md", map[string]string{"Title": title})
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return TaskTemplate{}, &APIError{Operation: "create template", Kind: "template", Workspace: w.root, ResourceID: projectID, Path: relPath(w.root, path), Err: err}
@@ -636,4 +641,3 @@ func (w *Workspace) createTemplate(projectID, name, title string) (TaskTemplate,
 	}
 	return parseTaskTemplate(name, relPath(w.root, path), content), nil
 }
-
