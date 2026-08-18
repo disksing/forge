@@ -281,6 +281,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 	async function submit(next: CreateDraft): Promise<void> {
 		if (!state.open || state.submitting) return;
 		syncDraft(next);
+		if (state.type === "project" && !state.description.trim()) return;
 		const workspaceId = dependencies.workspaceId();
 		const dialogIdentity = state.identity;
 		state.submitting = true;

@@ -231,3 +231,40 @@ describe("CreateDialog task wizard", () => {
     expect(target.querySelector<HTMLInputElement>('input[name="title"]')?.value).toBe("Remember me");
   });
 });
+
+describe("CreateDialog project form", () => {
+  it("disables Create and shows the required description until it is filled", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const current = model({
+      identity: "dialog-1:project",
+      onSubmit,
+      draft: { ...model().draft, type: "project" },
+    });
+    const { target } = mountDialog(current);
+    await tick();
+
+    const description = target.querySelector<HTMLTextAreaElement>('textarea[name="description"]')!;
+    const create = target.querySelector<HTMLButtonElement>('#createDialogForm button[type="submit"]')!;
+    expect(description.required).toBe(true);
+    expect(description.getAttribute("aria-invalid")).toBe("true");
+    expect(description.getAttribute("aria-describedby")).toBe("project-description-error");
+    expect(target.querySelector("#project-description-error")?.textContent).toContain("required");
+    expect(create.disabled).toBe(true);
+
+    create.click();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    description.value = "A focused project";
+    description.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+
+    expect(description.getAttribute("aria-invalid")).toBe("false");
+    expect(description.getAttribute("aria-describedby")).toBeNull();
+    expect(target.querySelector("#project-description-error")).toBeNull();
+    expect(create.disabled).toBe(false);
+
+    create.click();
+    await tick();
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ type: "project", description: "A focused project" }));
+  });
+});
