@@ -91,7 +91,7 @@ function QuotaRow({ quota }) {
   );
 }
 
-export function Companion({ revision = 0, onOpenSettings, standalone = false }) {
+export function Companion({ revision = 0, onOpenSettings, standalone = false, pauseLiveUpdates = false }) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState({ onWatch: {} });
   const [companion, setCompanion] = useState(loadCompanionPreferences);
@@ -120,6 +120,7 @@ export function Companion({ revision = 0, onOpenSettings, standalone = false }) 
   const dragState = useRef(null);
   const resizeState = useRef(null);
   const suppressClick = useRef(false);
+  const quotaRequest = useRef(null);
 
   const visibleQuota = useMemo(
     () => filterQuotaSnapshot(quota, companion.hiddenQuotaKeys),
@@ -139,29 +140,44 @@ export function Companion({ revision = 0, onOpenSettings, standalone = false }) 
   const cardStyle = { width: placement.width, height: placement.height };
 
   const loadQuota = async () => {
+    quotaRequest.current?.abort();
+    const controller = new AbortController();
+    quotaRequest.current = controller;
     setQuotaLoading(true);
     try {
-      const body = await api("/v1/quota");
+      const body = await api("/v1/quota", { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setQuota(body.quota || { configured: false, connected: false, providers: [] });
     } catch (error) {
+      if (controller.signal.aborted) return;
       setQuota((current) => ({ ...current, connected: false, stale: true, error: error.message }));
     } finally {
-      setQuotaLoading(false);
+      if (quotaRequest.current === controller) {
+        quotaRequest.current = null;
+        setQuotaLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     let disposed = false;
+    const controller = new AbortController();
     setCompanion(loadCompanionPreferences());
-    api("/v1/config").then((body) => {
+    if (pauseLiveUpdates) return () => { disposed = true; controller.abort(); };
+    api("/v1/config", { signal: controller.signal }).then((body) => {
       if (!disposed) setSettings(body.config || { onWatch: {} });
     }).catch(() => {});
-    return () => { disposed = true; };
-  }, [revision]);
+    return () => { disposed = true; controller.abort(); };
+  }, [revision, pauseLiveUpdates]);
 
   useEffect(() => subscribeCompanionPreferences(setCompanion), []);
 
   useEffect(() => {
+    if (pauseLiveUpdates) {
+      quotaRequest.current?.abort();
+      setQuotaLoading(false);
+      return undefined;
+    }
     let disposed = false;
     let timer;
     const refresh = async () => {
@@ -170,8 +186,12 @@ export function Companion({ revision = 0, onOpenSettings, standalone = false }) 
     refresh();
     const seconds = Number(settings.onWatch?.refreshIntervalSeconds) || 60;
     timer = window.setInterval(refresh, Math.max(30, seconds) * 1000);
-    return () => { disposed = true; window.clearInterval(timer); };
-  }, [revision, settings.onWatch?.enabled, settings.onWatch?.refreshIntervalSeconds]);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      quotaRequest.current?.abort();
+    };
+  }, [pauseLiveUpdates, revision, settings.onWatch?.enabled, settings.onWatch?.refreshIntervalSeconds]);
 
   useEffect(() => {
     if (cyclePaused || cycleItems.length < 2) return undefined;
@@ -246,7 +266,7 @@ export function Companion({ revision = 0, onOpenSettings, standalone = false }) 
   }, [companion.enableBeeping]);
 
   useEffect(() => {
-    if (!companion.showActivity) {
+    if (pauseLiveUpdates || !companion.showActivity) {
       setActivityState("paused");
       return undefined;
     }
@@ -310,7 +330,7 @@ export function Companion({ revision = 0, onOpenSettings, standalone = false }) 
       setAudioBlocked(tonePlayer.current.status() !== "running");
     };
     return () => { disposed = true; source.close(); };
-  }, [companion.showActivity, companion.enableBeeping, companion.beepVolume, companion.beepProgression, companion.completionSound]);
+  }, [pauseLiveUpdates, companion.showActivity, companion.enableBeeping, companion.beepVolume, companion.beepProgression, companion.completionSound]);
 
   const resumeAudio = async () => {
     if (!companion.enableBeeping) return;
