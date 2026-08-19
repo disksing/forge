@@ -179,7 +179,11 @@ func readTurnRecordsRepairTail(path string) ([]TurnSummary, error) {
 		if turn.ID == "" || turn.StartEventID <= 0 {
 			return nil, errors.New("invalid turn projection record")
 		}
+		hasMaterializedItems := turn.Items != nil
 		turn.Items = normalizeTurnItems(turn.Items)
+		if hasMaterializedItems {
+			deriveFinalReply(&turn)
+		}
 		latest[turn.ID] = turn
 		order[turn.ID] = turn.StartEventID
 	}
@@ -276,8 +280,6 @@ func buildTurnSummaries(events []Event) []TurnSummary {
 			}
 			if json.Unmarshal(event.Data, &data) == nil {
 				appendAssistantItem(turn, event, data.Text)
-				turn.FinalReplyEventID = event.ID
-				turn.FinalReplyPreview = preview(turn.FinalReplyPreview + data.Text)
 			}
 		case "message.reasoning.delta":
 			appendThinkingActivity(turn, event)
@@ -304,6 +306,9 @@ func buildTurnSummaries(events []Event) []TurnSummary {
 			}
 		}
 		turn.DurationMS = durationMilliseconds(turn.StartedAt, event.Time)
+	}
+	for index := range turns {
+		deriveFinalReply(&turns[index])
 	}
 	return turns
 }
@@ -493,6 +498,24 @@ func appendAssistantItem(turn *TurnSummary, event Event, text string) {
 		}
 	}
 	appendMessageItem(turn, event, MessageRoleAssistant, text)
+}
+
+// deriveFinalReply keeps the Turn summary aligned with the conversation
+// projection: progress updates are assistant messages too, while the last
+// non-empty assistant message is the reply that closes or currently tails the
+// Turn. Items may combine multiple durable delta events from one message.
+func deriveFinalReply(turn *TurnSummary) {
+	turn.FinalReplyEventID = 0
+	turn.FinalReplyPreview = ""
+	for index := len(turn.Items) - 1; index >= 0; index-- {
+		item := turn.Items[index]
+		if item.Type != "message" || item.Role != MessageRoleAssistant || strings.TrimSpace(item.Text) == "" {
+			continue
+		}
+		turn.FinalReplyEventID = item.EndEventID
+		turn.FinalReplyPreview = preview(item.Text)
+		return
+	}
 }
 
 func appendStructuredItem(turn *TurnSummary, event Event, itemType string) {

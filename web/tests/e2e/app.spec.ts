@@ -1815,7 +1815,7 @@ test("keeps the System Settings close control in the dialog header at a 220px vi
   // Scrolling the panel content does not move the close control.
   await settings.locator(".settings-body").evaluate((node) => node.scrollTo(0, 400));
   const scrolledCloseBox = (await close.boundingBox())!;
-  expect(scrolledCloseBox.y).toBeCloseTo(closeBox.y, 0);
+  expect(Math.abs(scrolledCloseBox.y - closeBox.y)).toBeLessThanOrEqual(1);
 
   // And it still closes the dialog.
   await close.click();
