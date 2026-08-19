@@ -3,7 +3,7 @@ import {
   Archive, CaretRight, Check, CircleNotch, ClockCounterClockwise, Copy, Gear, List, PaperPlaneTilt, Plus,
   Play, SidebarSimple, Stop, X,
 } from "@phosphor-icons/react";
-import { api } from "./api";
+import { agentHubPath, api } from "./api";
 import { archiveDisabledReason, archiveListError, isArchived, isArchivable, pickActiveAfterArchive, sessionStatusLabel, sessionsQuery } from "./archive.js";
 import { catchUpEvents, mergeIncomingEvents, projectLiveEvent } from "./events.js";
 import { buildTimeline } from "@agenthub/event-timeline";
@@ -127,7 +127,7 @@ export function App() {
     };
     const connect = () => {
       if (disposed) return;
-      source = new EventSource(`/v1/sessions/${activeId}/events?stream=true&after=${cursor}`);
+      source = new EventSource(agentHubPath(`/v1/sessions/${activeId}/events?stream=true&after=${cursor}`));
       // All envelopes arrive on the default message channel. A gap pauses
       // live projection and catches up from the durable REST log.
       source.onmessage = async (message) => {

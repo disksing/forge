@@ -150,7 +150,7 @@ func (m *doctorMonitor) store(snapshot doctorSnapshot) {
 }
 
 func (m *doctorMonitor) bindingCatalog(ctx context.Context, cfg config) (*app.DoctorBindingCatalog, error) {
-	endpoint, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
+	endpoint, err := m.server.effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
 		return nil, err
 	}

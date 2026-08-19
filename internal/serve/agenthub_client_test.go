@@ -208,7 +208,6 @@ func TestAgentHubStatusValidation(t *testing.T) {
 }
 
 func TestNormalizeAgentHubEndpoint(t *testing.T) {
-	t.Setenv("PUA_AGENTHUB_URL", "")
 	got, err := normalizeAgentHubEndpoint("")
 	if err != nil || got != defaultAgentHubEndpoint {
 		t.Fatalf("default endpoint: %q, %v", got, err)
@@ -216,6 +215,10 @@ func TestNormalizeAgentHubEndpoint(t *testing.T) {
 	got, err = normalizeAgentHubEndpoint("http://localhost:4646/")
 	if err != nil || got != "http://localhost:4646" {
 		t.Fatalf("normalized endpoint: %q, %v", got, err)
+	}
+	got, err = normalizeAgentHubEndpoint("http://localhost:4646/agenthub/")
+	if err != nil || got != "http://localhost:4646/agenthub" {
+		t.Fatalf("normalized base path endpoint: %q, %v", got, err)
 	}
 	for _, invalid := range []string{"localhost:4646", "ftp://localhost", "http://user@localhost", "http://localhost?a=b", "http://localhost/base"} {
 		if _, err := normalizeAgentHubEndpoint(invalid); err == nil {

@@ -22,18 +22,24 @@ AgentHub is a local agent launcher and session hub. A single Go daemon manages C
 
 ## Build and Run
 
-Requires Go 1.24+ and Node.js. The Web UI lives in `frontend/` and is served same-origin by the daemon after building:
+AgentHub now lives in the PUA repository and shares its Go module and release
+build. Requires Go 1.26+ and Node.js. From the repository root:
 
 ```bash
-cd frontend
-npm install
-npm run build
-cd ..
-go build -o agenthub ./cmd/agenthub
-./agenthub serve
+scripts/build
+bin/agenthub serve
 ```
 
-Open <http://127.0.0.1:4646>.
+Open <http://127.0.0.1:4646/agenthub/>. The standalone root URL redirects
+there; the API is rooted at `/agenthub/v1`, and the API reference is
+`/agenthub/api.md`. The binary embeds the Web UI and does not need external
+frontend files at runtime.
+
+PUA embeds this same application by default at
+`http://127.0.0.1:4936/agenthub`. Run the standalone binary only when AgentHub
+must operate without PUA or when PUA is explicitly started with
+`--agenthub-mode=external`. Both forms keep `~/.agenthub` as the data root and
+must not hold its daemon lock at the same time.
 
 ### Listen Address
 
@@ -70,7 +76,7 @@ go run ./cmd/agenthub serve
 cd frontend && npm run dev
 ```
 
-Vite proxies `/v1` to the default daemon port.
+Vite proxies `/agenthub/v1` to the default daemon port.
 
 ## CLI
 
@@ -146,7 +152,7 @@ leftward/rightward direction from that position so the card remains on-screen.
 The open card can be resized from its outward corner; the saved size is clamped
 to the available viewport and its controls, waveform, quota columns, and
 scrolling layout respond to narrower, shorter, or wider dimensions.
-Its header can open the same interface in a new tab at `/beeper`. That
+Its header can open the same interface in a new tab at `/agenthub/beeper`. That
 standalone monitor uses the whole viewport as a dark surface, keeps quota
 providers in one column in portrait orientation, and still provides settings
 access. Its activity waveform is driven by the global AgentHub activity SSE
@@ -221,17 +227,19 @@ Command discovery order: the provider's `command`, `AGENTHUB_*_CLI`, then `PATH`
 
 ## API
 
-The daemon serves a complete Markdown API reference at **`GET /api.md`**
+The daemon serves a complete Markdown API reference at **`GET /agenthub/api.md`**
 (`text/markdown; charset=utf-8`): every public endpoint with parameters,
 request and response bodies, error codes, curl examples and the SSE event
 contract. It is embedded in the binary, needs no frontend build, and is kept
 in sync with the registered routes by automated tests. Fetch it with:
 
 ```bash
-curl -s http://127.0.0.1:4646/api.md
+curl -s http://127.0.0.1:4646/agenthub/api.md
 ```
 
-`GET /v1/status` is the compatibility handshake. It returns
+The canonical client endpoint is `http://host:port/agenthub`; every API path
+below is relative to that endpoint. For example, `GET /v1/status` resolves to
+`GET /agenthub/v1/status` and is the compatibility handshake. It returns
 `"apiVersion": "1"` and only the capabilities this daemon instance can
 actually exercise: `session.source`, `session.launch-environment`,
 `session.source-metadata`, `session.idempotent-create`,
@@ -304,7 +312,7 @@ so orchestrators can queue instead of steering providers that do not support
 active-turn input. The Turn endpoint exposes a compact index whose references
 are stable event IDs and remains readable after archival.
 
-The `source` object is persisted in `session.created`, rebuilt into `session.json` on replay, and returned by session GET/list responses. It is deliberately self-asserted metadata: AgentHub does not register applications, reserve names, authenticate values, enforce uniqueness, or isolate tenants. Any client may submit any values and duplicates are valid. `GET /v1/sessions` accepts exact, case-sensitive `sourceApp`, `sourceInstanceId`, and `sourceExternalId` filters in any combination; they also compose with `includeArchived`, `archived`, and `state`. Sessions created without source metadata remain compatible and do not match source filters. See the complete [HTTP API reference](http://127.0.0.1:4646/api.md) served by the daemon.
+The `source` object is persisted in `session.created`, rebuilt into `session.json` on replay, and returned by session GET/list responses. It is deliberately self-asserted metadata: AgentHub does not register applications, reserve names, authenticate values, enforce uniqueness, or isolate tenants. Any client may submit any values and duplicates are valid. `GET /v1/sessions` accepts exact, case-sensitive `sourceApp`, `sourceInstanceId`, and `sourceExternalId` filters in any combination; they also compose with `includeArchived`, `archived`, and `state`. Sessions created without source metadata remain compatible and do not match source filters. See the complete [HTTP API reference](http://127.0.0.1:4646/agenthub/api.md) served by the daemon.
 
 ### Opaque message payloads
 

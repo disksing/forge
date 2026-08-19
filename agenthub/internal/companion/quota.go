@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disksing/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/config"
 )
 
 const upstreamTimeout = 8 * time.Second

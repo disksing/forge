@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disksing/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/config"
 )
 
 // ModelCache caches per-provider model enumeration results and deduplicates

@@ -12,12 +12,12 @@
     "copyright": "Copyright (c) 2026, disksing"
   },
   "source": {
-    "repository": "https://github.com/disksing/agenthub",
+    "repository": "https://github.com/disksing/pua",
     "revision": "the Git commit containing this manifest",
     "inputs": {
       "src/index.js": "568bcbdbe403e854b735d2800f3683c000f168923d2309fa4d8b2d57cfcec109",
       "package.json": "0a43db3e981389493aef5c36975c20cb54c61f393f4cf119732453bcdf59af53",
-      "scripts/build.mjs": "59109be2db4a26a1c7197103bb743b970dec9f083c19268c54478ba8f2ff9b23"
+      "scripts/build.mjs": "9cef3aa9feed5cdfcdbe820d72c4ee5b04bdfd155ee8a9d4d073eec1060d7b8f"
     }
   },
   "build": {

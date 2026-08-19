@@ -13,17 +13,22 @@ import (
 	"io/fs"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	urlpath "path"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
+	agenthubapp "github.com/disksing/pua/agenthub/app"
 	"github.com/disksing/pua/internal/app"
 	"github.com/disksing/pua/internal/buildinfo"
 	"github.com/disksing/pua/internal/workspacepath"
@@ -171,20 +176,26 @@ type uiState struct {
 }
 
 type server struct {
-	addr      string
-	config    string
-	agents    *agentManager
-	doctor    *doctorMonitor
-	locks     *workspaceLockManager
-	uiStateMu sync.Mutex
+	addr             string
+	config           string
+	agentHubMode     string
+	agentHubEndpoint string
+	agents           *agentManager
+	doctor           *doctorMonitor
+	locks            *workspaceLockManager
+	uiStateMu        sync.Mutex
 }
 
 const (
-	previewMaxBytes = 512 * 1024
-	diffMaxBytes    = 4 * 1024 * 1024
+	previewMaxBytes      = 512 * 1024
+	diffMaxBytes         = 4 * 1024 * 1024
+	agentHubModeEmbedded = "embedded"
+	agentHubModeExternal = "external"
 )
 
-const serveUsage = `usage: pua serve [--addr=<address>] [--workspace=<path>] [--version]
+const serveUsage = `usage: pua serve [--addr=<address>] [--workspace=<path>]
+                 [--agenthub-mode=embedded|external]
+                 [--agenthub-endpoint=<url>] [--version]
 
 Start the PUA web service: Workspace API, AgentHub session orchestration and
 recovery, and the static web UI.
@@ -194,6 +205,9 @@ Workspace path; it does not invoke the pua CLI as a child process.
 Options:
   --addr <address>       local address to listen on (default 127.0.0.1:4936)
   --workspace <path>     AgentWorkspace path to add before starting
+  --agenthub-mode <mode> AgentHub mode: embedded (default) or external
+  --agenthub-endpoint    external AgentHub base URL ending in /agenthub;
+                         required when --agenthub-mode=external
   --version              print build-time branch and sha
 
 Workspace ownership:
@@ -204,8 +218,11 @@ Workspace ownership:
   fails at startup before session recovery begins. The OS releases the
   lock automatically when the owning process exits.
 
-Environment overrides:
-  PUA_AGENTHUB_URL      AgentHub endpoint override
+Embedded AgentHub:
+  The AgentHub Web UI and API share this server's listener at /agenthub/ and
+  /agenthub/v1/. The same network exposure and trust boundary applies to both.
+
+Environment:
   PUA_SERVE_CONFIG      serve configuration file path (default ~/.pua/serve.json)
 `
 
@@ -226,9 +243,13 @@ func Main(args []string) error {
 	flags.SetOutput(io.Discard)
 	var addr string
 	var initialWorkspace string
+	var agentHubMode string
+	var agentHubEndpoint string
 	var showVersion bool
 	flags.StringVar(&addr, "addr", "127.0.0.1:4936", "local address to listen on")
 	flags.StringVar(&initialWorkspace, "workspace", "", "AgentWorkspace path to add before starting")
+	flags.StringVar(&agentHubMode, "agenthub-mode", agentHubModeEmbedded, "AgentHub mode: embedded or external")
+	flags.StringVar(&agentHubEndpoint, "agenthub-endpoint", "", "external AgentHub base URL ending in /agenthub")
 	flags.BoolVar(&showVersion, "version", false, "print build-time branch and sha")
 	if err := flags.Parse(args); err != nil {
 		fmt.Fprint(os.Stderr, serveUsage)
@@ -242,6 +263,29 @@ func Main(args []string) error {
 		fmt.Print(buildinfo.Text("pua"))
 		return nil
 	}
+	agentHubMode = strings.ToLower(strings.TrimSpace(agentHubMode))
+	switch agentHubMode {
+	case agentHubModeEmbedded:
+		if strings.TrimSpace(agentHubEndpoint) != "" {
+			return errors.New("--agenthub-endpoint is only valid with --agenthub-mode=external")
+		}
+	case agentHubModeExternal:
+		if strings.TrimSpace(agentHubEndpoint) == "" {
+			return errors.New("--agenthub-endpoint is required with --agenthub-mode=external")
+		}
+		normalized, err := normalizeAgentHubEndpoint(agentHubEndpoint)
+		if err != nil {
+			return err
+		}
+		if !strings.HasSuffix(normalized, agenthubapp.BasePath) {
+			return fmt.Errorf("--agenthub-endpoint must end in %s", agenthubapp.BasePath)
+		}
+		agentHubEndpoint = normalized
+	default:
+		return fmt.Errorf("invalid --agenthub-mode %q: expected embedded or external", agentHubMode)
+	}
+	signalContext, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
 
 	configPath, err := defaultConfigPath()
 	if err != nil {
@@ -252,23 +296,28 @@ func Main(args []string) error {
 		return err
 	}
 	defer configLock.Close()
+	var agentHubService *agenthubapp.Service
+	if agentHubMode == agentHubModeEmbedded {
+		info := buildinfo.Current()
+		agentHubService, err = agenthubapp.New(agenthubapp.Options{Address: addr, Version: info.SHA})
+		if err != nil {
+			return fmt.Errorf("initialize embedded AgentHub: %w", err)
+		}
+		defer agentHubService.Close()
+		agentHubEndpoint = agentHubService.Endpoint()
+	}
 	s := &server{
-		addr:   addr,
-		config: configPath,
-		locks:  newWorkspaceLockManager(addr, configPath),
+		addr: addr, config: configPath, agentHubMode: agentHubMode, agentHubEndpoint: agentHubEndpoint,
+		locks: newWorkspaceLockManager(addr, configPath),
 	}
 	defer s.locks.closeAll()
-	_, err = s.validatePersistedAgentHubConfig(context.Background())
-	if err != nil {
-		return fmt.Errorf("validate AgentHub configuration: %w", err)
-	}
 	s.agents = newAgentManager(s)
 	if initialWorkspace != "" {
-		if _, err := s.addWorkspace(context.Background(), initialWorkspace); err != nil {
+		if _, err := s.addWorkspace(signalContext, initialWorkspace); err != nil {
 			return fmt.Errorf("add initial workspace: %w", err)
 		}
 	} else {
-		s.addCurrentDirectoryIfEmpty(context.Background())
+		s.addCurrentDirectoryIfEmpty(signalContext)
 	}
 	// Every configured Workspace must be owned before AgentHub recovery or any
 	// writable HTTP endpoint may touch it.
@@ -278,13 +327,106 @@ func Main(args []string) error {
 	if err := s.ensureConfiguredResourceRuntimes(); err != nil {
 		return err
 	}
-	s.agents.startAgentRecovery(context.Background())
-	s.doctor = newDoctorMonitor(s)
-	s.doctor.start(context.Background())
-
-	staticRoot, err := fs.Sub(staticFiles, "static")
+	puaHandler, err := s.httpHandler()
 	if err != nil {
 		return err
+	}
+	ready := &readinessHandler{next: puaHandler}
+	rootMux := http.NewServeMux()
+	if agentHubService != nil {
+		rootMux.Handle(agenthubapp.BasePath, agentHubService.Handler())
+		rootMux.Handle(agenthubapp.BasePath+"/", agentHubService.Handler())
+	}
+	rootMux.Handle("/", ready)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	httpServer := &http.Server{Handler: rootMux, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 75 * time.Second}
+	serverErrors := make(chan error, 1)
+	go func() {
+		err := httpServer.Serve(listener)
+		if errors.Is(err, http.ErrServerClosed) {
+			err = nil
+		}
+		serverErrors <- err
+	}()
+	if agentHubService != nil {
+		if err := agentHubService.Activate(); err != nil {
+			_ = httpServer.Close()
+			return fmt.Errorf("publish embedded AgentHub endpoint: %w", err)
+		}
+	}
+	handshakeContext, cancelHandshake := context.WithTimeout(signalContext, agentHubRequestTimeout)
+	agentHubSettings, err := s.readAgentHubSettings(handshakeContext)
+	cancelHandshake()
+	if err != nil {
+		_ = httpServer.Close()
+		return fmt.Errorf("validate AgentHub configuration: %w", err)
+	}
+	if !agentHubSettings.Connected || !agentHubSettings.Compatible {
+		_ = httpServer.Close()
+		return fmt.Errorf("validate AgentHub configuration: %s", agentHubSettings.Error)
+	}
+	lifecycleContext, cancelLifecycle := context.WithCancel(signalContext)
+	defer func() {
+		ready.ready.Store(false)
+		cancelLifecycle()
+		shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelShutdown()
+		shutdownDone := make(chan error, 1)
+		go func() { shutdownDone <- httpServer.Shutdown(shutdownContext) }()
+		done := make(chan struct{})
+		go func() {
+			s.agents.waitBackground()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+		if agentHubService != nil {
+			_ = agentHubService.Close()
+		}
+		if err := <-shutdownDone; err != nil {
+			_ = httpServer.Close()
+		}
+	}()
+	s.agents.startAgentRecovery(lifecycleContext)
+	s.doctor = newDoctorMonitor(s)
+	s.doctor.start(lifecycleContext)
+	ready.ready.Store(true)
+
+	log.Printf("pua serve listening on http://%s (AgentHub %s at %s)", addr, agentHubMode, agentHubEndpoint)
+	if agentHubService != nil && agentHubService.Exposed() {
+		log.Printf("WARNING: PUA and AgentHub are both reachable from the network at %s; neither service provides authentication", addr)
+	}
+	select {
+	case err := <-serverErrors:
+		return err
+	case <-signalContext.Done():
+		return nil
+	}
+}
+
+type readinessHandler struct {
+	ready atomic.Bool
+	next  http.Handler
+}
+
+func (h *readinessHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !h.ready.Load() {
+		http.Error(w, "PUA is starting", http.StatusServiceUnavailable)
+		return
+	}
+	h.next.ServeHTTP(w, r)
+}
+
+func (s *server) httpHandler() (http.Handler, error) {
+	staticRoot, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -295,9 +437,7 @@ func Main(args []string) error {
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/settings/", s.handleSettings)
 	mux.HandleFunc("/api/doctor", s.handleDoctor)
-
-	log.Printf("pua serve listening on http://%s", addr)
-	return http.ListenAndServe(addr, mux)
+	return mux, nil
 }
 
 func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {

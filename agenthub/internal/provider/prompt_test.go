@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 func TestPromptTextLeavesUnmarkedUserTextUntouched(t *testing.T) {

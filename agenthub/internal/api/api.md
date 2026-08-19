@@ -5,7 +5,7 @@ the agents installed on the machine (Codex, Kimi, Pi/Grok, OpenCode) and
 exposes configuration, session management, approvals and event streams to the
 Web UI, the CLI and any other HTTP client through one HTTP JSON + SSE API.
 
-This document is served by the daemon itself at `GET /api.md`
+This document is served by the daemon itself at `GET /agenthub/api.md`
 (`text/markdown; charset=utf-8`) and is verified against the registered routes
 by automated tests, so it always matches the running implementation.
 
@@ -14,14 +14,14 @@ by automated tests, so it always matches the running implementation.
 The daemon listens on **loopback only** by default:
 
 ```text
-http://127.0.0.1:4646
+http://127.0.0.1:4646/agenthub
 ```
 
 All examples below use `$BASE` for the base URL and `$SESSION` for a session
 id (session ids look like `ses_<timestamp><random hex>`):
 
 ```bash
-BASE=http://127.0.0.1:4646
+BASE=http://127.0.0.1:4646/agenthub
 SESSION=ses_1753502400000010203040506070809
 ```
 
@@ -32,7 +32,7 @@ Security model — read this before exposing the daemon anywhere:
   it can run agents, execute tools through them, and modify sessions and
   configuration.
 - **Local-first.** The default loopback binding is only reachable from the
-  same machine. `agenthub serve --listen` can explicitly bind a LAN interface
+  same machine. `agenthub serve --addr` can explicitly bind a LAN interface
   address, a wildcard address or a hostname that resolves to a local
   interface. Binding a non-loopback address means **every device that can
   reach that address controls the daemon** — only do this on a trusted

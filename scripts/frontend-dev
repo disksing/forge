@@ -11,9 +11,12 @@ fi
 
 pua_dev_runtime=$(mktemp -d "${TMPDIR:-/tmp}/pua-frontend-dev.XXXXXX")
 mkdir -p "$pua_dev_runtime/agenthub"
+if [ ! -f "$root/agenthub/web/static/index.html" ]; then
+	npm --prefix "$root/agenthub/frontend" run build
+fi
 go -C "$root" build -o "$pua_dev_runtime/pua" ./cli/cmd/pua
 PUA_SERVE_CONFIG="$pua_dev_runtime/serve.json" \
-AGENTHUB_DATA_DIR="$pua_dev_runtime/agenthub" \
+AGENTHUB_HOME="$pua_dev_runtime/agenthub" \
 "$pua_dev_runtime/pua" serve --addr=127.0.0.1:4936 --workspace="$workspace" &
 pua_dev_server_pid=$!
 cleanup() {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"net/http"
 	"net/url"
@@ -18,11 +19,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disksing/agenthub/internal/companion"
-	"github.com/disksing/agenthub/internal/config"
-	"github.com/disksing/agenthub/internal/provider"
-	"github.com/disksing/agenthub/internal/runtime"
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/companion"
+	"github.com/disksing/pua/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/provider"
+	"github.com/disksing/pua/agenthub/internal/runtime"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 const APIVersion = "1"
@@ -66,9 +67,13 @@ type Server struct {
 	config    string
 	logsDir   string
 	webDir    string
-	listen    *ListenAddress
-	models    ModelLister
-	quotas    *companion.Service
+	webFS     fs.FS
+	// publicBasePath prefixes absolute URLs emitted in response headers. The
+	// internal router still uses paths relative to the AgentHub mount.
+	publicBasePath string
+	listen         *ListenAddress
+	models         ModelLister
+	quotas         *companion.Service
 	// allowedOrigins holds normalized origins (see NormalizeOrigin) that are
 	// trusted in addition to the daemon's own origin, for reverse proxy
 	// deployments where the public browser origin differs from the daemon
@@ -86,6 +91,11 @@ type Dependencies struct {
 	Runtime    *runtime.Manager
 	ConfigPath string
 	WebDir     string
+	// WebFS serves an embedded Web UI. WebDir takes precedence when both are
+	// set so development builds can still be selected explicitly.
+	WebFS fs.FS
+	// PublicBasePath is AgentHub's externally visible mount path.
+	PublicBasePath string
 	// Listen, when set, enables the Host header guard derived from the
 	// validated listen address.
 	Listen *ListenAddress
@@ -114,6 +124,8 @@ func New(store *session.Store, version string, startedAt time.Time, dependencies
 		server.config = dependencies[0].ConfigPath
 		server.logsDir = dependencies[0].LogsDir
 		server.webDir = dependencies[0].WebDir
+		server.webFS = dependencies[0].WebFS
+		server.publicBasePath = strings.TrimRight(dependencies[0].PublicBasePath, "/")
 		server.listen = dependencies[0].Listen
 		server.models = dependencies[0].Models
 		server.quotas = companion.NewService(dependencies[0].QuotaHTTPClient)
@@ -186,6 +198,8 @@ func (s *Server) mux() *http.ServeMux {
 	}
 	if s.webDir != "" {
 		mux.Handle("/", spaHandler(s.webDir))
+	} else if s.webFS != nil {
+		mux.Handle("/", spaHandlerFS(s.webFS))
 	}
 	return mux
 }
@@ -672,7 +686,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 			value = sent
 		}
 	}
-	w.Header().Set("Location", "/v1/sessions/"+value.ID)
+	w.Header().Set("Location", s.publicBasePath+"/v1/sessions/"+value.ID)
 	status := http.StatusCreated
 	if !created {
 		status = http.StatusOK
@@ -1843,5 +1857,21 @@ func spaHandler(root string) http.Handler {
 			return
 		}
 		http.ServeFile(w, r, filepath.Join(root, "index.html"))
+	})
+}
+
+func spaHandlerFS(root fs.FS) http.Handler {
+	files := http.FileServer(http.FS(root))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")
+		if name != "." {
+			if info, err := fs.Stat(root, name); err == nil && !info.IsDir() {
+				files.ServeHTTP(w, r)
+				return
+			}
+		}
+		request := r.Clone(r.Context())
+		request.URL.Path = "/"
+		files.ServeHTTP(w, request)
 	})
 }

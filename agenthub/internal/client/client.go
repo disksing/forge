@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disksing/agenthub/internal/daemon"
-	"github.com/disksing/agenthub/internal/paths"
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/daemon"
+	"github.com/disksing/pua/agenthub/internal/paths"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 type Client struct {

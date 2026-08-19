@@ -4,14 +4,26 @@
 
 Generation 生命周期的 canonical facts、operation 优先级、网络 effect 与 guarded commit 边界见 [`generation_lifecycle.md`](generation_lifecycle.md)。planner 是纯决策层；resource controller 串行化同一稳定 resource 的调度；store adapter 负责 durable receipt/current/retired 事实；AgentHub client 只负责网络副作用。统一恢复顺序为 `facts → plan → effect → guarded commit → replan`，旧 generation 的过期结果不得覆盖新 current。
 
+## AgentHub 运行形态
+
+`pua serve` 默认使用 `--agenthub-mode=embedded`：PUA 与 AgentHub 共用一个进程、一个 listener 和网络暴露边界。PUA Web/API 使用 `/` 与 `/api/...`；AgentHub Web、API 和文档固定位于 `/agenthub/`、`/agenthub/v1/...` 和 `/agenthub/api.md`。PUA 仍通过该 HTTP contract 调用 AgentHub，不直接依赖 Provider/runtime。
+
+需要分离部署时，先运行 `agenthub serve`，再显式启动：
+
+```sh
+pua serve --agenthub-mode=external \
+  --agenthub-endpoint=http://127.0.0.1:4646/agenthub
+```
+
+external endpoint 必须是以 `/agenthub` 结尾的规范 base URL。两种形态只改变 host/port，不改变 path。external 模式不取得 AgentHub daemon lock，也不在 PUA 退出时停止外置服务。
+
 ## 配置与所有权
 
-持久化配置使用 schema version 4，包含 Workspace、AgentHub endpoint、PUA instance ID、Profile 路由，以及新建 Workspace/Project/Task 的分类型默认 Profile。Application、CLI 和 Web 界面创建资源时都读取持久化到 Workspace 的同一组默认值；类型默认不可解析时使用全局 `default`。读取 version 3 时会补齐三个 `default` 并写回 version 4。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 PUA 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
+持久化服务配置使用 schema version 6，包含 Workspace、当前 AgentHub endpoint、PUA instance ID 和 Profile 路由。embedded 模式会把从 PUA listener 派生的 endpoint 写回配置；该值仅用于展示与运行时连接，不用于推断下次启动的模式。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 PUA 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
 
-可用环境变量：
+服务启动形态由 CLI flag 决定，不会根据持久化 endpoint 隐式切换。可用环境变量：
 
 ```text
-PUA_AGENTHUB_URL    AgentHub endpoint override
 PUA_SERVE_CONFIG    serve configuration file path
 ```
 

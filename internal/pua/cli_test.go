@@ -361,9 +361,11 @@ func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	}
 	serveHelp := run(t, "serve", "--help")
 	for _, marker := range []string{
-		"usage: pua serve [--addr=<address>] [--workspace=<path>] [--version]",
+		"usage: pua serve [--addr=<address>] [--workspace=<path>]",
+		"--agenthub-mode=embedded|external",
+		"--agenthub-endpoint=<url>",
+		"/agenthub/v1/",
 		"in-process application API",
-		"PUA_AGENTHUB_URL",
 		"PUA_SERVE_CONFIG",
 	} {
 		if !strings.Contains(serveHelp, marker) {

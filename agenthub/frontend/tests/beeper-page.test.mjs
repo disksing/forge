@@ -8,11 +8,11 @@ import { BEEPER_PATH, isBeeperPath } from "../src/routes.js";
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("the standalone Beeper route matches only its direct path", () => {
-	assert.equal(BEEPER_PATH, "/beeper");
-	assert.equal(isBeeperPath("/beeper"), true);
-	assert.equal(isBeeperPath("/beeper/"), true);
+	assert.equal(BEEPER_PATH, "/agenthub/beeper");
+	assert.equal(isBeeperPath("/agenthub/beeper"), true);
+	assert.equal(isBeeperPath("/agenthub/beeper/"), true);
 	assert.equal(isBeeperPath("/"), false);
-	assert.equal(isBeeperPath("/beeper/settings"), false);
+	assert.equal(isBeeperPath("/agenthub/beeper/settings"), false);
 });
 
 test("the app selects a standalone page that reuses Companion", async () => {

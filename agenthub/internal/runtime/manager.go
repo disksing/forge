@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disksing/agenthub/internal/config"
-	"github.com/disksing/agenthub/internal/provider"
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/provider"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 type Manager struct {

@@ -80,7 +80,7 @@ func waitForStatus(t *testing.T, addr string) map[string]any {
 	endpoint := "http://" + addr
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		response, err := http.Get(endpoint + "/v1/status")
+		response, err := http.Get(endpoint + "/agenthub/v1/status")
 		if err == nil {
 			var body map[string]any
 			_ = json.NewDecoder(response.Body).Decode(&body)
@@ -92,7 +92,6 @@ func waitForStatus(t *testing.T, addr string) map[string]any {
 	t.Fatal("daemon did not start")
 	return nil
 }
-
 
 // SIGTERM must stop the daemon promptly and cleanly even while an SSE client
 // keeps an event stream open.
@@ -110,7 +109,7 @@ func TestServeSIGTERMClosesSSEAndExitsCleanly(t *testing.T) {
 	done := serveAsync(t, addr)
 	waitForStatus(t, addr)
 
-	response, err := http.Get("http://" + addr + "/v1/sessions/ses_sse001/events?stream=true")
+	response, err := http.Get("http://" + addr + "/agenthub/v1/sessions/ses_sse001/events?stream=true")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,10 +124,14 @@ func TestServeSIGTERMClosesSSEAndExitsCleanly(t *testing.T) {
 		t.Fatal(err)
 	}
 	var state struct {
-		PID int `json:"pid"`
+		PID      int    `json:"pid"`
+		Endpoint string `json:"endpoint"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
 		t.Fatal(err)
+	}
+	if want := "http://" + addr + "/agenthub"; state.Endpoint != want {
+		t.Fatalf("endpoint = %q, want %q", state.Endpoint, want)
 	}
 	started := time.Now()
 	if err := syscall.Kill(state.PID, syscall.SIGTERM); err != nil {

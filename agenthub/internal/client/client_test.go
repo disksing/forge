@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 func TestRequireCapabilitiesRejectsOldAndIncompleteDaemons(t *testing.T) {

@@ -347,7 +347,7 @@ test("companion uses one global EventSource and never scans provider sessions", 
 	const model = await readFile(path.join(frontendRoot, "src", "companion", "model.js"), "utf8");
 	const styles = await readFile(path.join(frontendRoot, "src", "styles.css"), "utf8");
 	assert.equal((source.match(/new EventSource/g) || []).length, 1);
-	assert.ok(source.includes('new EventSource("/v1/activity/events")'));
+	assert.ok(source.includes('new EventSource(agentHubPath("/v1/activity/events"))'));
 	assert.ok(source.includes("activityPulsesForFrame(assignedFrame, receivedAt)"));
 	assert.ok(source.includes("activityPlaybackPlan(sessions, frame.sequence)"));
 	assert.ok(source.includes("nextProgressionFrame("));

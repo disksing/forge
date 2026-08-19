@@ -3,7 +3,7 @@
   "package": "@agenthub/event-timeline",
   "version": "2.0.0",
   "apiEventContractVersion": "agenthub.api.v1",
-  "repository": "https://github.com/disksing/agenthub",
+  "repository": "https://github.com/disksing/pua",
   "revision": "7a3d86f6efb6483e10f640dbc55c314db54a5a93",
   "artifact": "index.mjs",
   "sha256": "8e337b23f6f0326aca29c24f6624c59d7029097709ebb62169be40b63b3915bb",

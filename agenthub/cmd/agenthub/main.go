@@ -8,8 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,17 +16,21 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/disksing/agenthub/internal/api"
-	"github.com/disksing/agenthub/internal/client"
-	"github.com/disksing/agenthub/internal/config"
-	"github.com/disksing/agenthub/internal/daemon"
-	"github.com/disksing/agenthub/internal/paths"
-	"github.com/disksing/agenthub/internal/provider"
-	"github.com/disksing/agenthub/internal/runtime"
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/app"
+	"github.com/disksing/pua/agenthub/internal/client"
+	"github.com/disksing/pua/agenthub/internal/session"
+	"github.com/disksing/pua/internal/buildinfo"
 )
 
-const version = "0.1.0-dev"
+const developmentVersion = "0.1.0-dev"
+
+func version() string {
+	info := buildinfo.Current()
+	if info.SHA == "unknown" {
+		return developmentVersion
+	}
+	return info.SHA
+}
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -66,10 +68,10 @@ func run(args []string) error {
 			printTopic("version")
 			return nil
 		}
-		fmt.Println(version)
+		fmt.Print(buildinfo.Text("agenthub"))
 		return nil
 	case "--version", "-version":
-		fmt.Println(version)
+		fmt.Print(buildinfo.Text("agenthub"))
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q\nRun 'agenthub help' for usage.", args[0])
@@ -89,8 +91,8 @@ func (f *stringListFlag) Set(value string) error {
 func runServe(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	address := flags.String("addr", api.DefaultListenAddress, "listen address as host:port; default "+api.DefaultListenAddress+" (loopback only); IPv6 needs brackets, e.g. [::1]:4646")
-	webDir := flags.String("web-dir", "", "built Web UI directory (defaults to ./frontend/dist/client when present)")
+	address := flags.String("addr", app.DefaultListenAddress, "listen address as host:port; default "+app.DefaultListenAddress+" (loopback only); IPv6 needs brackets, e.g. [::1]:4646")
+	webDir := flags.String("web-dir", "", "built Web UI directory (overrides the embedded UI)")
 	var allowedOrigins stringListFlag
 	flags.Var(&allowedOrigins, "allow-origin", "trusted browser origin (scheme://host[:port]) for mutating requests through a reverse proxy; repeatable")
 	if err := flags.Parse(args); err != nil {
@@ -99,112 +101,11 @@ func runServe(args []string) error {
 	if flags.NArg() != 0 {
 		return usageError("agenthub serve [--addr host:port] [--web-dir path] [--allow-origin origin]...", "serve")
 	}
-	normalizedOrigins := make([]string, 0, len(allowedOrigins))
-	for _, origin := range allowedOrigins {
-		normalized, err := api.NormalizeOrigin(origin)
-		if err != nil {
-			return err
-		}
-		normalizedOrigins = append(normalizedOrigins, normalized)
-	}
-	listenAddress, err := api.ResolveListenAddress(*address)
-	if err != nil {
-		return err
-	}
-	resolved, err := paths.Resolve()
-	if err != nil {
-		return err
-	}
-	if err := resolved.Ensure(); err != nil {
-		return err
-	}
-	lock, err := daemon.AcquireLock(resolved.LockFile)
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
-
-	store, err := session.Open(resolved.SessionsDir)
-	if err != nil {
-		return err
-	}
-	cfg, err := config.Load(resolved.ConfigFile)
-	if err != nil {
-		return err
-	}
-	manager := runtime.New(store, cfg)
-	defer manager.Close()
-	if *webDir == "" {
-		if absolute, statErr := filepath.Abs(filepath.Join("frontend", "dist", "client")); statErr == nil {
-			if info, statErr := os.Stat(absolute); statErr == nil && info.IsDir() {
-				*webDir = absolute
-			}
-		}
-	}
-	listener, err := net.Listen("tcp", listenAddress.BindAddress())
-	if err != nil {
-		return fmt.Errorf("cannot listen on %s: %w", listenAddress.BindAddress(), err)
-	}
-	defer listener.Close()
-
-	startedAt := time.Now().UTC()
-	endpoint := listenAddress.Endpoint()
-	if err := daemon.WriteState(resolved.ServerFile, daemon.State{
-		PID:       os.Getpid(),
-		Endpoint:  endpoint,
-		StartedAt: startedAt,
-	}); err != nil {
-		return err
-	}
-	defer os.Remove(resolved.ServerFile)
-
-	closing := make(chan struct{})
-	httpServer := &http.Server{
-		Handler: api.New(store, version, startedAt, api.Dependencies{
-			Runtime: manager, ConfigPath: resolved.ConfigFile, WebDir: *webDir, Listen: listenAddress,
-			Models: provider.NewModelCache(), LogsDir: resolved.LogsDir, Closing: closing,
-			AllowedOrigins: normalizedOrigins,
-		}).Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       75 * time.Second,
-	}
-	// End SSE streams as soon as Shutdown begins so open event clients do
-	// not hold the graceful shutdown (and the process exit) hostage.
-	httpServer.RegisterOnShutdown(func() { close(closing) })
-	serverErrors := make(chan error, 1)
-	go func() {
-		err := httpServer.Serve(listener)
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErrors <- err
-			return
-		}
-		serverErrors <- nil
-	}()
-	fmt.Printf("AgentHub %s listening on %s\n", version, listenAddress.BindAddress())
-	fmt.Printf("local endpoint: %s\n", endpoint)
-	if listenAddress.Exposed() {
-		printExposureWarning(os.Stderr, listenAddress)
-	}
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(signals)
-	select {
-	case err := <-serverErrors:
-		return err
-	case <-signals:
-		manager.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := httpServer.Shutdown(ctx); err != nil {
-			// Connections that outlived the grace period are dropped so the
-			// daemon still exits promptly and cleanly; a non-zero exit here
-			// would be reported by the service manager as a crash.
-			_ = httpServer.Close()
-			return nil
-		}
-		return <-serverErrors
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return app.Serve(ctx, app.Options{
+		Address: *address, Version: version(), WebDir: *webDir, AllowedOrigins: allowedOrigins,
+	})
 }
 
 func runStatus(args []string) error {
@@ -580,15 +481,6 @@ func runSessionShow(args []string) error {
 		return err
 	}
 	return printJSON(value)
-}
-
-func printExposureWarning(w *os.File, listenAddress *api.ListenAddress) {
-	fmt.Fprintln(w, "")
-	fmt.Fprintf(w, "WARNING: AgentHub is listening on %s and is reachable from other machines.\n", listenAddress.BindAddress())
-	fmt.Fprintln(w, "AgentHub has NO authentication: anyone who can reach this address can run")
-	fmt.Fprintln(w, "agents, modify sessions and change the configuration. Only use this on")
-	fmt.Fprintln(w, "trusted networks. Do NOT expose the daemon to the public internet.")
-	fmt.Fprintln(w, "")
 }
 
 func printJSON(value any) error {

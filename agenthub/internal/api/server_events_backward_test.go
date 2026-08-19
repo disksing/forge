@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 type backwardPage struct {

@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/agenthub/internal/config"
-	"github.com/disksing/agenthub/internal/runtime"
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/runtime"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 func companionTestServer(t *testing.T, cfg config.Config, upstream *httptest.Server) (*httptest.Server, string, *session.Store) {

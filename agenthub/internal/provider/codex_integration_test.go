@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/disksing/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/config"
 )
 
 // TestCodexReasoningEffortIntegration exercises the reasoning_effort option

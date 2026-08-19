@@ -76,7 +76,7 @@ const manifest = {
     copyright: "Copyright (c) 2026, disksing",
   },
   source: {
-    repository: "https://github.com/disksing/agenthub",
+    repository: "https://github.com/disksing/pua",
     revision: "the Git commit containing this manifest",
     inputs: {
       "src/index.js": sha256(source),

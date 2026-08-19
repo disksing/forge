@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowSquareOut, Gear, Play, SpeakerHigh, SpeakerSlash, X } from "@phosphor-icons/react";
-import { api } from "../api.js";
+import { agentHubPath, api } from "../api.js";
 import { BEEPER_PATH } from "../routes.js";
 import { activityPlaybackPlan, COMPLETION_SOUNDS, TonePlayer } from "./audio.js";
 import {
@@ -251,7 +251,7 @@ export function Companion({ revision = 0, onOpenSettings, standalone = false }) 
       return undefined;
     }
     let disposed = false;
-    const source = new EventSource("/v1/activity/events");
+    const source = new EventSource(agentHubPath("/v1/activity/events"));
     progressionFrame.current = null;
     setActivityChord(progressionChordValues(companion.beepProgression)[0]);
     setActivityState("connecting");

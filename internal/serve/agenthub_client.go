@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultAgentHubEndpoint = "http://127.0.0.1:4646"
+	defaultAgentHubEndpoint = "http://127.0.0.1:4646/agenthub"
 	agentHubAPIVersion      = "1"
 	agentHubRequestTimeout  = 30 * time.Second
 )
@@ -280,10 +280,11 @@ func normalizeAgentHubEndpoint(endpoint string) (string, error) {
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", errors.New("AgentHub endpoint must not contain credentials, query parameters, or a fragment")
 	}
-	if strings.Trim(parsed.Path, "/") != "" {
-		return "", errors.New("AgentHub endpoint must not contain a path")
+	path := strings.TrimRight(parsed.Path, "/")
+	if path != "" && path != "/agenthub" {
+		return "", errors.New("AgentHub endpoint path must be /agenthub")
 	}
-	parsed.Path = ""
+	parsed.Path = path
 	return strings.TrimRight(parsed.String(), "/"), nil
 }
 

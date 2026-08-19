@@ -32,6 +32,9 @@ mkdir -p "$workspace_dir" "$agenthub_data_dir"
 if [ ! -f "$root/web/static/assets/pua-app.js" ]; then
 	npm --prefix "$root/web" run build
 fi
+if [ ! -f "$root/agenthub/web/static/index.html" ]; then
+	npm --prefix "$root/agenthub/frontend" run build
+fi
 
 go -C "$root" build -o "$binary_path" ./cli/cmd/pua
 (
@@ -40,6 +43,5 @@ go -C "$root" build -o "$binary_path" ./cli/cmd/pua
 )
 
 PUA_SERVE_CONFIG="$runtime_dir/serve.json" \
-PUA_AGENTHUB_URL="http://127.0.0.1:1" \
-AGENTHUB_DATA_DIR="$agenthub_data_dir" \
+AGENTHUB_HOME="$agenthub_data_dir" \
 "$binary_path" serve --addr="127.0.0.1:$port" --workspace="$workspace_dir"

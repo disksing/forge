@@ -39,7 +39,8 @@
   <div class="settings-panel-header"><h2>AgentHub</h2><p>PUA connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div>
   <section class="settings-agent-section">
     <div class="settings-section-heading"><h3>Connection</h3><span class="settings-pill">{agentHub.connected && agentHub.compatible ? "Compatible" : agentHub.connected ? "Incompatible" : "Unavailable"}</span></div>
-    <label class="settings-default-agent"><span>Endpoint</span><input id="settingsAgentHubEndpoint" bind:value={draft.endpoint} oninput={onDirty} /></label>
+    <label class="settings-default-agent"><span>Endpoint</span><input id="settingsAgentHubEndpoint" bind:value={draft.endpoint} oninput={onDirty} readonly /></label>
+    <small>Mode: {agentHub.mode || "embedded"}. Change the mode or endpoint with <code>pua serve</code> flags and restart the service.</small>
     <small>{agentHub.error || `API ${agentHub.apiVersion || "unknown"} · AgentHub ${agentHub.version || "unknown"}`}</small>
     <div class="settings-provider-list">{#each agentHub.capabilities as capability}<span class="settings-pill">{capability}</span>{/each}</div>
   </section>

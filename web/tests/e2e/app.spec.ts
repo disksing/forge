@@ -229,6 +229,8 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       }
       if (settingsRefreshDelayMs) await new Promise((resolve) => setTimeout(resolve, settingsRefreshDelayMs));
       return json(route, {
+        mode: "embedded",
+        configuredEndpoint: "http://127.0.0.1:4936/agenthub",
         config: { agentProfiles: [{ key: "default", agentName: "test-agent" }, { key: "fast", agentName: "test-agent" }, { key: "review", agentName: "other-agent" }] },
         connected: true,
         compatible: true,
@@ -1494,13 +1496,12 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   await expect(name).toHaveValue("Migration-User");
   await settings.getByRole("button", { name: "Save" }).click();
   await settings.getByRole("button", { name: "AgentHub" }).click();
-  await settings.getByLabel("Endpoint").fill("http://127.0.0.1:5656");
+  await expect(settings.getByLabel("Endpoint")).toHaveValue("http://127.0.0.1:4936/agenthub");
+  await expect(settings.getByLabel("Endpoint")).toHaveAttribute("readonly");
+  await expect(settings).toContainText("Mode: embedded");
   await settings.getByRole("button", { name: "Profiles" }).click();
   await settings.getByRole("button", { name: "AgentHub" }).click();
-  await expect(settings.getByLabel("Endpoint")).toHaveValue("http://127.0.0.1:5656");
-  await settings.getByRole("button", { name: "Save All" }).click();
-  await expect.poll(() => harness.settingsBodies.length).toBe(1);
-  expect(harness.settingsBodies[0]).toMatchObject({ endpoint: "http://127.0.0.1:5656" });
+  await expect(settings.getByLabel("Endpoint")).toHaveValue("http://127.0.0.1:4936/agenthub");
   await expect(settings.locator(".settings-save-hint")).toBeHidden();
   await settings.getByRole("button", { name: "Close" }).click();
 
@@ -1576,8 +1577,10 @@ test("keeps canonical navigation synchronized across history, workspace restore,
   await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task2$/);
   await expect(page.locator('#projectTree .tree-item.active')).toContainText("Follow-up task");
 
+  await page.getByRole("button", { name: "Edit projects" }).click();
   const tasks = page.locator("#projectTree .task-group .tree-item");
   await expect(tasks).toHaveCount(2);
+  await expect(tasks.first().locator(".drag-handle")).toBeVisible();
   const before = await tasks.locator(".name-text").allTextContents();
   harness.failNextUIStateSave();
   await page.evaluate(() => {

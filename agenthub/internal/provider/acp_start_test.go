@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/config"
 )
 
 // ACP startup handshake tests. They exercise the full spawn → initialize →

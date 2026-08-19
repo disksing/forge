@@ -154,7 +154,8 @@ var helpTopics = map[string]string{
 Usage:
   agenthub serve [--addr host:port] [--web-dir path] [--allow-origin origin]...
 
-The daemon serves the HTTP JSON/SSE API and, when built, the Web UI. It is
+The daemon serves the embedded Web UI at /agenthub/, the HTTP JSON/SSE API at
+/agenthub/v1/, and the API reference at /agenthub/api.md. It is
 the single writer of sessions and the config file; every other agenthub
 command discovers it through server.json (or AGENTHUB_ENDPOINT) and talks to
 this API. Only one daemon may run at a time (state/server.lock).
@@ -165,8 +166,7 @@ Options:
                      hostname that resolves to one, or a wildcard. IPv6 needs
                      brackets, e.g. [::1]:4646. Invalid addresses fail at
                      startup; there is no silent fallback.
-  --web-dir path     Built Web UI directory (default ./frontend/dist/client
-                     when present).
+  --web-dir path     Built Web UI directory (overrides the embedded UI).
   --allow-origin o   Trusted browser origin (scheme://host[:port]) for
                      mutating requests, in addition to the daemon's own
                      origin. Repeatable. Use when a reverse proxy exposes
@@ -180,6 +180,10 @@ Examples:
   agenthub serve
   agenthub serve --addr 0.0.0.0:4646
   agenthub serve --addr '[::1]:4646'
+
+The root URL redirects browsers to /agenthub/. The discovery endpoint written
+to server.json is http://host:port/agenthub, so CLI and HTTP clients use the
+same base path whether AgentHub runs standalone or inside PUA.
 
 See also: agenthub help status
 `,

@@ -15,6 +15,7 @@ export interface NotificationPreferences {
 }
 
 export interface AgentHubSettings {
+  mode?: string;
   configuredEndpoint: string;
   connected: boolean;
   compatible: boolean;

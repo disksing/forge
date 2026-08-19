@@ -23,18 +23,16 @@ AgentHub 是一个本地 Agent 启动器与 Session 中枢。一个 Go daemon �
 
 ## 构建与启动
 
-需要 Go 1.24+ 和 Node.js。Web UI 位于 `frontend/`，构建后由 daemon 同源提供：
+源码现已合并到 PUA 仓库，与 PUA 共用 Go module 和发布构建。需要 Go 1.26+ 和 Node.js。在仓库根目录执行：
 
 ```bash
-cd frontend
-npm install
-npm run build
-cd ..
-go build -o agenthub ./cmd/agenthub
-./agenthub serve
+scripts/build
+bin/agenthub serve
 ```
 
-打开 <http://127.0.0.1:4646>。
+打开 <http://127.0.0.1:4646/agenthub/>。独立服务的根路径会重定向到这里；API 固定位于 `/agenthub/v1`，API 文档位于 `/agenthub/api.md`。binary 已嵌入 Web UI，运行时不需要外部前端文件。
+
+PUA 默认会把同一个 AgentHub application 内嵌到 `http://127.0.0.1:4936/agenthub`。只有在 AgentHub 需要脱离 PUA 运行，或 PUA 显式使用 `--agenthub-mode=external` 时才需要独立 binary。两种形态都继续使用 `~/.agenthub`，不能同时持有其 daemon lock。
 
 ### 监听地址
 
@@ -71,7 +69,7 @@ go run ./cmd/agenthub serve
 cd frontend && npm run dev
 ```
 
-Vite 会把 `/v1` 代理到默认 daemon 端口。
+Vite 会把 `/agenthub/v1` 代理到默认 daemon 端口。
 
 ## CLI
 
@@ -140,7 +138,7 @@ $HOME/.agenthub/config.json
 }
 ```
 
-浮动伙伴可以拖到视口内任意位置；归一化位置保存在浏览器本地存储中，刷新后仍会恢复，并会在视口缩放后保持可见。打开时，它会根据当前位置选择向上/向下展开及向左/向右对齐，确保卡片留在屏幕内。展开卡片还可以从外侧角调整宽高；保存的尺寸会按当前视口自动夹紧，内部控制项、波形、配额分栏和滚动布局会响应窄、矮或较宽的尺寸。标题栏可在新标签页打开 `/beeper`；独立监控页以深色内容填满整个视口，竖屏时 Provider 配额保持单列，并继续提供设置入口。Activity 的显示、蜂鸣、音量、和弦进行、单和弦和完成音效均保存在当前浏览器来源的 `localStorage` 中，不会发送给 daemon 或写入 AgentHub 配置。Activity 波形由 AgentHub 全局 Activity SSE 流驱动：每个 Session 在每个一秒活动帧中只产生一个波峰，不受底层 event 数量影响；同一帧内多个 Session 的波峰与活动蜂鸣共用四个固定的 250ms subdivision，从右侧进入后平滑向左滚动。1 至 4 个 Session 使用确定性密度节奏型，更多和弦音在轮换的 subdivision 上同时播放，而不会继续缩短间隔。活跃 Session 标签一行一个，每次有新活动时变亮，并在 10 秒内恢复初始颜色。Turn 成功结束后，该行以黄色保留 5 分钟；失败或取消时则以红色保留，新 Turn 会恢复活跃样式。结束 Session 的音高只继续占用 10 秒，随后即可由其他 Session 复用。Activity 设置可以保持单个和弦，也可以切换到内置卡农 C 大调进行（C–G–Am–Em–F–C–F–G）；每个和弦独立随机持续 1～6 个一秒活动帧，边界处所有 Session 同时切换到新和弦的离散音高，不做滑音或错峰迁移。完成提示音使用内置的 6 个 Codex Beeper MP3。
+浮动伙伴可以拖到视口内任意位置；归一化位置保存在浏览器本地存储中，刷新后仍会恢复，并会在视口缩放后保持可见。打开时，它会根据当前位置选择向上/向下展开及向左/向右对齐，确保卡片留在屏幕内。展开卡片还可以从外侧角调整宽高；保存的尺寸会按当前视口自动夹紧，内部控制项、波形、配额分栏和滚动布局会响应窄、矮或较宽的尺寸。标题栏可在新标签页打开 `/agenthub/beeper`；独立监控页以深色内容填满整个视口，竖屏时 Provider 配额保持单列，并继续提供设置入口。Activity 的显示、蜂鸣、音量、和弦进行、单和弦和完成音效均保存在当前浏览器来源的 `localStorage` 中，不会发送给 daemon 或写入 AgentHub 配置。Activity 波形由 AgentHub 全局 Activity SSE 流驱动：每个 Session 在每个一秒活动帧中只产生一个波峰，不受底层 event 数量影响；同一帧内多个 Session 的波峰与活动蜂鸣共用四个固定的 250ms subdivision，从右侧进入后平滑向左滚动。1 至 4 个 Session 使用确定性密度节奏型，更多和弦音在轮换的 subdivision 上同时播放，而不会继续缩短间隔。活跃 Session 标签一行一个，每次有新活动时变亮，并在 10 秒内恢复初始颜色。Turn 成功结束后，该行以黄色保留 5 分钟；失败或取消时则以红色保留，新 Turn 会恢复活跃样式。结束 Session 的音高只继续占用 10 秒，随后即可由其他 Session 复用。Activity 设置可以保持单个和弦，也可以切换到内置卡农 C 大调进行（C–G–Am–Em–F–C–F–G）；每个和弦独立随机持续 1～6 个一秒活动帧，边界处所有 Session 同时切换到新和弦的离散音高，不做滑音或错峰迁移。完成提示音使用内置的 6 个 Codex Beeper MP3。
 
 Provider 封装一个本地 Agent 运行时或协议；Agent 引用一个 Provider 并保存具体启动参数。Agent 没有独立的 id：它的 `name` 必填（最长 80 个字符），在去除首尾空白后大小写不敏感地唯一，并且是唯一引用键——配置、API、CLI 和 Session 记录都使用它。每个 Session 都用显式 Agent 名称创建（`POST /v1/sessions` 要求 `agentName`，CLI 要求 `--agent`）；名称匹配不区分大小写，Session 记录的是配置中的规范拼写。未知、缺失或 Provider 被禁用的 Agent 会直接返回明确错误，不会被路由到其他 Agent。
 
@@ -191,11 +189,13 @@ Session 现在只使用显式 Agent 名称作为身份。Agent Profile、tag 路
 
 ## API
 
-daemon 在 **`GET /api.md`** 提供完整的 Markdown API 参考（`text/markdown; charset=utf-8`）：覆盖全部公共端点的参数、请求与响应体、错误码、curl 示例和 SSE 事件约定。文档内嵌在二进制中，无需前端构建即可访问，并由自动化测试保证与真实注册路由同步。获取方式：
+daemon 在 **`GET /agenthub/api.md`** 提供完整的 Markdown API 参考（`text/markdown; charset=utf-8`）：覆盖全部公共端点的参数、请求与响应体、错误码、curl 示例和 SSE 事件约定。文档内嵌在二进制中，无需前端构建即可访问，并由自动化测试保证与真实注册路由同步。获取方式：
 
 ```bash
-curl -s http://127.0.0.1:4646/api.md
+curl -s http://127.0.0.1:4646/agenthub/api.md
 ```
+
+规范客户端 endpoint 为 `http://host:port/agenthub`；下面列出的 API 路径都相对于该 endpoint。例如 `GET /v1/status` 的完整路径是 `GET /agenthub/v1/status`。
 
 主要端点：
 

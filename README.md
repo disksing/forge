@@ -23,17 +23,17 @@ PUA separates concerns deliberately:
 ```text
 pua CLI ───── internal/app ─┐
                               ├── AgentWorkspace files (source of truth)
-pua serve ─── internal/app ─┤
-  (Web UI)  ├── AgentHub client │
-            └── Git diff viewer ┘
+pua serve ─── shared HTTP listener
+  ├── PUA Web/API ── internal/app ── AgentWorkspace files
+  └── /agenthub ── AgentHub application ── provider processes and sessions
 
-AgentHub ── provider processes and durable agent sessions
+agenthub ── the same AgentHub application at /agenthub
 
 shared checkout in repos/ ── git worktree ── task-owned branch in worktree/
 ```
 
 - The **CLI** owns flag parsing and stable user-facing output; deterministic workspace mutations and typed views live in the reusable `internal/app` API.
-- **`pua serve`** renders workspace state in the web UI, routes interactive sessions through AgentHub, and calls `internal/app` directly for workspace operations.
+- **`pua serve`** renders workspace state in the web UI and embeds AgentHub on the same listener by default, while still talking to it through the public HTTP contract.
 - **AgentHub** owns provider discovery, provider process lifecycle, provider-native configuration, and durable agent sessions.
 - **Agents** may read other Workspace resources for context, but write only files owned by their starting resource and its task worktrees. Host files outside the Workspace follow user scope and host permissions.
 
@@ -41,13 +41,13 @@ Resource-level Session Locks are not part of PUA. Multiple sessions can run agai
 
 ## Requirements
 
-- Go 1.22 or newer
+- Go 1.26 or newer
 - Git
-- A compatible AgentHub service for web chat
+- Node.js 22 or newer for frontend builds only
 
 ## Build
 
-Clone the repository and build the `pua` binary with branch and commit metadata embedded:
+Clone the repository and build both binaries with branch and commit metadata embedded:
 
 ```bash
 git clone https://github.com/disksing/pua.git
@@ -59,9 +59,12 @@ This creates:
 
 ```text
 bin/pua
+bin/agenthub
 ```
 
-`pua` provides both the workspace CLI and web service (`pua serve`). Pass
+`pua` provides the workspace CLI, PUA Web service, and embedded AgentHub.
+`agenthub` provides the same AgentHub application as a standalone CLI/service.
+Both binaries embed their Web UI and have no Node runtime dependency. Pass
 another output directory to `scripts/build` if needed.
 
 ## Quick Start
@@ -86,9 +89,39 @@ Open the web UI for that workspace:
 pua serve --workspace "$PWD"
 ```
 
-Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint and Agent Profiles in Settings.
+Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). The embedded
+AgentHub Web UI is at [http://127.0.0.1:4936/agenthub/](http://127.0.0.1:4936/agenthub/),
+its API base is `http://127.0.0.1:4936/agenthub/v1`, and Agent Profiles remain
+configurable in Settings.
 
-The web UI has no built-in authentication. Its default loopback address is appropriate for local use; do not expose it to an untrusted network.
+To run the two services separately, start the standalone binary and select
+external mode explicitly:
+
+```bash
+agenthub serve --addr=127.0.0.1:4646
+pua serve --workspace "$PWD" \
+  --agenthub-mode=external \
+  --agenthub-endpoint=http://127.0.0.1:4646/agenthub
+```
+
+Standalone and embedded AgentHub use the same canonical `/agenthub` base path;
+only the host and port change. The standalone root URL redirects to
+`/agenthub/`, and no root-level `/v1` compatibility route is provided.
+
+### Upgrade from separate PUA and AgentHub services
+
+Before switching to embedded mode, stop the old PUA service and standalone
+AgentHub so the new process can acquire the existing AgentHub daemon lock.
+Then start only `pua serve`; it reads the existing `~/.agenthub` config,
+Sessions, Archive, and logs in place without copying or rewriting Session
+facts. To roll back to a split deployment, stop embedded PUA, start the
+`agenthub` binary from the same release, and start PUA in external mode with
+its canonical `http://host:port/agenthub` endpoint. Never run embedded and
+standalone AgentHub against the same data directory simultaneously.
+
+PUA and embedded AgentHub have no built-in authentication and share the same
+network exposure. The default loopback address is appropriate for local use;
+do not expose it to an untrusted network.
 
 ## PUA Web UI
 
@@ -151,7 +184,6 @@ These commands infer the sending resource from the current directory, attach `ro
 Useful overrides:
 
 ```text
-PUA_AGENTHUB_URL    AgentHub endpoint override
 PUA_SERVE_CONFIG    serve configuration file
 ```
 
@@ -330,7 +362,9 @@ pua task show|archive ...
 pua workspace tree --json
 pua workspace resource --id=<resource> --json
 
-pua serve [--addr=<address>] [--workspace=<path>] [--version]
+pua serve [--addr=<address>] [--workspace=<path>]
+          [--agenthub-mode=embedded|external]
+          [--agenthub-endpoint=<url>] [--version]
 ```
 
 `pua agent list` queries the owning `pua serve` process for the configured PUA Agent Profiles and the read-only AgentHub agent catalog. The default output lists profiles (key, agent, description) followed by agents (name, provider, availability); pass `--json` for the complete structured result including profiles, providers, and probes.
@@ -367,13 +401,20 @@ Repeated migration is safe.
 Run the full test suite and build all binaries:
 
 ```bash
+cd web && npm ci && npm run check && npm test && npm run test:e2e && cd ..
+cd agenthub/frontend && npm ci && npm test && npm run test:sites && cd ../..
 go test -race ./...
 go vet ./...
-cd web && npm ci && npm run check && npm test && npm run test:e2e && cd ..
 scripts/build
 ```
 
-`scripts/build` validates and builds the Svelte frontend before embedding the generated assets in the single PUA binary. Node is required only for development and builds; the shipped binary has no Node runtime dependency. For frontend development against an isolated Workspace, run `scripts/frontend-dev /path/to/isolated/AgentWorkspace` and open the Vite URL. See [web/README.md](web/README.md) for the frontend ownership, lifecycle, and performance contracts.
+`scripts/build` validates and builds both frontends, embeds their generated
+assets, and produces `pua` plus `agenthub`. Node is required only for
+development and builds; neither shipped binary has a Node runtime dependency.
+For frontend development against an isolated Workspace, run
+`scripts/frontend-dev /path/to/isolated/AgentWorkspace` and open the Vite URL.
+See [web/README.md](web/README.md) for the PUA frontend ownership, lifecycle,
+and performance contracts.
 
 Useful focused commands:
 
@@ -388,6 +429,7 @@ When testing a second serve instance, isolate all mutable state. Each Workspace 
 
 ```bash
 PUA_SERVE_CONFIG=/tmp/pua-serve-test/serve.json \
+AGENTHUB_HOME=/tmp/pua-agenthub-test \
   go run ./cli/cmd/pua serve \
   --addr 127.0.0.1:4999 \
   --workspace /tmp/pua-workspace-test

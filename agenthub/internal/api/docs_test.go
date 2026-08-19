@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 func newDocsTestServer(t *testing.T) *Server {

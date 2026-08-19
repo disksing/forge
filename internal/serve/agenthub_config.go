@@ -40,10 +40,14 @@ type agentHubProfileRoute struct {
 }
 
 func effectiveAgentHubEndpoint(configured string) (string, error) {
-	if override := strings.TrimSpace(os.Getenv("PUA_AGENTHUB_URL")); override != "" {
-		return normalizeAgentHubEndpoint(override)
-	}
 	return normalizeAgentHubEndpoint(configured)
+}
+
+func (s *server) effectiveAgentHubEndpoint(configured string) (string, error) {
+	if s != nil && strings.TrimSpace(s.agentHubEndpoint) != "" {
+		return normalizeAgentHubEndpoint(s.agentHubEndpoint)
+	}
+	return effectiveAgentHubEndpoint(configured)
 }
 
 func newAgentHubInstanceID() (string, error) {

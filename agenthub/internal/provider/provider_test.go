@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/agenthub/internal/config"
-	"github.com/disksing/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/session"
 )
 
 type writeCloser struct{ io.Writer }

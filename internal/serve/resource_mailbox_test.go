@@ -108,12 +108,14 @@ func TestResourceMailboxVersionOneMigratesToBoundedReceiptWithoutLosingMessage(t
 	if err := os.MkdirAll(agentRoot(root), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	legacy := `{"version":1,"nextSequence":1,"messages":[{"id":"msg-v1","sequence":1,"resourceId":"workspace","text":"legacy","role":"user","requestedMode":"enqueue","actualMode":"enqueue","status":"delivered","acceptedAt":"2026-08-12T00:00:00Z","updatedAt":"2026-08-12T00:00:00Z"}]}`
+	recent := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
+	legacy := fmt.Sprintf(`{"version":1,"nextSequence":1,"messages":[{"id":"msg-v1","sequence":1,"resourceId":"workspace","text":"legacy","role":"user","requestedMode":"enqueue","actualMode":"enqueue","status":"delivered","acceptedAt":%q,"updatedAt":%q}]}`, recent, recent)
 	if err := os.WriteFile(resourceMailboxPath(root), []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	mailbox, err := loadResourceMailbox(root)
-	if err != nil || mailbox.Version != resourceMailboxVersion || len(mailbox.Messages) != 1 || mailbox.Messages[0].ID != "msg-v1" {
+	if err != nil || mailbox.Version != resourceMailboxVersion || mailbox.NextSequence != 1 || len(mailbox.Messages) != 1 ||
+		mailbox.Messages[0].ID != "msg-v1" || !mailbox.Messages[0].receipt || mailbox.Messages[0].Text != "" {
 		t.Fatalf("v1 mailbox upgrade = %#v, %v", mailbox, err)
 	}
 	if err := migrateLegacyResourceMailbox(root); err != nil {

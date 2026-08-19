@@ -23,7 +23,7 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 	if strings.TrimSpace(cfg.AgentHubInstanceID) == "" {
 		return config{}, nil, errors.New("AgentHub instance id is not configured")
 	}
-	endpoint, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
+	endpoint, err := m.server.effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
 		return config{}, nil, err
 	}

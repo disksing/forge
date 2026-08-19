@@ -155,7 +155,7 @@ func startGate(t *testing.T, root, cwd string) *daemon {
 		t.Fatal(err)
 	}
 	gate := &daemon{
-		t: t, root: root, cwd: cwd, addr: addr, endpoint: "http://" + addr,
+		t: t, root: root, cwd: cwd, addr: addr, endpoint: "http://" + addr + "/agenthub",
 		cmd: command, done: make(chan error, 1), stdout: stdout, stderr: stderr,
 	}
 	go func() { gate.done <- command.Wait() }()
