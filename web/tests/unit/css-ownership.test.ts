@@ -197,6 +197,24 @@ describe("CSS ownership", () => {
     expect(rule).toContain("height: 44px;");
   });
 
+  it("keeps the mobile navigation trigger at a 44px touch size without growing the toolbar row", () => {
+    const css = read("src/components/MobileToolbar.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const toolbar = body(':where([data-component-owner="mobile-toolbar"]).mobile-toolbar {');
+    expect(toolbar).toContain("grid-template-columns: 44px minmax(0, 1fr) 44px;");
+    expect(toolbar).toContain("padding: 4px 10px;");
+    expect(toolbar).toContain("padding-top: calc(4px + env(safe-area-inset-top, 0px));");
+
+    const trigger = body(':where([data-component-owner="mobile-toolbar"]) .mobile-icon-button');
+    expect(trigger).toContain("width: 44px;");
+    expect(trigger).toContain("height: 44px;");
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {
