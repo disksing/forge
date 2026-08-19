@@ -658,6 +658,9 @@ func loadResourceMailboxStoreInternal(workspacePath, resourceID string) (resourc
 }
 
 func mailboxMessageNeedsHot(message resourceMailboxMessage) bool {
+	if message.receipt {
+		return false
+	}
 	switch message.Status {
 	case resourceMessageQueued, resourceMessageDelivering, resourceMessageInterrupting:
 		return true
@@ -668,22 +671,44 @@ func mailboxMessageNeedsHot(message resourceMailboxMessage) bool {
 	if message.ResultSubscriptionStatus == resourceResultSubscriptionPending && message.Notification == nil {
 		return true
 	}
-	if message.Type == resourceMessageTypeSchedulerTick && message.Status == resourceMessageDelivered && strings.TrimSpace(message.TurnTerminalAt) == "" {
+	if message.Type == "" && message.Status == resourceMessageDelivered && message.SubscribeResult &&
+		message.ResultSubscriptionStatus == "" && message.Notification == nil && message.ActualMode != resourceMessageModeSteer &&
+		message.Sender != nil && isStablePUAResourceID(message.Sender.ID) && strings.TrimSpace(message.SenderWorkspaceInstanceID) != "" &&
+		strings.TrimSpace(message.GenerationID) != "" {
 		return true
 	}
-	if message.Type == "" && (message.Status == resourceMessageDelivered || message.Status == resourceMessageUndeliverable || message.Status == resourceMessageDeliveryUnknown) &&
+	if message.Type == "" && (message.Status == resourceMessageCancelled || message.Status == resourceMessageUndeliverable || message.Status == resourceMessageDeliveryUnknown) &&
 		message.Role == "agent" && message.Sender != nil && strings.TrimSpace(message.Sender.ID) != "" && strings.TrimSpace(message.SenderWorkspaceInstanceID) != "" && message.Notification == nil {
 		return true
 	}
 	return false
 }
 
+func latestSchedulerTickNeedingHot(messages []resourceMailboxMessage) string {
+	var latest resourceMailboxMessage
+	found := false
+	for _, message := range messages {
+		if message.Type != resourceMessageTypeSchedulerTick {
+			continue
+		}
+		if !found || message.Sequence > latest.Sequence || (message.Sequence == latest.Sequence && message.ID > latest.ID) {
+			latest = message
+			found = true
+		}
+	}
+	if !found || latest.receipt || latest.Status != resourceMessageDelivered || strings.TrimSpace(latest.TurnTerminalAt) != "" {
+		return ""
+	}
+	return latest.ID
+}
+
 func resourceMailboxStoreNeedsHotWork(store resourceMailboxStore) bool {
+	schedulerTickID := latestSchedulerTickNeedingHot(store.Mailbox.Messages)
 	for _, message := range store.Mailbox.Messages {
 		if message.receipt {
 			continue
 		}
-		if mailboxMessageNeedsHot(message) {
+		if message.ID == schedulerTickID || mailboxMessageNeedsHot(message) {
 			return true
 		}
 	}
@@ -691,6 +716,17 @@ func resourceMailboxStoreNeedsHotWork(store resourceMailboxStore) bool {
 		if operation.Status != resourceNotificationDelivered && operation.Status != resourceNotificationTerminal {
 			return true
 		}
+	}
+	return false
+}
+
+func resourceMailboxStoreNeedsCompaction(store resourceMailboxStore) bool {
+	schedulerTickID := latestSchedulerTickNeedingHot(store.Mailbox.Messages)
+	for _, message := range store.Mailbox.Messages {
+		if message.receipt || message.ID == schedulerTickID || mailboxMessageNeedsHot(message) {
+			continue
+		}
+		return true
 	}
 	return false
 }
@@ -941,11 +977,16 @@ func prepareResourceMailboxDocuments(store resourceMailboxStore) (resourceMailbo
 		message.ResourceID = normalizedResourceID(message.ResourceID)
 		byID[message.ID] = cloneMailboxMessage(message)
 	}
+	messages := make([]resourceMailboxMessage, 0, len(byID))
+	for _, message := range byID {
+		messages = append(messages, message)
+	}
+	schedulerTickID := latestSchedulerTickNeedingHot(messages)
 	hot := resourceMailboxHotDocument{Version: resourceMailboxStoreVersion, ResourceID: store.ResourceID, NextSequence: store.Mailbox.NextSequence, Messages: []resourceMailboxMessage{}}
 	receipts := append([]resourceMailboxReceipt(nil), store.Receipts.Receipts...)
 	hotIDs := make(map[string]bool)
 	for _, message := range byID {
-		if mailboxMessageNeedsHot(message) {
+		if message.ID == schedulerTickID || mailboxMessageNeedsHot(message) {
 			message.receipt = false
 			hot.Messages = append(hot.Messages, message)
 			hotIDs[message.ID] = true
@@ -1317,9 +1358,28 @@ func loadAllHotResourceMailboxes(workspacePath string) ([]resourceMailbox, error
 	}
 	result := make([]resourceMailbox, 0, len(resourceIDs))
 	for _, resourceID := range resourceIDs {
-		hot, loadErr := loadHotResourceMailbox(workspacePath, resourceID)
+		store, loadErr := loadResourceMailboxStoreForRead(workspacePath, resourceID)
 		if loadErr != nil {
 			return nil, loadErr
+		}
+		// A predicate change or a crash after committing mailbox documents can
+		// leave cold messages behind a valid hot marker. Compact such a store
+		// once while it is already in the bounded hot set; subsequent polls do
+		// not scan or rewrite it again.
+		if resourceMailboxStoreNeedsCompaction(store) {
+			if _, compactErr := mutateResourceMailboxStoreForResource(workspacePath, resourceID, func(*resourceMailboxStore) error { return nil }); compactErr != nil {
+				return nil, compactErr
+			}
+			store, loadErr = loadResourceMailboxStoreForRead(workspacePath, resourceID)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+		}
+		hot := resourceMailbox{Version: resourceMailboxVersion, NextSequence: store.Mailbox.NextSequence, Messages: []resourceMailboxMessage{}}
+		for _, message := range store.Mailbox.Messages {
+			if !message.receipt {
+				hot.Messages = append(hot.Messages, message)
+			}
 		}
 		if len(hot.Messages) > 0 {
 			result = append(result, hot)

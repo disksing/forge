@@ -130,3 +130,153 @@ func TestHotMailboxMarkerLeavesActiveSetAfterRetryAndExitsAfterCompletion(t *tes
 		t.Fatalf("completed mailbox remained active: %#v", ids)
 	}
 }
+
+func TestHotMailboxMarkerDropsSettledAgentMessages(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	sender := &agentHubMessageSender{ID: "project1.task2", Name: "Sender"}
+	tests := []struct {
+		name            string
+		mode            string
+		subscribeResult bool
+		subscription    string
+		wantHot         bool
+	}{
+		{name: "disabled enqueue", mode: resourceMessageModeEnqueue, subscription: resourceResultSubscriptionDisabled},
+		{name: "disabled steer", mode: resourceMessageModeSteer, subscription: resourceResultSubscriptionDisabled},
+		{name: "settled steer", mode: resourceMessageModeSteer, subscribeResult: true, subscription: resourceResultSubscriptionNone},
+		{name: "unbound result subscription", mode: resourceMessageModeEnqueue, subscribeResult: true, wantHot: true},
+	}
+	for index, test := range tests {
+		resourceID := fmt.Sprintf("project1.task%d", index+1)
+		_, err := mutateResourceMailboxForResource(root, resourceID, func(mailbox *resourceMailbox) error {
+			mailbox.NextSequence++
+			mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
+				ID: fmt.Sprintf("message-%d", index), Sequence: mailbox.NextSequence, ResourceID: resourceID,
+				Text: "completed", Role: "agent", Sender: sender, SenderWorkspaceInstanceID: "instance-1",
+				SubscribeResult: test.subscribeResult, ResultSubscriptionStatus: test.subscription,
+				RequestedMode: test.mode, ActualMode: test.mode, Status: resourceMessageDelivered,
+				AcceptedAt: stamp, UpdatedAt: stamp, DeliveredAt: stamp, TerminalAt: stamp,
+				GenerationID: "generation-1",
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids, err := listHotResourceMailboxResourceIDs(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, id := range ids {
+			if id == resourceID {
+				found = true
+				break
+			}
+		}
+		if found != test.wantHot {
+			t.Fatalf("%s hot marker = %v, want %v; active=%#v", test.name, found, test.wantHot, ids)
+		}
+	}
+}
+
+func TestHotMailboxKeepsOnlyLatestUnfinishedSchedulerTick(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := mutateResourceMailboxForResource(root, app.SchedulerResourceID, func(mailbox *resourceMailbox) error {
+		for index := 1; index <= 3; index++ {
+			mailbox.NextSequence++
+			mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
+				ID: fmt.Sprintf("tick-%d", index), Sequence: mailbox.NextSequence, ResourceID: app.SchedulerResourceID,
+				Type: resourceMessageTypeSchedulerTick, Status: resourceMessageDelivered,
+				AcceptedAt: stamp, UpdatedAt: stamp, DeliveredAt: stamp, TerminalAt: stamp,
+				GenerationID: fmt.Sprintf("generation-%d", index), TurnID: fmt.Sprintf("turn-%d", index),
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hot, err := loadHotResourceMailbox(root, app.SchedulerResourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hot.Messages) != 1 || hot.Messages[0].ID != "tick-3" {
+		t.Fatalf("hot scheduler messages = %#v, want only tick-3", hot.Messages)
+	}
+	for _, id := range []string{"tick-1", "tick-2"} {
+		message, found, err := mailboxMessageByID(root, id)
+		if err != nil || !found || !message.receipt {
+			t.Fatalf("historical tick %s was not retained as a receipt: found=%v err=%v message=%#v", id, found, err, message)
+		}
+	}
+	if _, err := updateMailboxMessage(root, "tick-3", func(message *resourceMailboxMessage) {
+		message.TurnTerminalAt = stamp
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := listHotResourceMailboxResourceIDs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("terminal scheduler mailbox remained active: %#v", ids)
+	}
+}
+
+func TestHotMailboxLoadCompactsLegacySettledMarker(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
+	message, err := acceptMailboxMessage(root, "project1.task1", resourceMessageRequest{Text: "pending", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, _, _, err := resourceMailboxDirectory(root, "project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document resourceMailboxHotDocument
+	found, err := readResourceMailboxJSON(resourceMailboxHotPath(directory), &document)
+	if err != nil || !found || len(document.Messages) != 1 {
+		t.Fatalf("load staged hot document: found=%v err=%v document=%#v", found, err, document)
+	}
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
+	document.Messages[0].Status = resourceMessageDelivered
+	document.Messages[0].SubscribeResult = false
+	document.Messages[0].ResultSubscriptionStatus = resourceResultSubscriptionDisabled
+	document.Messages[0].DeliveredAt = stamp
+	document.Messages[0].TerminalAt = stamp
+	document.Messages[0].UpdatedAt = stamp
+	if err := writeResourceMailboxJSON(resourceMailboxHotPath(directory), document); err != nil {
+		t.Fatal(err)
+	}
+
+	hot, err := loadAllHotResourceMailboxes(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hot) != 0 {
+		t.Fatalf("legacy settled mailbox remained hot: %#v", hot)
+	}
+	ids, err := listHotResourceMailboxResourceIDs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("legacy settled marker remained active: %#v", ids)
+	}
+	settled, found, err := mailboxMessageByID(root, message.ID)
+	if err != nil || !found || settled.Status != resourceMessageDelivered {
+		t.Fatalf("legacy settled message was not retained as a receipt: found=%v err=%v message=%#v", found, err, settled)
+	}
+}
