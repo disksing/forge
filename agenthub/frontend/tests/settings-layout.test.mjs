@@ -35,3 +35,16 @@ test("settings close control keeps a mobile-sized touch target", async () => {
   assert.match(closeRule, /width: 44px;/);
   assert.match(closeRule, /height: 44px;/);
 });
+
+test("agent delete controls keep a mobile-sized touch target", async () => {
+  const css = await readFile(stylesPath, "utf8");
+  const deleteRule = rule(css, ".settings-card-head > .icon-button");
+
+  // Reserve the full touch target in the card head without changing the
+  // compact trash icon or the size of unrelated settings icon buttons.
+  assert.match(deleteRule, /flex: 0 0 44px;/);
+  assert.match(deleteRule, /min-width: 44px;/);
+  assert.match(deleteRule, /min-height: 44px;/);
+  assert.match(deleteRule, /width: 44px;/);
+  assert.match(deleteRule, /height: 44px;/);
+});
