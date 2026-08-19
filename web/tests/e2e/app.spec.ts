@@ -1843,6 +1843,8 @@ test("keeps the System Settings close control in the dialog header at a 220px vi
   // instead of sharing the heading's line (the 220px regression).
   const closeBox = (await close.boundingBox())!;
   const headingBox = (await heading.boundingBox())!;
+  expect(closeBox.width).toBe(44);
+  expect(closeBox.height).toBe(44);
   expect(closeBox.y + closeBox.height).toBeLessThanOrEqual(headingBox.y);
 
   // The close control stays fully inside the narrow modal.

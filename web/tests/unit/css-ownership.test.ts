@@ -187,6 +187,16 @@ describe("CSS ownership", () => {
     expect(css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1)).toContain("width: auto;");
   });
 
+  it("keeps the System Settings close control at the mobile touch target size", () => {
+    const css = read("src/components/SettingsModal.css");
+    const selector = ':where([data-component-owner="settings"]) .settings-close';
+    const start = css.indexOf(selector);
+    expect(start, selector).toBeGreaterThanOrEqual(0);
+    const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    expect(rule).toContain("width: 44px;");
+    expect(rule).toContain("height: 44px;");
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {
