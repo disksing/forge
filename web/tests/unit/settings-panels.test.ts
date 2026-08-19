@@ -216,6 +216,23 @@ describe("settings domain panels", () => {
     await vi.waitFor(() => expect(current.onToast).toHaveBeenCalledWith("user save failed"));
   });
 
+  it("keeps the visible user name synchronized after filtering invalid characters", async () => {
+    const onSaveUser = vi.fn(async () => "badname");
+    const current = model({ onSaveUser });
+    const draft = createSettingsDraft(current);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "user", model: current, initialDraft: draft } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const nameInput = target.querySelector<HTMLInputElement>("#settingsUserName")!;
+    input(nameInput, "bad name");
+    expect(nameInput.value).toBe("badname");
+    nameInput.form!.requestSubmit();
+    await vi.waitFor(() => expect(onSaveUser).toHaveBeenCalledWith("badname"));
+    expect(nameInput.value).toBe("badname");
+  });
+
   it("routes appearance layout and font scale changes through the settings model", async () => {
     const current = model({ appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1.1, chat: 1 } } });
     const draft = createSettingsDraft(current);

@@ -1453,6 +1453,22 @@ test("keeps the Create task wizard usable across desktop and mobile layouts", as
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844);
 });
 
+test("shows the normalized User name in the input after saving", async ({ page }) => {
+  await installMockApi(page);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "System Settings" });
+  await settings.getByRole("button", { name: "User" }).click();
+  const name = settings.getByLabel("Name");
+
+  await name.fill("bad name");
+  await expect(name).toHaveValue("badname");
+  await settings.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#toast")).toContainText("User name saved as badname.");
+  await expect(name).toHaveValue("badname");
+});
+
 test("preserves composer draft through upload and Settings", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1", false, false, false, [], "idle", 500);
   await page.goto("/w/ws-test/r/project1.task1");
