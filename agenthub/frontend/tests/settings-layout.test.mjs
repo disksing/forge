@@ -35,3 +35,17 @@ test("settings close control keeps a mobile-sized touch target", async () => {
   assert.match(closeRule, /width: 44px;/);
   assert.match(closeRule, /height: 44px;/);
 });
+
+test("agent reorder handle keeps a mobile-sized touch target", async () => {
+  const css = await readFile(stylesPath, "utf8");
+  const handleRule = rule(css, ".settings-drag-handle");
+
+  // Keep the drag icon visually compact while making the entire draggable
+  // surface reachable on narrow touch screens. The fixed flex basis also
+  // prevents the handle from being compressed by long agent summaries.
+  assert.match(handleRule, /flex: 0 0 44px;/);
+  assert.match(handleRule, /min-width: 44px;/);
+  assert.match(handleRule, /min-height: 44px;/);
+  assert.match(handleRule, /width: 44px;/);
+  assert.match(handleRule, /height: 44px;/);
+});
