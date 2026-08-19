@@ -600,16 +600,7 @@ func GuardedLifecycleCommit(plan GenerationLifecyclePlan, facts GenerationLifecy
 // network effect. It is intentionally small and read-only; the caller decides
 // how to re-plan when the result is stale.
 func legacyLifecyclePlanStillCurrent(workspace serveWorkspace, plan GenerationLifecyclePlan, session *agentHubSession) (bool, error) {
-	if strings.TrimSpace(plan.GenerationID) != "" {
-		current, found, err := currentResourceGeneration(workspace.Path, plan.Guard.ResourceID)
-		if err != nil {
-			return false, err
-		}
-		if !found || current.GenerationID != plan.GenerationID {
-			return false, nil
-		}
-	}
-	record, found, err := currentGenerationRecordByID(workspace.Path, plan.GenerationID)
+	record, found, err := currentGenerationRecordByID(workspace.Path, plan.Guard.ResourceID, plan.GenerationID)
 	if err != nil {
 		return false, err
 	}

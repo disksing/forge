@@ -271,6 +271,40 @@ func TestResourceIdleSleepRecoversOverdueDeadlineAfterRestart(t *testing.T) {
 	}
 }
 
+func TestResourceIdleSleepStableSuspensionSkipsRetirement(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	record := idleTestGeneration(workspace, "project1.task1", "gen-stable-sleep", "ses-stable-sleep", time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC))
+	record.Status = "idle-suspended"
+	record.IdleSleepStopRequested = true
+	record.LifecycleReceipt = &GenerationLifecycleReceipt{
+		Operation: GenerationOperationStopSession,
+		State:     GenerationReceiptSucceeded,
+	}
+	seedIdleTestGeneration(t, fake, workspace, record, "stopped")
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	getSessionCalls := fake.getSessionCalls
+	stopCalls := fake.stopCalls
+	session := fake.sessions[record.AgentHubSessionID]
+	fake.mu.Unlock()
+	if getSessionCalls != 0 || stopCalls != 0 {
+		t.Fatalf("stable idle suspension re-entered retirement: getSessionCalls=%d stopCalls=%d", getSessionCalls, stopCalls)
+	}
+	current, found, err := currentResourceGeneration(workspace.Path, record.ResourceID)
+	if err != nil || !found || !resourceIdleSuspensionStable(current, session) {
+		t.Fatalf("stable idle suspension changed: current=%#v found=%v err=%v", current, found, err)
+	}
+}
+
 func TestResourceIdleSleepRetriesAmbiguousStopWithoutDuplicateAfterConvergence(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	fake.failNextStop = true

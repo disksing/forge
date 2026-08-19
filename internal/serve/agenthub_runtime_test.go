@@ -56,6 +56,7 @@ type runtimeFakeAgentHub struct {
 	actions              []string
 	resumeEnvironments   []map[string]string
 	listCalls            int
+	getSessionCalls      int
 	stopCalls            int
 	eventsAttempts       int
 	eventsCalls          int
@@ -112,6 +113,7 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	id, _ := url.PathUnescape(parts[2])
 	if len(parts) == 3 && r.Method == http.MethodGet {
 		f.mu.Lock()
+		f.getSessionCalls++
 		fail := f.failGetSessionID == id
 		session, ok := f.sessions[id]
 		f.mu.Unlock()

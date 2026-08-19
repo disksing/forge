@@ -16,7 +16,44 @@ import (
 	"time"
 
 	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/generation"
 )
+
+func TestCurrentGenerationRecordByIDUsesResourceScopedLookup(t *testing.T) {
+	_, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	target := idleTestGeneration(workspace, "project1.task1", "gen-target-current", "ses-target-current", time.Now())
+	unrelated := idleTestGeneration(workspace, "project1", "gen-unrelated-current", "ses-unrelated-current", time.Now())
+	if err := saveGenerationRecord(workspace.Path, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveGenerationRecord(workspace.Path, unrelated); err != nil {
+		t.Fatal(err)
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeConfig, err := puaWorkspace.RuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelatedKey, err := generation.ResourceKey(runtimeConfig.InstanceID, unrelated.ResourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelatedCurrent := filepath.Join(workspace.Path, ".pua", "runtime", "resources", unrelatedKey, "current.json")
+	if err := os.WriteFile(unrelatedCurrent, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	current, found, err := currentGenerationRecordByID(workspace.Path, target.ResourceID, target.GenerationID)
+	if err != nil || !found || current.GenerationID != target.GenerationID {
+		t.Fatalf("resource-scoped current lookup failed: current=%#v found=%v err=%v", current, found, err)
+	}
+	if _, found, err := currentGenerationRecordByID(workspace.Path, target.ResourceID, unrelated.GenerationID); err != nil || found {
+		t.Fatalf("resource-scoped current lookup accepted another generation: found=%v err=%v", found, err)
+	}
+}
 
 func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace serveWorkspace, resourceID, text, mode string, sender *agentHubMessageSender) resourceMailboxMessage {
 	t.Helper()

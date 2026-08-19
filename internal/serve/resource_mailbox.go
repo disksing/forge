@@ -845,18 +845,15 @@ func generationRecordByID(workspacePath, generationID string) (generationRecord,
 // notification code may inspect retired manifests through generationRecordByID,
 // but a retired or cold generation must never be reintroduced as a mutable
 // mailbox execution target.
-func currentGenerationRecordByID(workspacePath, generationID string) (generationRecord, bool, error) {
-	records, err := loadCurrentGenerationRecords(workspacePath)
-	if err != nil {
-		return generationRecord{}, false, err
+func currentGenerationRecordByID(workspacePath, resourceID, generationID string) (generationRecord, bool, error) {
+	record, found, err := currentResourceGeneration(workspacePath, resourceID)
+	if err != nil || !found {
+		return generationRecord{}, found, err
 	}
-	generationID = strings.TrimSpace(generationID)
-	for _, record := range records {
-		if record.GenerationID == generationID && !record.Retired {
-			return record, true, nil
-		}
+	if record.GenerationID != strings.TrimSpace(generationID) || record.Retired {
+		return generationRecord{}, false, nil
 	}
-	return generationRecord{}, false, nil
+	return record, true, nil
 }
 
 func (m *agentManager) ensureRuntime(workspace serveWorkspace, record generationRecord, client *agentHubClient) *agentRuntime {
@@ -1103,7 +1100,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		var rt *agentRuntime
 		var client *agentHubClient
 		if message.GenerationID != "" && (message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting) {
-			associated, associatedFound, associatedErr := currentGenerationRecordByID(workspace.Path, message.GenerationID)
+			associated, associatedFound, associatedErr := currentGenerationRecordByID(workspace.Path, resourceID, message.GenerationID)
 			if associatedErr != nil {
 				return associatedErr
 			}

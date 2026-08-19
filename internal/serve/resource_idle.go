@@ -118,9 +118,12 @@ func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, worksp
 	if strings.TrimSpace(observed.GenerationID) == "" || client == nil {
 		return nil
 	}
-	record, found, err := currentGenerationRecordByID(workspace.Path, observed.GenerationID)
+	record, found, err := currentGenerationRecordByID(workspace.Path, observed.ResourceID, observed.GenerationID)
 	if err != nil || !found || record.ID != observed.ID || record.AgentHubSessionID != observed.AgentHubSessionID {
 		return err
+	}
+	if resourceIdleSuspensionStable(record, observedSession) {
+		return nil
 	}
 	rt := m.ensureRuntime(workspace, record, client)
 	rt.mu.Lock()
@@ -162,6 +165,12 @@ func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, worksp
 		return nil
 	}
 	return m.startIdleRetirementLocked(ctx, workspace, record, rt, client)
+}
+
+func resourceIdleSuspensionStable(record generationRecord, session agentHubSession) bool {
+	receipt := record.LifecycleReceipt
+	return record.Status == "idle-suspended" && record.IdleSleepStopRequested && session.State == "stopped" &&
+		receipt != nil && receipt.Operation == GenerationOperationStopSession && receipt.State == GenerationReceiptSucceeded
 }
 
 func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace serveWorkspace, record generationRecord, rt *agentRuntime, client *agentHubClient) error {
