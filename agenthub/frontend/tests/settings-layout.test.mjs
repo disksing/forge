@@ -35,3 +35,12 @@ test("settings close control keeps a mobile-sized touch target", async () => {
   assert.match(closeRule, /width: 44px;/);
   assert.match(closeRule, /height: 44px;/);
 });
+
+test("settings footer actions keep a mobile-sized touch target", async () => {
+  const css = await readFile(stylesPath, "utf8");
+  const footerActionsRule = rule(css, ".settings-savebar-actions .settings-button");
+
+  // Keep Cancel and Save all easy to tap in the narrowest supported viewport
+  // without changing their save/close behavior or the footer layout.
+  assert.match(footerActionsRule, /min-height: 44px;/);
+});
