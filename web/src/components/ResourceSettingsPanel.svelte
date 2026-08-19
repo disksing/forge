@@ -40,6 +40,7 @@
   });
 
   const schedulerConfig = $derived(model.detail?.scheduler);
+  const schedulerIntervalValid = $derived(Number.isInteger(interval) && interval >= 1 && interval <= 10080);
   const taskDefault = $derived<ResourceAgentBindingModel>(model.detail?.taskDefault?.name ? { kind: model.detail.taskDefault.kind, name: model.detail.taskDefault.name } : { kind: "profile", name: "" });
   const description = $derived(model.detail?.description || "");
 
@@ -160,7 +161,7 @@
 
   function saveSchedulerInterval(): void {
     const config = schedulerConfig;
-    if (!config || !Number.isInteger(interval) || interval < 1 || interval > 10080) return;
+    if (!config || !schedulerIntervalValid) return;
     void run("interval", async () => {
       await client.request(`/api/workspaces/${encodeURIComponent(model.workspaceId)}/scheduler/settings`, {
         method: "PUT",
@@ -261,8 +262,9 @@
           <div class="resource-settings-row">
             <div class="resource-settings-row-label"><strong>Wake interval</strong><span>Minutes after the previous Server-triggered Scheduler Turn completes. Empty schedule lists do not wake.</span></div>
             <div class="resource-settings-interval">
-              <label><input type="number" min="1" max="10080" step="1" bind:value={interval} aria-label="Scheduler wake interval in minutes" /><span>minutes</span></label>
-              <button type="button" class="secondary-button" disabled={Boolean(pending) || interval === schedulerConfig.wakeIntervalMinutes} onclick={saveSchedulerInterval}><Icon name="save" /><span>Save</span></button>
+              <label><input type="number" min="1" max="10080" step="1" bind:value={interval} aria-label="Scheduler wake interval in minutes" aria-invalid={schedulerIntervalValid ? undefined : "true"} aria-describedby={schedulerIntervalValid ? undefined : "schedulerIntervalError"} /><span>minutes</span></label>
+              <button type="button" class="secondary-button" disabled={Boolean(pending) || !schedulerIntervalValid || interval === schedulerConfig.wakeIntervalMinutes} onclick={saveSchedulerInterval}><Icon name="save" /><span>Save</span></button>
+              {#if !schedulerIntervalValid}<span id="schedulerIntervalError" class="resource-settings-field-error" role="alert">Enter a whole number between 1 and 10080 minutes.</span>{/if}
             </div>
           </div>
         </div>

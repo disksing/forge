@@ -216,6 +216,23 @@ describe("settings domain panels", () => {
     await vi.waitFor(() => expect(current.onToast).toHaveBeenCalledWith("user save failed"));
   });
 
+  it("keeps the visible user name synchronized after filtering invalid characters", async () => {
+    const onSaveUser = vi.fn(async () => "badname");
+    const current = model({ onSaveUser });
+    const draft = createSettingsDraft(current);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "user", model: current, initialDraft: draft } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const nameInput = target.querySelector<HTMLInputElement>("#settingsUserName")!;
+    input(nameInput, "bad name");
+    expect(nameInput.value).toBe("badname");
+    nameInput.form!.requestSubmit();
+    await vi.waitFor(() => expect(onSaveUser).toHaveBeenCalledWith("badname"));
+    expect(nameInput.value).toBe("badname");
+  });
+
   it("routes appearance layout and font scale changes through the settings model", async () => {
     const current = model({ appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1.1, chat: 1 } } });
     const draft = createSettingsDraft(current);
@@ -350,6 +367,35 @@ describe("settings domain panels", () => {
     await vi.waitFor(() => expect(target.querySelector(".settings-save-hint.visible")).toBeNull());
   });
 
+  it("shows profile key errors inline and blocks invalid saves", async () => {
+    const current = model();
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "profiles", model: current, initialDraft: createSettingsDraft(current) } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelectorAll<HTMLButtonElement>(".settings-profile-card-toggle")[1]!.click();
+    await tick();
+    const keyInput = target.querySelector<HTMLInputElement>('[aria-label="Profile key"]')!;
+    const saveButton = [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Save All"))!;
+
+    input(keyInput, "");
+    await tick();
+    expect(keyInput.getAttribute("aria-invalid")).toBe("true");
+    expect(keyInput.getAttribute("aria-describedby")).toBe("settings-profile-1-key-error");
+    expect(target.querySelector("#settings-profile-1-key-error")?.textContent).toBe("Profile key is required.");
+    expect(saveButton.disabled).toBe(true);
+    saveButton.click();
+    expect(current.onSaveAgentHub).not.toHaveBeenCalled();
+
+    input(keyInput, "review");
+    await tick();
+    expect(keyInput.getAttribute("aria-invalid")).toBe("false");
+    expect(keyInput.getAttribute("aria-describedby")).toBeNull();
+    expect(target.querySelector("#settings-profile-1-key-error")).toBeNull();
+    expect(saveButton.disabled).toBe(false);
+  });
+
   it("reorders profile cards via drag and keyboard and validates keys on save", async () => {
     const current = model({
       profiles: [
@@ -397,29 +443,33 @@ describe("settings domain panels", () => {
     handles()[0]!.dispatchEvent(new Event("dragend", { bubbles: true }));
     await tick();
 
-    // Duplicate keys block saving; a reserved key collides with the system row.
+    // Duplicate keys are reported on the fields and block saving; a reserved
+    // key collides with the system row as well.
     const toggles = [...target.querySelectorAll<HTMLButtonElement>(".settings-profile-card-toggle")];
     toggles[1]!.click();
     toggles[2]!.click();
     await tick();
     const keyInputs = () => [...target.querySelectorAll<HTMLInputElement>('[aria-label="Profile key"]')];
+    const saveButton = [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Save All"))!;
     input(keyInputs()[0]!, "DEFAULT");
     await tick();
-    const saveButton = [...target.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Save All"))!;
-    saveButton.click();
-    await tick();
-    expect(current.onToast).toHaveBeenCalledWith("Profile default already exists.");
+    expect(keyInputs()[0]!.disabled).toBe(false);
+    expect(keyInputs()[0]!.getAttribute("aria-invalid")).toBe("true");
+    expect(target.querySelector(".settings-field-error")?.textContent).toContain("Profile default already exists.");
+    expect(saveButton.disabled).toBe(true);
     expect(current.onSaveAgentHub).not.toHaveBeenCalled();
 
     input(keyInputs()[0]!, "reasoning");
     await tick();
-    saveButton.click();
-    await tick();
-    expect(current.onToast).toHaveBeenCalledWith("Profile reasoning already exists.");
+    expect(keyInputs()[0]!.getAttribute("aria-invalid")).toBe("true");
+    expect(target.querySelector(".settings-field-error")?.textContent).toContain("Profile reasoning already exists.");
+    expect(saveButton.disabled).toBe(true);
     expect(current.onSaveAgentHub).not.toHaveBeenCalled();
 
     input(keyInputs()[0]!, "fast");
     await tick();
+    expect(keyInputs()[0]!.getAttribute("aria-invalid")).toBe("false");
+    expect(saveButton.disabled).toBe(false);
     saveButton.click();
     await vi.waitFor(() => expect(current.onSaveAgentHub).toHaveBeenCalledTimes(1));
   });
