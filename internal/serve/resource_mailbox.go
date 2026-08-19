@@ -1422,6 +1422,24 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		rt.applyAgentHubSessionState(m, session)
 		record = rt.snapshotGeneration()
 		active := session.State == "running" || session.State == "waiting_approval"
+		// A queued non-steer input at an inactive boundary is about to create a
+		// new Turn (including a steer that must be downgraded, and an interrupt
+		// after its old Turn has stopped). Resolve Profile routing here rather
+		// than from the periodic poller or settings write path. A true active-Turn
+		// steer deliberately keeps using the generation's current Agent.
+		startsNewTurn := message.Status == resourceMessageQueued && !active &&
+			(!message.ModeFrozen || message.ActualMode != resourceMessageModeSteer)
+		if startsNewTurn {
+			replaced, prepareErr := m.prepareResourceGenerationForNewTurnLocked(ctx, workspace, record, rt)
+			if prepareErr != nil {
+				recordMailboxFailure(workspace.Path, message.ID, prepareErr)
+				return prepareErr
+			}
+			if replaced {
+				return nil
+			}
+			record = rt.snapshotGeneration()
+		}
 		lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
 			Generation: record, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: record.UpdatedAt,
 		}))
@@ -1511,6 +1529,9 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 			if record.ReplacementPending {
 				return nil
 			}
+			// Re-enter from the now-inactive queued boundary so Profile routing is
+			// checked before the interrupt request starts its replacement Turn.
+			continue
 		}
 
 		if message.Status == resourceMessageQueued && !message.ModeFrozen {

@@ -162,7 +162,6 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	if err != nil {
 		return agentHubSettingsResponse{}, fmt.Errorf("validate AgentHub catalog: %w", err)
 	}
-	previous := cfg
 	cfg.AgentHubEndpoint = configured
 	cfg.AgentProfiles = request.AgentProfiles
 	cfg, err = normalizeAgentHubConfig(cfg, catalog)
@@ -171,14 +170,6 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	}
 	if err := writeAgentHubConfigFile(s.config, cfg); err != nil {
 		return agentHubSettingsResponse{}, err
-	}
-	if s.agents != nil {
-		if err := s.agents.profileRoutesChanged(ctx, previous, cfg); err != nil {
-			return agentHubSettingsResponse{}, err
-		}
-	}
-	if s.doctor != nil {
-		s.doctor.requestScan()
 	}
 	return agentHubSettingsResponse{
 		Mode:               s.agentHubMode,
