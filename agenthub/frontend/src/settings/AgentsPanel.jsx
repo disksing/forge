@@ -168,6 +168,8 @@ export function AgentsPanel({ draft, errors, showErrors, mutate }) {
         const open = expanded.has(index);
         const summary = summarizeOptions(agent.options).join(" · ");
         const base = `settings-agent-${index}`;
+        const nameError = showErrors ? fieldError(errors, "agents", index, "name") : "";
+        const nameErrorId = `${base}-name-error`;
         const pillText = `${provider ? provider.name || provider.id : "Unknown provider"}${summary ? ` · ${summary}` : ""}`;
         return (
           <article
@@ -238,12 +240,14 @@ export function AgentsPanel({ draft, errors, showErrors, mutate }) {
             </div>
             {open ? (
               <div className="settings-grid" id={`${base}-body`}>
-                <Field label="Name" htmlFor={`${base}-name`} error={showErrors ? fieldError(errors, "agents", index, "name") : ""}>
+                <Field label="Name" htmlFor={`${base}-name`} error={nameError} errorId={nameErrorId}>
                   <input
                     id={`${base}-name`}
                     className="settings-input"
                     value={agent.name}
                     placeholder="Agent name"
+                    aria-invalid={Boolean(nameError)}
+                    aria-describedby={nameError ? nameErrorId : undefined}
                     onChange={(event) => updateAgent(index, { name: event.target.value })}
                   />
                 </Field>

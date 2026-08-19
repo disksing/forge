@@ -81,6 +81,16 @@ describe("CreateDialogController", () => {
 		expect(test.current().open).toBe(true);
 	});
 
+	it("does not submit a project when its slug is invalid", async () => {
+		const test = harness();
+		test.controller.open("project");
+		await test.current().onSubmit({ ...test.current().draft, description: "A focused project", slug: "bad slug" });
+
+		expect(test.requests).toHaveLength(0);
+		expect(test.current().submitting).toBe(false);
+		expect(test.current().open).toBe(true);
+	});
+
 	it("renders a template before submit and sends the complete Task payload", async () => {
 		const preview: TaskPreview = { title: "Generated title", markdown: "# Generated title\n", template: { digest: "sha256:template" } };
 		const test = harness((path) => path.endsWith("/preview") ? preview : { id: "project1.task1" });

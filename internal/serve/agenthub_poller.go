@@ -145,16 +145,6 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			m.reconcileAgentHubGeneration(ctx, cfg, workspace, record, byExternalID, byID, client, runtimeConfig.GenerationPolicy)
 		}
 	}
-	profileConfig := agentHubServeConfig{
-		Workspaces:    cfg.Workspaces,
-		AgentProfiles: make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles)),
-	}
-	for _, route := range cfg.AgentProfiles {
-		profileConfig.AgentProfiles = append(profileConfig.AgentProfiles, agentHubProfileRoute{Key: route.Key, Description: route.Description, AgentName: route.AgentName})
-	}
-	if err := m.profileRoutesChanged(ctx, profileConfig, profileConfig); err != nil {
-		failures = append(failures, err.Error())
-	}
 	for _, workspace := range cfg.Workspaces {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue

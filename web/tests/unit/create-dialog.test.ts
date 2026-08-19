@@ -260,10 +260,30 @@ describe("CreateDialog project form", () => {
     expect(description.getAttribute("aria-invalid")).toBe("false");
     expect(description.getAttribute("aria-describedby")).toBeNull();
     expect(target.querySelector("#project-description-error")).toBeNull();
+
+    const slug = target.querySelector<HTMLInputElement>('input[name="slug"]')!;
+    slug.value = "bad slug";
+    slug.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+
+    expect(slug.getAttribute("aria-invalid")).toBe("true");
+    expect(slug.getAttribute("aria-describedby")).toBe("project-slug-error");
+    expect(target.querySelector("#project-slug-error")?.textContent).toContain("only letters");
+    expect(create.disabled).toBe(true);
+    create.click();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    slug.value = "focused-project";
+    slug.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+
+    expect(slug.getAttribute("aria-invalid")).toBe("false");
+    expect(slug.getAttribute("aria-describedby")).toBeNull();
+    expect(target.querySelector("#project-slug-error")).toBeNull();
     expect(create.disabled).toBe(false);
 
     create.click();
     await tick();
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ type: "project", description: "A focused project" }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ type: "project", description: "A focused project", slug: "focused-project" }));
   });
 });

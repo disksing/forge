@@ -1066,8 +1066,16 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
 
   await page.getByLabel("Description").fill("Notify when the release is ready");
   await page.getByLabel("Condition").fill("When the release branch is green after 09:00 Shanghai time");
-  await page.getByLabel("Target resource ID").fill("project1.task1");
-  await page.getByRole("button", { name: "Add schedule", exact: true }).click();
+  const target = page.getByLabel("Target resource ID");
+  const addSchedule = page.getByRole("button", { name: "Add schedule", exact: true });
+  await target.fill("not-a-resource");
+  await expect(target).toHaveAttribute("aria-invalid", "true");
+  await expect(target).toHaveAttribute("aria-describedby", "schedule-target-error");
+  await expect(page.locator("#schedule-target-error")).toContainText("open resource in the current Workspace");
+  await expect(addSchedule).toBeDisabled();
+  await target.fill("project1.task1");
+  await expect(target).toHaveAttribute("aria-invalid", "false");
+  await addSchedule.click();
   await expect(page.locator(".schedule-list article")).toContainText("Notify when the release is ready");
   await expect(page.locator(".schedule-list article")).toContainText("project1.task1");
 
@@ -1445,6 +1453,22 @@ test("keeps the Create task wizard usable across desktop and mobile layouts", as
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844);
 });
 
+test("shows the normalized User name in the input after saving", async ({ page }) => {
+  await installMockApi(page);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "System Settings" });
+  await settings.getByRole("button", { name: "User" }).click();
+  const name = settings.getByLabel("Name");
+
+  await name.fill("bad name");
+  await expect(name).toHaveValue("badname");
+  await settings.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#toast")).toContainText("User name saved as badname.");
+  await expect(name).toHaveValue("badname");
+});
+
 test("preserves composer draft through upload and Settings", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1", false, false, false, [], "idle", 500);
   await page.goto("/w/ws-test/r/project1.task1");
@@ -1605,7 +1629,7 @@ test("keeps mobile navigation and view selection in the Svelte app shell", async
 
   await page.locator("#mobileMenuButton").click();
   await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
-  await page.locator("#mobileSidebarBackdrop").click({ position: { x: 380, y: 400 } });
+  await page.locator("#mobileSidebarBackdrop").click();
   await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
   await page.locator("#mobileChatButton").click();
   await expect(page.locator("body")).toHaveClass(/mobile-chat-active/);
@@ -1615,6 +1639,20 @@ test("keeps mobile navigation and view selection in the Svelte app shell", async
   await page.locator("#mobileDetailsButton").click();
   await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
   await expect(page.locator("#detailsPanel")).toBeVisible();
+});
+
+test("closes the 440px navigation drawer without changing the selected resource", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+  await page.getByRole("button", { name: "Close navigation" }).click();
+
+  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task1$/);
+  await expect(page.locator("#projectTree .tree-item.active")).toContainText("Infrastructure task");
 });
 
 test("merges details and chat into one tabbed column in the two-column layout", async ({ page }) => {

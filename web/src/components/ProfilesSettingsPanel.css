@@ -137,6 +137,17 @@
   background: #e8eaee;
 }
 
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-card-body input[aria-invalid="true"] {
+  border-color: var(--red, #e74c3c);
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-card-body .settings-field-error {
+  margin: -2px 0 0;
+  color: var(--red, #e74c3c);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 :where([data-component-owner="profiles-settings-panel"]) .settings-profile-add {
   display: flex;
   align-items: center;

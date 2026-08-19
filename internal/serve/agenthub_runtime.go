@@ -529,6 +529,10 @@ func (m *agentManager) recoverAgentHubGenerations(ctx context.Context) error {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
+		if _, mailboxErr := rebuildResourceMailboxHotIndex(workspace.Path); mailboxErr != nil {
+			failures = append(failures, fmt.Sprintf("%s mailbox hot index: %v", workspace.ID, mailboxErr))
+			continue
+		}
 		if mailboxErr := m.reconcileWorkspaceMailboxes(ctx, workspace); mailboxErr != nil {
 			failures = append(failures, fmt.Sprintf("%s mailbox: %v", workspace.ID, mailboxErr))
 		}

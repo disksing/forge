@@ -11,8 +11,9 @@
 body[data-layout="split"] :where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {
   position: fixed;
   z-index: 55;
-  inset: 0;
-  width: 100%;
+  /* Keep the backdrop's hit area outside the drawer. Otherwise an accessible
+     click on its full-viewport button can land on the drawer content above it. */
+  inset: 0 0 0 min(86vw, 340px);
   background: rgba(34, 49, 63, 0.42);
 }
 
@@ -71,8 +72,10 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
   :where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {
     position: fixed;
     z-index: 55;
-    inset: 0;
-    width: 100%;
+    /* The sidebar is above the backdrop, so expose only the outside strip as
+       the button's hit area. This keeps its center outside the drawer even at
+       the minimum supported mobile width. */
+    inset: 0 0 0 min(86vw, 340px);
     background: rgba(34, 49, 63, 0.42);
   }
 
@@ -80,4 +83,3 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
     display: block;
   }
 }
-

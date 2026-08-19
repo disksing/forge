@@ -164,6 +164,13 @@ export function isDirty(draft, snapshot) {
   return JSON.stringify(normalizeConfig(draft)) !== JSON.stringify(normalizeConfig(snapshot));
 }
 
+// canSaveDraft is the settings save-bar gate: a dirty draft is only
+// submittable when validation has no blocking errors and a save is not already
+// in flight.
+export function canSaveDraft(dirty, errors = [], saving = false) {
+  return Boolean(dirty && !saving && errors.length === 0);
+}
+
 // buildPayload produces the config object for PUT /v1/config from a draft,
 // keeping the version and all supported fields and dropping empty option keys.
 export function buildPayload(draft) {

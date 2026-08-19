@@ -98,8 +98,9 @@
 }
 
 .resource-settings-interval {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -117,6 +118,16 @@
   font: inherit;
   padding: 8px 9px;
   width: 92px;
+}
+
+.resource-settings-interval input[aria-invalid="true"] {
+  border-color: var(--danger, #c0392b);
+}
+
+.resource-settings-field-error {
+  color: var(--danger, #c0392b);
+  flex-basis: 100%;
+  font-size: 12px;
 }
 
 .resource-settings-policy-toggle {

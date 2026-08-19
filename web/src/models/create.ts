@@ -1,6 +1,13 @@
 import type { AgentOption } from "./common";
 import type { ResourceAgentBindingModel, ResourceAgentProfileModel } from "./detail";
 
+const resourceSlugPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+export function isValidResourceSlug(value: string): boolean {
+  const slug = value.trim();
+  return slug === "" || resourceSlugPattern.test(slug);
+}
+
 export interface TemplateField {
   name: string;
   type: "text" | "textarea" | "select" | "boolean";

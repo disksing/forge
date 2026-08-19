@@ -93,9 +93,10 @@ await desktop.getByRole("button", { name: "Close settings" }).click();
 await shot(desktop, "07-desktop-after-settings");
 await desktop.close();
 
-// Narrow viewport: the sidebar starts hidden and overlays the workspace when
-// opened; picking a session closes it again.
-const narrow = await newPage({ width: 390, height: 844 });
+// Mobile viewport: the sidebar starts hidden and overlays the workspace when
+// opened; picking a session closes it again. Keep this at the product's
+// minimum supported width so mobile touch-target regressions are exercised.
+const narrow = await newPage({ width: 440, height: 844 });
 await narrow.goto(baseURL, { waitUntil: "networkidle" });
 await shot(narrow, "10-narrow-main");
 
@@ -106,8 +107,17 @@ await shot(narrow, "11-narrow-session");
 
 await narrow.getByRole("button", { name: "Toggle session list" }).click();
 await narrow.getByRole("button", { name: "Settings" }).click();
-await narrow.getByRole("dialog").waitFor();
+const settingsDialog = narrow.getByRole("dialog");
+await settingsDialog.waitFor();
 await narrow.getByRole("button", { name: "Providers" }).waitFor();
+const closeSettings = narrow.getByRole("button", { name: "Close settings" });
+const closeBox = await closeSettings.boundingBox();
+if (!closeBox || closeBox.width < 44 || closeBox.height < 44) {
+  throw new Error(`Mobile Settings close control is ${closeBox ? `${closeBox.width}x${closeBox.height}` : "missing"}; expected at least 44x44`);
+}
+if (closeBox.x < 0 || closeBox.x + closeBox.width > 440) {
+  throw new Error(`Mobile Settings close control is outside the viewport: ${JSON.stringify(closeBox)}`);
+}
 await shot(narrow, "12-narrow-settings-providers");
 
 await narrow.getByRole("button", { name: "Agents" }).click();

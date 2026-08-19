@@ -1191,6 +1191,24 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		rt.applyAgentHubSessionState(m, session)
 		record = rt.snapshotGeneration()
 		active := session.State == "running" || session.State == "waiting_approval"
+		// A queued non-steer input at an inactive boundary is about to create a
+		// new Turn (including a steer that must be downgraded, and an interrupt
+		// after its old Turn has stopped). Resolve Profile routing here rather
+		// than from the periodic poller or settings write path. A true active-Turn
+		// steer deliberately keeps using the generation's current Agent.
+		startsNewTurn := message.Status == resourceMessageQueued && !active &&
+			(!message.ModeFrozen || message.ActualMode != resourceMessageModeSteer)
+		if startsNewTurn {
+			replaced, prepareErr := m.prepareResourceGenerationForNewTurnLocked(ctx, workspace, record, rt)
+			if prepareErr != nil {
+				recordMailboxFailure(workspace.Path, message.ID, prepareErr)
+				return prepareErr
+			}
+			if replaced {
+				return nil
+			}
+			record = rt.snapshotGeneration()
+		}
 		lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
 			Generation: record, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: record.UpdatedAt,
 		}))
@@ -1280,6 +1298,9 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 			if record.ReplacementPending {
 				return nil
 			}
+			// Re-enter from the now-inactive queued boundary so Profile routing is
+			// checked before the interrupt request starts its replacement Turn.
+			continue
 		}
 
 		if message.Status == resourceMessageQueued && !message.ModeFrozen {
@@ -1483,29 +1504,16 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 }
 
 func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspace serveWorkspace) error {
-	hotMailboxes, err := loadAllHotResourceMailboxes(workspace.Path)
+	resourceIDs, err := listHotResourceMailboxResourceIDs(workspace.Path)
 	if err != nil {
 		return err
 	}
-	resources := make(map[string]bool)
-	for _, mailbox := range hotMailboxes {
-		for _, message := range mailbox.Messages {
-			if message.Status == resourceMessageQueued || message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting {
-				resources[normalizedResourceID(message.ResourceID)] = true
-			}
-		}
-	}
-	ids := make([]string, 0, len(resources))
-	for id := range resources {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
 	type result struct {
 		resourceID string
 		err        error
 	}
-	results := make(chan result, len(ids))
-	for _, id := range ids {
+	results := make(chan result, len(resourceIDs))
+	for _, id := range resourceIDs {
 		resourceID := id
 		go func() {
 			err := m.withResourceController(ctx, workspace, resourceID, func() error {
@@ -1515,7 +1523,7 @@ func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspac
 		}()
 	}
 	var failures []string
-	for range ids {
+	for range resourceIDs {
 		outcome := <-results
 		if outcome.err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", outcome.resourceID, outcome.err))

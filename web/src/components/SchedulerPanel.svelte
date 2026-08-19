@@ -7,9 +7,10 @@
   import type { ScheduleRecord, SchedulerConfigRecord } from "../models/workspace";
   import Icon from "./Icon.svelte";
 
-  let { workspaceId, config, onChanged, onToast }: {
+  let { workspaceId, config, resolveResourceTitle, onChanged, onToast }: {
     workspaceId: string;
     config: SchedulerConfigRecord;
+    resolveResourceTitle: (resourceId: string) => string | null;
     onChanged: () => Promise<void>;
     onToast: (message: string) => void;
   } = $props();
@@ -20,6 +21,16 @@
   let condition = $state("");
   let target = $state("workspace");
   let saving = $state(false);
+  const targetError = $derived(validateTarget(target));
+
+  function validateTarget(value: string): string {
+    const resourceId = value.trim();
+    if (!resourceId) return "Target resource is required.";
+    if (resourceId === "workspace" || resourceId === "scheduler") return "";
+    return resolveResourceTitle(resourceId)
+      ? ""
+      : "Target must be an open resource in the current Workspace.";
+  }
 
   function edit(schedule: ScheduleRecord): void {
     editingId = schedule.id;
@@ -36,7 +47,7 @@
   }
 
   async function saveSchedule(): Promise<void> {
-    if (!description.trim() || !condition.trim() || !target.trim() || saving) return;
+    if (!description.trim() || !condition.trim() || targetError || saving) return;
     saving = true;
     const wasEditing = Boolean(editingId);
     try {
@@ -72,8 +83,8 @@
   <div class="schedule-editor-heading"><div><strong>{editingId ? "Edit schedule" : "Add schedule"}</strong><span>Conditions are natural language interpreted by the Scheduler Agent.</span></div>{#if editingId}<button type="button" class="secondary-button" onclick={clearForm}>Cancel edit</button>{/if}</div>
   <label><span>Description</span><input bind:value={description} placeholder="What should the Scheduler understand?" /></label>
   <label><span>Condition</span><textarea bind:value={condition} rows="3" placeholder="For example: when the release branch is green after 09:00 Shanghai time"></textarea></label>
-  <label><span>Target resource ID</span><input bind:value={target} placeholder="workspace, scheduler, project1, or project1.task1" /></label>
-  <button type="button" class:busy={saving} class:editing={Boolean(editingId)} disabled={saving || !description.trim() || !condition.trim() || !target.trim()} onclick={saveSchedule}><span class="schedule-icon schedule-icon-busy"><Icon name="loader-circle" /></span><span class="schedule-icon schedule-icon-editing"><Icon name="save" /></span><span class="schedule-icon schedule-icon-add"><Icon name="plus" /></span><span>{editingId ? "Update schedule" : "Add schedule"}</span></button>
+  <label><span>Target resource ID</span><input bind:value={target} placeholder="workspace, scheduler, project1, or project1.task1" aria-invalid={Boolean(targetError)} aria-describedby={targetError ? "schedule-target-error" : undefined} />{#if targetError}<small id="schedule-target-error" class="schedule-field-error" role="alert">{targetError}</small>{/if}</label>
+  <button type="button" class:busy={saving} class:editing={Boolean(editingId)} disabled={saving || !description.trim() || !condition.trim() || Boolean(targetError)} onclick={saveSchedule}><span class="schedule-icon schedule-icon-busy"><Icon name="loader-circle" /></span><span class="schedule-icon schedule-icon-editing"><Icon name="save" /></span><span class="schedule-icon schedule-icon-add"><Icon name="plus" /></span><span>{editingId ? "Update schedule" : "Add schedule"}</span></button>
 </div>
 
 <div class="schedule-list">
