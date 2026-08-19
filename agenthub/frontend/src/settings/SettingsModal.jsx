@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Warning, X } from "@phosphor-icons/react";
 import { api } from "../api";
-import { buildPayload, createDraft, isDirty, normalizeConfig, validateDraft } from "./configModel";
+import { buildPayload, canSaveDraft, createDraft, isDirty, normalizeConfig, validateDraft } from "./configModel";
 import { applyProviderToggle, requestProviderToggle } from "./providerSwitches";
 import { ProvidersPanel } from "./ProvidersPanel";
 import { AgentsPanel } from "./AgentsPanel";
 import { GeneralPanel } from "./GeneralPanel.jsx";
 import { ActivityPanel } from "./ActivityPanel.jsx";
+import { loadSettingsAuxiliary, loadSettingsConfig } from "./loadSettings.js";
 import {
   companionPreferencesEqual,
   loadCompanionPreferences,
@@ -48,6 +49,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
   const [providerToggleError, setProviderToggleError] = useState("");
   const dialogRef = useRef(null);
   const savedTimer = useRef(null);
+  const loadGeneration = useRef(0);
 
   const serverDirty = draft && snapshot ? isDirty(draft, snapshot) : false;
   const activityDirty = activityDraft && activitySnapshot
@@ -59,29 +61,41 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
       ? [...validateDraft(draft), ...validateCompanionPreferences(activityDraft)]
       : []
   ), [draft, activityDraft]);
+  const displayErrors = showErrors || errors.length > 0;
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setPhase("loading");
     setLoadError("");
     setConflict(false);
     setSaveError("");
     setShowErrors(false);
+    setProbes([]);
+    setQuota({ providers: [] });
     try {
-      const [configBody, agentsBody, quotaBody] = await Promise.all([
-        api("/v1/config"),
-        api("/v1/agents"),
-        api("/v1/quota").catch((error) => ({ quota: { providers: [], error: error.message } })),
-      ]);
+      const configBody = await loadSettingsConfig(api);
+      if (generation !== loadGeneration.current) return;
       const next = createDraft(configBody.config || {});
       const nextActivity = loadCompanionPreferences();
       setDraft(next);
       setSnapshot(clone(next));
       setActivityDraft(nextActivity);
       setActivitySnapshot(clone(nextActivity));
-      setProbes(agentsBody.probes || []);
-      setQuota(quotaBody.quota || { providers: [] });
       setPhase("ready");
+
+      // Do not make the usable configuration wait for provider probes or
+      // quota. Each auxiliary request has its own deadline and stale loads
+      // cannot overwrite a newer retry or a remounted dialog.
+      loadSettingsAuxiliary(api).then(({ agentsBody, quotaBody }) => {
+        if (generation !== loadGeneration.current) return;
+        setProbes(agentsBody.probes || []);
+        setQuota(quotaBody.quota || { providers: [] });
+      }).catch(() => {
+        // loadSettingsAuxiliary settles individual failures; this guard keeps
+        // an unexpected implementation error from replacing usable settings.
+      });
     } catch (value) {
+      if (generation !== loadGeneration.current) return;
       setLoadError(value.message || "Failed to load the configuration");
       setPhase("error");
     }
@@ -89,6 +103,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
 
   useEffect(() => {
     load();
+    return () => { loadGeneration.current += 1; };
   }, [load]);
 
   // Move focus into the dialog on open; restore it to the trigger button on
@@ -257,7 +272,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
                     onClick={() => setSection(item.id)}
                   >
                     <span>{item.label}</span>
-                    {showErrors && count ? <span className="settings-nav-badge">{count}</span> : null}
+                    {displayErrors && count ? <span className="settings-nav-badge">{count}</span> : null}
                   </button>
                 );
               })}
@@ -265,7 +280,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
             <div className="settings-content">
               <div className="settings-panel">
                 {section === "general" ? (
-                  <GeneralPanel draft={draft} errors={errors} showErrors={showErrors} mutate={mutate} />
+                  <GeneralPanel draft={draft} errors={errors} showErrors={displayErrors} mutate={mutate} />
                 ) : null}
                 {section === "activity" ? (
                   <ActivityPanel value={activityDraft} mutate={mutateActivity} quota={quota} />
@@ -280,7 +295,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
                   />
                 ) : null}
                 {section === "agents" ? (
-                  <AgentsPanel draft={draft} probes={probes} errors={errors} showErrors={showErrors} mutate={mutate} />
+                  <AgentsPanel draft={draft} probes={probes} errors={errors} showErrors={displayErrors} mutate={mutate} />
                 ) : null}
               </div>
               <footer className="settings-savebar">
@@ -304,7 +319,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
                     <button
                       className="settings-button settings-button-primary"
                       onClick={() => save(false)}
-                      disabled={!dirty || saving}
+                      disabled={!canSaveDraft(dirty, errors, saving)}
                     >
                       {saving ? "Saving…" : "Save all"}
                     </button>

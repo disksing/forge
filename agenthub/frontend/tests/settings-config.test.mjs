@@ -3,6 +3,7 @@ import test from "node:test";
 import {
 	DEFAULT_ONWATCH,
   buildPayload,
+  canSaveDraft,
   createDraft,
   isDirty,
   normalizeAgentName,
@@ -172,7 +173,7 @@ test("validateDraft rejects duplicate agent names case-insensitively", () => {
   const draft = createDraft({
     agentProviders: [{ id: "p", name: "P", type: "codex", enabled: true }],
     agents: [
-      { name: "Codex", providerId: "p" },
+      { name: "codex", providerId: "p" },
       { name: " codex ", providerId: "p" },
     ],
   });
@@ -182,6 +183,15 @@ test("validateDraft rejects duplicate agent names case-insensitively", () => {
   assert.equal(duplicate.index, 1);
   assert.match(duplicate.message, /already used/);
   assert.match(duplicate.message, /codex/);
+  assert.equal(canSaveDraft(true, errors), false);
+  assert.equal(canSaveDraft(true, []), true);
+});
+
+test("canSaveDraft blocks invalid or in-flight settings saves", () => {
+  assert.equal(canSaveDraft(false, []), false);
+  assert.equal(canSaveDraft(true, [{ section: "agents", index: 1, field: "name" }]), false);
+  assert.equal(canSaveDraft(true, [], true), false);
+  assert.equal(canSaveDraft(true, []), true);
 });
 
 test("validateDraft enforces the agent name length limit", () => {
