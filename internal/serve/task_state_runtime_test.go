@@ -2,11 +2,252 @@ package serve
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/disksing/pua/internal/app"
 )
+
+func TestTaskMessageAcceptanceWaitsForDeliveryBoundary(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.SetTaskState("project1.task1", app.TaskStateBlocked, "waiting for input"); err != nil {
+		t.Fatal(err)
+	}
+	message, err := manager.acceptResourceMessageDurable(context.Background(), workspace, "project1.task1", resourceMessageRequest{
+		Text: "resume", Role: "user", Mode: resourceMessageModeEnqueue,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := puaWorkspace.Resource("project1.task1")
+	if err != nil || detail.State != app.TaskStateBlocked {
+		t.Fatalf("mailbox acceptance changed Task state before delivery: detail=%#v err=%v", detail, err)
+	}
+
+	record := generationRecord{
+		ID: "task-state-delivery-gen", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-task-state-delivery", Status: "idle", Title: "Task state delivery",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		CompletionMarker: "session:2", TaskStateCompletionMarker: "session:1", TaskStateContinuationCount: 2,
+	}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
+	if err := manager.prepareTaskWorkChain(workspace, message, rt); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = puaWorkspace.Resource("project1.task1")
+	if err != nil || detail.State != app.TaskStateInProgress {
+		t.Fatalf("delivery boundary did not start Task work: detail=%#v err=%v", detail, err)
+	}
+	updated := rt.snapshotGeneration()
+	if updated.TaskStateChainID != message.ID || updated.TaskStateContinuationCount != 0 || updated.TaskStateCompletionMarker != record.CompletionMarker {
+		t.Fatalf("fresh work chain did not consume the stale completion: %#v", updated)
+	}
+
+	if _, err := puaWorkspace.SetTaskState("project1.task1", app.TaskStateCompleted, ""); err != nil {
+		t.Fatal(err)
+	}
+	message.Status = resourceMessageDelivering
+	if err := manager.prepareTaskWorkChain(workspace, message, rt); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = puaWorkspace.Resource("project1.task1")
+	if err != nil || detail.State != app.TaskStateCompleted {
+		t.Fatalf("delivery retry restarted an already handled Turn: detail=%#v err=%v", detail, err)
+	}
+}
+
+func TestTaskTurnCompletionIsSupersededByQueuedWork(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.SetTaskState("project1.task1", app.TaskStateWaiting, "waiting for an external event"); err != nil {
+		t.Fatal(err)
+	}
+	record := generationRecord{
+		ID: "task-state-superseded-gen", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-task-state-superseded", Status: "idle", Title: "Task state superseded",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		CompletionMarker: "session:2", CompletionTurnID: "turn-2", TaskStateChainID: "message-old",
+	}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
+	if _, err := acceptMailboxMessage(workspace.Path, "project1.task1", resourceMessageRequest{Text: "new work", Role: "user", Mode: resourceMessageModeEnqueue}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.handleTaskTurnCompletionLocked(context.Background(), rt); err != nil {
+		t.Fatal(err)
+	}
+	updated := rt.snapshotGeneration()
+	if updated.TaskStateCompletionMarker != record.CompletionMarker {
+		t.Fatalf("queued work did not consume stale completion: %#v", updated)
+	}
+	mailbox, err := loadHotResourceMailbox(workspace.Path, record.ResourceID)
+	if err != nil || len(mailbox.Messages) != 1 || mailbox.Messages[0].Type == resourceMessageTypeTaskContinuation {
+		t.Fatalf("stale completion generated duplicate work: mailbox=%#v err=%v", mailbox, err)
+	}
+}
+
+func TestTaskTurnCompletionIsSupersededByActiveTurn(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.SetTaskState("project1.task1", app.TaskStateInProgress, ""); err != nil {
+		t.Fatal(err)
+	}
+	record := generationRecord{
+		ID: "task-state-active-gen", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-task-state-active", Status: "running", CurrentTurnID: "turn-new",
+		LastTurnID: "turn-new", Title: "Task state active",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		CompletionMarker: "session:2", CompletionTurnID: "turn-old", TaskStateChainID: "message-new",
+	}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
+	if err := manager.handleTaskTurnCompletionLocked(context.Background(), rt); err != nil {
+		t.Fatal(err)
+	}
+	updated := rt.snapshotGeneration()
+	if updated.TaskStateCompletionMarker != record.CompletionMarker {
+		t.Fatalf("active Turn did not consume stale completion: %#v", updated)
+	}
+	mailbox, err := loadHotResourceMailbox(workspace.Path, record.ResourceID)
+	if err != nil || len(mailbox.Messages) != 0 {
+		t.Fatalf("active Turn received duplicate continuation: mailbox=%#v err=%v", mailbox, err)
+	}
+}
+
+func TestWaitingTaskWithoutTargetScheduleGetsReminder(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.AddSchedule(app.CreateScheduleInput{
+		Description: "Wake Project", Condition: "when the project should resume", Target: "project1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.SetTaskState("project1.task1", app.TaskStateWaiting, "waiting for an external event"); err != nil {
+		t.Fatal(err)
+	}
+	record := generationRecord{
+		ID: "task-waiting-schedule-gen", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-task-waiting-schedule", AgentHubSessionID: "session-stopped",
+		Status: "stopped", ReplacementPending: true, Title: "Task waiting schedule",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		CompletionMarker: "session:2", CompletionTurnID: "turn-2", TaskStateChainID: "message-chain",
+	}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
+	manager.registerRuntime(rt)
+	if err := manager.handleTaskTurnCompletionLocked(context.Background(), rt); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := loadHotResourceMailbox(workspace.Path, record.ResourceID)
+	if err != nil || len(mailbox.Messages) != 1 {
+		t.Fatalf("waiting Task reminder mailbox = %#v, err=%v", mailbox, err)
+	}
+	reminder := mailbox.Messages[0]
+	if reminder.Type != resourceMessageTypeTaskContinuation || reminder.Role != "system" ||
+		reminder.Causation == nil || reminder.Causation.Reason != "task_waiting_without_schedule" ||
+		!strings.Contains(reminder.Text, "Scheduler") || !strings.Contains(reminder.Text, record.ResourceID) {
+		t.Fatalf("waiting Task reminder = %#v", reminder)
+	}
+	updated := rt.snapshotGeneration()
+	if updated.TaskStateContinuationCount != 1 || updated.TaskStateCompletionMarker != record.CompletionMarker {
+		t.Fatalf("waiting Task reminder was not durably checkpointed: %#v", updated)
+	}
+	if err := manager.handleTaskTurnCompletionLocked(context.Background(), rt); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err = loadHotResourceMailbox(workspace.Path, record.ResourceID)
+	if err != nil || len(mailbox.Messages) != 1 {
+		t.Fatalf("duplicate terminal observation created another reminder: mailbox=%#v err=%v", mailbox, err)
+	}
+}
+
+func TestWaitingTaskWithTargetScheduleNeedsNoReminder(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.AddSchedule(app.CreateScheduleInput{
+		Description: "Resume Task", Condition: "when the external event occurs", Target: "project1.task1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.SetTaskState("project1.task1", app.TaskStateWaiting, "waiting for an external event"); err != nil {
+		t.Fatal(err)
+	}
+	record := generationRecord{
+		ID: "task-waiting-scheduled-gen", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-task-waiting-scheduled", Status: "idle", Title: "Task waiting scheduled",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		CompletionMarker: "session:2", CompletionTurnID: "turn-2", TaskStateChainID: "message-chain",
+	}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
+	if err := manager.handleTaskTurnCompletionLocked(context.Background(), rt); err != nil {
+		t.Fatal(err)
+	}
+	updated := rt.snapshotGeneration()
+	if updated.TaskStateCompletionMarker != record.CompletionMarker || updated.TaskStateContinuationCount != 0 {
+		t.Fatalf("scheduled waiting Task did not close cleanly: %#v", updated)
+	}
+	mailbox, err := loadHotResourceMailbox(workspace.Path, record.ResourceID)
+	if err != nil || len(mailbox.Messages) != 0 {
+		t.Fatalf("scheduled waiting Task received a reminder: mailbox=%#v err=%v", mailbox, err)
+	}
+}
+
+func TestWaitingTaskWithoutScheduleStopsAfterThreeReminders(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := puaWorkspace.SetTaskState("project1.task1", app.TaskStateWaiting, "waiting without a wake condition"); err != nil {
+		t.Fatal(err)
+	}
+	record := generationRecord{
+		ID: "task-waiting-exhausted-gen", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-task-waiting-exhausted", Status: "idle", Title: "Task waiting exhausted",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		CompletionMarker: "session:4", CompletionTurnID: "turn-4", TaskStateContinuationCount: 3,
+	}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
+	if err := manager.handleTaskTurnCompletionLocked(context.Background(), rt); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := puaWorkspace.Resource("project1.task1")
+	if err != nil || detail.State != app.TaskStateError || !strings.Contains(detail.StateNote, "Scheduler") {
+		t.Fatalf("waiting Task after retry exhaustion = %#v, err=%v", detail, err)
+	}
+}
 
 func TestTaskTurnCompletionStopsAfterThreeAutomaticContinuations(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
@@ -51,6 +292,10 @@ func TestTaskContinuationMessageIDIsStablePerAttempt(t *testing.T) {
 	}
 	if first == taskStateContinuationMessageID("project1.task1", "gen-1", "msg-chain", "session:2", 2) {
 		t.Fatal("different continuation attempts shared a message id")
+	}
+	waiting := taskWaitingScheduleMessageID("project1.task1", "gen-1", "msg-chain", "session:2", 1)
+	if waiting != taskWaitingScheduleMessageID("project1.task1", "gen-1", "msg-chain", "session:2", 1) || waiting == first {
+		t.Fatal("waiting schedule reminder ids are not stable and distinct")
 	}
 }
 

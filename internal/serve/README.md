@@ -120,6 +120,8 @@ curl -sS -X POST http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESS
 
 PUA 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconciler 更新 durable generation 记录、Profile 解析和全部资源 runtime。Task 或 Project 归档首先以一个可恢复的顶层目录移动提交事实；它不因活动 Turn、queued/hot mailbox 或 Stop/Archive 的未知失败而阻断。Project 子树中的所有 generation 随后由 resource planner/reconciler 异步执行 Stop、确认 `stopped`、Archive；未知响应、服务重启和中间状态均由持久事实与重复 reconcile 恢复。
 
+Task 工作流状态在 mailbox 只接受未投递时不切换；资源控制器只在真实投递边界将 Task 设为 `in_progress`，并在新工作链中消费上一 Turn 的终止标记。Turn 终止收口只在没有更新 queued 消息或活动 Turn 时生成自动续推；`in_progress` 会获得继续推进提醒，`waiting` 则要求 `scheduler.json` 至少有一条 target 精确指向当前 Task 的调度项，否则生成注册唤醒 condition 的系统提醒。两类收口共用持久化 marker、确定性消息 ID 和最多 3 次的工作链恢复预算。
+
 同一周期 reconciler 还读取每个 Workspace 的 `scheduler.json` 并生成稳定、enqueue-only 的 `scheduler_tick` mailbox 消息；该消息显式以 `requestedMode=enqueue`、`actualMode=enqueue`、`ModeFrozen=true` 接受，不能被生成消息公共 helper 改成 `steer`。空列表不会生成消息；配置变化在 Scheduler 忙碌时最多保留一个 waiting tick。间隔基准只接受由 Server tick 触发且 canonical 状态为 `completed` 的 Turn 结束时间，普通用户 Turn 不会重置计时；失败 tick 和无法恢复历史的 tick 使用恢复原因重新唤醒。资源级 `scheduler.json` checkpoint 保留最近 tick 的稳定 ID、generation/Session/Turn、配置 digest 和 delivery/Turn terminal 边界，即使 tick receipt 已 compact，Server 重启也不会重复或丢失恢复判断。
 
 资源 generation 的创建、AgentHub 绑定和生命周期由资源级 API 与 reconciler 负责；不再存在独立的 PUA Session store 或写入 API。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，Web 界面不再提供 Session 新建、切换、恢复或关闭控件。内部 lifecycle controller 仍保留 AgentHub Session 的 Stop/Resume effect；这不是用户级 Session API，也不建立旁路恢复状态机。
