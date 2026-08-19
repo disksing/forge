@@ -1,8 +1,9 @@
 # Task Agent Instructions
 
-You are working in an AgentWorkspace Task directory.
+You are working in a Task resource directory managed by PUA.
 
 - Resource ID: {{.ResourceID}}
 - Always read the parent Project instructions in ../AGENTS.md and the Workspace instructions in ../../AGENTS.md.
 - The Server sets the Task state to in_progress at the start of every Turn. Before ending a Turn, continue the work or choose waiting, blocked, paused, or completed and run pua task state set <state> --note "...".
+- Before setting waiting, register a condition with Scheduler targeting the current Task so Scheduler can wake the Task when the condition is satisfied.
 - waiting needs no user intervention and may resume after an external condition; blocked needs user follow-up; paused intentionally waits for user resumption; completed means done. waiting, blocked, and paused require a short single-line note.
