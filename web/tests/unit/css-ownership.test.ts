@@ -248,6 +248,25 @@ describe("CSS ownership", () => {
     expect(label).toContain("white-space: nowrap;");
   });
 
+  it("keeps composer actions at a mobile touch size without growing the bar", () => {
+    const css = read("src/components/ChatComposer.css");
+    const touchSelector = ':where([data-component-owner="chat-composer"]) .chat-send-button,';
+    const touchStart = css.indexOf(touchSelector);
+    expect(touchStart, touchSelector).toBeGreaterThanOrEqual(0);
+    const touchRule = css.slice(css.indexOf("{", touchStart), css.indexOf("}", touchStart) + 1);
+    expect(touchRule).toContain("width: 44px;");
+    expect(touchRule).toContain("height: 44px;");
+    expect(touchRule).toContain("min-width: 44px;");
+    expect(touchRule).toContain("flex: 0 0 44px;");
+    expect(touchRule).toContain("margin: -6px;");
+
+    const adjacentSelector = ':where([data-component-owner="chat-composer"]) .chat-composer-action + .chat-send-button';
+    const adjacentStart = css.indexOf(adjacentSelector);
+    expect(adjacentStart, adjacentSelector).toBeGreaterThanOrEqual(0);
+    const adjacentRule = css.slice(css.indexOf("{", adjacentStart), css.indexOf("}", adjacentStart) + 1);
+    expect(adjacentRule).toContain("margin-left: 6px;");
+  });
+
   it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {
     const css = read("src/components/CreateDialog.css");
     const body = (selector: string) => {
