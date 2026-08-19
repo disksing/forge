@@ -30,6 +30,8 @@ test("settings close control keeps a mobile-sized touch target", async () => {
 
   // Keep the visual X icon small while preserving a 44px touch surface.
   assert.match(closeRule, /flex: 0 0 44px;/);
+  assert.match(closeRule, /min-width: 44px;/);
+  assert.match(closeRule, /min-height: 44px;/);
   assert.match(closeRule, /width: 44px;/);
   assert.match(closeRule, /height: 44px;/);
 });
