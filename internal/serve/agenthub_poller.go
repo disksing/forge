@@ -553,12 +553,6 @@ func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cf
 			m.retireResourceGenerationLocked(context.Background(), rt)
 			return nil
 		})
-	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(updated.PendingMessages) > 0 {
-		_ = m.enqueueRuntimeOperation(rt, func() {
-			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, updated.ResourceID); err != nil {
-				rt.addPUANotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
-			}
-		})
 	}
 	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
 		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
@@ -756,13 +750,6 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 	if record.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
 		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
 			m.retireResourceGenerationLocked(context.Background(), rt)
-			return nil
-		})
-	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(record.PendingMessages) > 0 {
-		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
-			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, record.ResourceID); err != nil {
-				rt.addPUANotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
-			}
 			return nil
 		})
 	}

@@ -1680,9 +1680,6 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 		if _, err := puaWorkspace.EnsureScheduler(); err != nil {
 			return fmt.Errorf("initialize Workspace %s Scheduler: %w", workspace.ID, err)
 		}
-		if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
-			return fmt.Errorf("migrate Workspace %s resource mailbox: %w", workspace.ID, err)
-		}
 	}
 	return nil
 }

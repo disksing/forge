@@ -80,14 +80,6 @@ func fromStoreRecords(storeRecords []generation.Record) ([]generationRecord, err
 	return records, nil
 }
 
-// loadGenerationRecordsLocked remains source-compatible with the mailbox migration
-// helper while the old process-wide mutex is retired from generation writes.
-// The caller may hold agentIndexMu for mailbox and generation compatibility
-// work; this function itself deliberately does not acquire it.
-func loadGenerationRecordsLocked(workspacePath string) ([]generationRecord, error) {
-	return loadGenerationRecords(workspacePath)
-}
-
 func retireStoredGeneration(rt *agentRuntime, record generationRecord, reason string) error {
 	if rt == nil {
 		return nil

@@ -712,7 +712,7 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 	if facts.TurnID == "" && !facts.SessionKnown {
 		facts.TurnID = strings.TrimSpace(record.CurrentTurnID)
 	}
-	facts.MailboxPending, facts.NextMessage = legacyMailboxFacts(input.Mailbox, facts.ResourceID, record.PendingMessages)
+	facts.MailboxPending, facts.NextMessage = mailboxFacts(input.Mailbox, facts.ResourceID)
 	if facts.TurnID == "" && facts.NextMessage != nil {
 		facts.TurnID = firstNonEmpty(facts.NextMessage.InterruptTurnID, facts.NextMessage.TurnID)
 	}
@@ -846,7 +846,7 @@ func activeLegacyTurnID(session agentHubSession) string {
 	return strings.TrimSpace(session.CurrentTurnID)
 }
 
-func legacyMailboxFacts(mailbox resourceMailbox, resourceID string, legacy []resourceInboundMessage) (bool, *GenerationMessageFacts) {
+func mailboxFacts(mailbox resourceMailbox, resourceID string) (bool, *GenerationMessageFacts) {
 	message, found := selectPendingMailboxMessage(mailbox, resourceID)
 	if found {
 		mode := strings.TrimSpace(message.RequestedMode)
@@ -865,12 +865,6 @@ func legacyMailboxFacts(mailbox resourceMailbox, resourceID string, legacy []res
 			InterruptTurnID:  message.InterruptTurnID,
 			AgentHubAccepted: message.Status == resourceMessageDelivered,
 		}
-	}
-	for _, pending := range legacy {
-		if strings.TrimSpace(pending.ID) == "" {
-			continue
-		}
-		return true, &GenerationMessageFacts{ID: pending.ID, Status: GenerationMessageStatusQueued, RequestedMode: GenerationMessageModeEnqueue}
 	}
 	return false, nil
 }

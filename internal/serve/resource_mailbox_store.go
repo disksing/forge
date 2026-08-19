@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	resourceMailboxStoreVersion     = 1
-	resourceMailboxMigrationVersion = 1
-	resourceMailboxExpiredState     = "expired"
+	resourceMailboxStoreVersion = 1
+	resourceMailboxExpiredState = "expired"
 )
 
 // These are variables so focused tests can shrink the retention window without
@@ -185,13 +184,6 @@ type resourceMailboxMeta struct {
 	ResourceKey string `json:"resourceKey"`
 }
 
-type resourceMailboxMigrationMarker struct {
-	Version        int    `json:"version"`
-	Status         string `json:"status"`
-	CommittedAt    string `json:"committedAt"`
-	SourceVersions []int  `json:"sourceVersions,omitempty"`
-}
-
 type resourceMailboxLocator struct {
 	Version     int    `json:"version"`
 	MessageID   string `json:"messageId"`
@@ -211,16 +203,11 @@ type resourceMailboxTxn struct {
 
 var (
 	resourceMailboxLocks       sync.Map
-	resourceMailboxMigrationMu sync.Mutex
 	resourceMailboxAggregateMu sync.Mutex
 )
 
 func resourceMailboxResourcesRoot(workspacePath string) string {
 	return filepath.Join(agentRoot(workspacePath), "resources")
-}
-
-func resourceMailboxMigrationPath(workspacePath string) string {
-	return filepath.Join(resourceMailboxResourcesRoot(workspacePath), ".mailbox-migration.json")
 }
 
 func resourceMailboxLocatorRoot(workspacePath string) string {
@@ -1016,9 +1003,6 @@ func loadResourceMailboxStoreForRead(workspacePath, resourceID string) (resource
 }
 
 func loadResourceMailboxForResource(workspacePath, resourceID string) (resourceMailbox, error) {
-	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
-		return resourceMailbox{}, err
-	}
 	store, err := loadResourceMailboxStoreForRead(workspacePath, resourceID)
 	if err != nil {
 		return resourceMailbox{}, err
@@ -1056,9 +1040,6 @@ func listResourceMailboxResourceIDs(workspacePath string) ([]string, error) {
 // history and tests. Production reconciliation uses the resource-scoped and
 // hot-only helpers below, so this bounded aggregate never drives delivery.
 func loadResourceMailbox(workspacePath string) (resourceMailbox, error) {
-	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
-		return resourceMailbox{}, err
-	}
 	resourceIDs, err := listResourceMailboxResourceIDs(workspacePath)
 	if err != nil {
 		return resourceMailbox{}, err
@@ -1119,9 +1100,6 @@ func loadAllHotResourceMailboxes(workspacePath string) ([]resourceMailbox, error
 }
 
 func mutateResourceMailboxStoreForResource(workspacePath, resourceID string, mutate func(*resourceMailboxStore) error) (resourceMailboxStore, error) {
-	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
-		return resourceMailboxStore{}, err
-	}
 	resourceID = normalizedResourceID(resourceID)
 	lock := resourceMailboxLock(workspacePath, resourceID)
 	lock.Lock()
@@ -1157,9 +1135,6 @@ func mutateResourceMailboxForResource(workspacePath, resourceID string, mutate f
 // callers. New production paths use mutateResourceMailboxForResource so a
 // mutation does not scan or rewrite unrelated resources.
 func mutateResourceMailbox(workspacePath string, mutate func(*resourceMailbox) error) (resourceMailbox, error) {
-	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
-		return resourceMailbox{}, err
-	}
 	resourceMailboxAggregateMu.Lock()
 	defer resourceMailboxAggregateMu.Unlock()
 	before, err := loadResourceMailbox(workspacePath)
@@ -1191,42 +1166,6 @@ func mutateResourceMailbox(workspacePath string, mutate func(*resourceMailbox) e
 		}
 	}
 	return before, nil
-}
-
-func readLegacyMailboxForMigration(workspacePath string) (resourceMailbox, []int, error) {
-	data, err := os.ReadFile(resourceMailboxPath(workspacePath))
-	if os.IsNotExist(err) {
-		return resourceMailbox{Version: resourceMailboxVersion, Messages: []resourceMailboxMessage{}}, []int{}, nil
-	}
-	if err != nil {
-		return resourceMailbox{}, nil, err
-	}
-	var mailbox resourceMailbox
-	if err := json.Unmarshal(data, &mailbox); err != nil {
-		return resourceMailbox{}, nil, fmt.Errorf("read legacy resource mailbox: %w", err)
-	}
-	if mailbox.Version != 1 && mailbox.Version != resourceMailboxVersion {
-		return resourceMailbox{}, nil, fmt.Errorf("unsupported legacy resource mailbox version %d", mailbox.Version)
-	}
-	if mailbox.Messages == nil {
-		mailbox.Messages = []resourceMailboxMessage{}
-	}
-	return mailbox, []int{mailbox.Version}, nil
-}
-
-func mailboxNotificationOperationFromMessage(message resourceMailboxMessage) (resourceMailboxNotificationOp, bool) {
-	receipt := message.Notification
-	if receipt == nil || receipt.Status == resourceNotificationDelivered || receipt.Status == resourceNotificationTerminal {
-		return resourceMailboxNotificationOp{}, false
-	}
-	return resourceMailboxNotificationOp{
-		ID: receipt.ID, Type: receipt.Type, SourceMessageID: message.ID, SourceMessageIDs: []string{message.ID},
-		SourceResourceID: message.ResourceID, SourceWorkspaceInstanceID: strings.TrimSpace(message.SenderWorkspaceInstanceID),
-		TargetWorkspaceInstanceID: receipt.TargetWorkspaceInstanceID, TargetResourceID: receipt.TargetResourceID,
-		GeneratedMessageID: receipt.ID, Status: receipt.Status, AcceptedAt: receipt.AcceptedAt,
-		UpdatedAt: receipt.UpdatedAt, DeliveredAt: receipt.DeliveredAt, TerminalAt: receipt.TerminalAt,
-		DeliveryStatus: receipt.DeliveryStatus, LastError: receipt.LastError, LastErrorCode: receipt.LastErrorCode,
-	}, true
 }
 
 func mailboxNotificationOperationFromGenerated(source resourceMailboxMessage, generated resourceMailboxMessage) resourceMailboxNotificationOp {
@@ -1320,54 +1259,6 @@ func appendUniqueMailboxOperation(operations []resourceMailboxNotificationOp, op
 	return append(operations, cloneMailboxOperation(operation))
 }
 
-func mergeLegacyMailboxMessage(messages []resourceMailboxMessage, incoming resourceMailboxMessage) ([]resourceMailboxMessage, error) {
-	incoming.ResourceID = normalizedResourceID(incoming.ResourceID)
-	for index := range messages {
-		if messages[index].ID != incoming.ID {
-			continue
-		}
-		if normalizedResourceID(messages[index].ResourceID) != incoming.ResourceID {
-			return messages, &resourceAPIError{Code: "message_conflict", Message: "stable message id belongs to multiple resources during mailbox migration"}
-		}
-		// The existing entry may have been advanced before a migration retry.
-		// Never regress it to the older source file.
-		return messages, nil
-	}
-	return append(messages, cloneMailboxMessage(incoming)), nil
-}
-
-func mailboxMigrationMarkerExists(workspacePath string) (bool, error) {
-	var marker resourceMailboxMigrationMarker
-	found, err := readResourceMailboxJSON(resourceMailboxMigrationPath(workspacePath), &marker)
-	if err != nil || !found {
-		return false, err
-	}
-	if marker.Version != resourceMailboxMigrationVersion || marker.Status != "committed" {
-		return false, fmt.Errorf("unsupported mailbox migration marker version %d or status %q", marker.Version, marker.Status)
-	}
-	return true, nil
-}
-
-func migratedMailboxResourceIDs(mailbox resourceMailbox, records []generationRecord) []string {
-	seen := make(map[string]bool)
-	for _, message := range mailbox.Messages {
-		seen[normalizedResourceID(message.ResourceID)] = true
-	}
-	for _, record := range records {
-		for _, pending := range record.PendingMessages {
-			if strings.TrimSpace(pending.ID) != "" {
-				seen[normalizedResourceID(record.ResourceID)] = true
-			}
-		}
-	}
-	ids := make([]string, 0, len(seen))
-	for resourceID := range seen {
-		ids = append(ids, resourceID)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
 func schedulerCheckpointFromMessages(resourceID string, messages []resourceMailboxMessage) resourceSchedulerCheckpoint {
 	checkpoint := resourceSchedulerCheckpoint{Version: resourceMailboxStoreVersion, ResourceID: resourceID}
 	var latest resourceMailboxMessage
@@ -1394,209 +1285,6 @@ func schedulerCheckpointFromMessages(resourceID string, messages []resourceMailb
 	return checkpoint
 }
 
-func migrateLegacyResourceMailbox(workspacePath string) error {
-	resourceMailboxMigrationMu.Lock()
-	defer resourceMailboxMigrationMu.Unlock()
-	if complete, err := mailboxMigrationMarkerExists(workspacePath); err != nil || complete {
-		return err
-	}
-	legacyMailbox, sourceVersions, err := readLegacyMailboxForMigration(workspacePath)
-	if err != nil {
-		return err
-	}
-
-	// Read the old generation queue once. The queue is cleared only after all
-	// staged resource stores have been durably written, so a crash can replay
-	// this merge by stable message ID.
-	agentIndexMu.Lock()
-	records, recordsErr := loadGenerationRecordsLocked(workspacePath)
-	agentIndexMu.Unlock()
-	if recordsErr != nil {
-		return recordsErr
-	}
-	seenIDs := make(map[string]bool)
-	for _, message := range legacyMailbox.Messages {
-		if strings.TrimSpace(message.ID) == "" {
-			continue
-		}
-		seenIDs[message.ID] = true
-	}
-	byResource := make(map[string][]resourceMailboxMessage)
-	for _, message := range legacyMailbox.Messages {
-		if strings.TrimSpace(message.ID) == "" {
-			continue
-		}
-		resourceID := normalizedResourceID(message.ResourceID)
-		message.ResourceID = resourceID
-		byResource[resourceID] = append(byResource[resourceID], cloneMailboxMessage(message))
-	}
-	nextSequenceByResource := make(map[string]uint64, len(byResource))
-	for resourceID, messages := range byResource {
-		nextSequenceByResource[resourceID] = legacyMailbox.NextSequence
-		for _, message := range messages {
-			if message.Sequence > nextSequenceByResource[resourceID] {
-				nextSequenceByResource[resourceID] = message.Sequence
-			}
-		}
-	}
-	clearedRecords := cloneGenerationRecords(records)
-	recordsChanged := false
-	for recordIndex := range clearedRecords {
-		for _, pending := range clearedRecords[recordIndex].PendingMessages {
-			if strings.TrimSpace(pending.ID) == "" || seenIDs[pending.ID] {
-				continue
-			}
-			actual := resourceMessageModeSteer
-			if pending.Steer != nil && !*pending.Steer {
-				actual = resourceMessageModeEnqueue
-			}
-			acceptedAt := strings.TrimSpace(pending.AcceptedAt)
-			if acceptedAt == "" {
-				acceptedAt = strings.TrimSpace(clearedRecords[recordIndex].UpdatedAt)
-			}
-			if acceptedAt == "" {
-				acceptedAt = time.Now().Format(time.RFC3339Nano)
-			}
-			resourceID := normalizedResourceID(clearedRecords[recordIndex].ResourceID)
-			nextSequenceByResource[resourceID]++
-			byResource[resourceID] = append(byResource[resourceID], resourceMailboxMessage{
-				ID: pending.ID, Sequence: nextSequenceByResource[resourceID], ResourceID: resourceID, Text: pending.Text, Role: pending.Role, Sender: pending.Sender,
-				RequestedMode: resourceMessageModeSteer, ActualMode: actual, ModeFrozen: pending.Steer != nil,
-				Status: resourceMessageQueued, AcceptedAt: acceptedAt, UpdatedAt: acceptedAt,
-				GenerationID: clearedRecords[recordIndex].GenerationID, AgentHubSessionID: clearedRecords[recordIndex].AgentHubSessionID,
-			})
-			seenIDs[pending.ID] = true
-		}
-		if len(clearedRecords[recordIndex].PendingMessages) > 0 {
-			clearedRecords[recordIndex].PendingMessages = nil
-			recordsChanged = true
-		}
-	}
-
-	resourceIDs := migratedMailboxResourceIDs(legacyMailbox, records)
-	for resourceID := range byResource {
-		found := false
-		for _, current := range resourceIDs {
-			if current == resourceID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			resourceIDs = append(resourceIDs, resourceID)
-		}
-	}
-	sort.Strings(resourceIDs)
-	if len(resourceIDs) == 0 {
-		// An uninitialized workspace has nothing to migrate. Do not create an
-		// otherwise empty resources directory from a background recovery read.
-		if len(sourceVersions) == 0 {
-			return nil
-		}
-		if err := os.MkdirAll(resourceMailboxResourcesRoot(workspacePath), 0o700); err != nil {
-			return err
-		}
-		marker := resourceMailboxMigrationMarker{Version: resourceMailboxMigrationVersion, Status: "committed", CommittedAt: time.Now().Format(time.RFC3339Nano), SourceVersions: sourceVersions}
-		return writeResourceMailboxJSON(resourceMailboxMigrationPath(workspacePath), marker)
-	}
-	if err := os.MkdirAll(resourceMailboxResourcesRoot(workspacePath), 0o700); err != nil {
-		return err
-	}
-	stageRoot := filepath.Join(resourceMailboxResourcesRoot(workspacePath), ".mailbox-migration-"+newGenerationRecordID())
-	if err := os.MkdirAll(stageRoot, 0o700); err != nil {
-		return err
-	}
-	defer os.RemoveAll(stageRoot)
-	for _, resourceID := range resourceIDs {
-		store := defaultResourceMailboxStore(workspacePath, resourceID)
-		store.Mailbox.Messages = append(store.Mailbox.Messages, byResource[resourceID]...)
-		store.Mailbox.NextSequence = legacyMailbox.NextSequence
-		for _, message := range store.Mailbox.Messages {
-			if message.Sequence > store.Mailbox.NextSequence {
-				store.Mailbox.NextSequence = message.Sequence
-			}
-			if operation, ok := mailboxNotificationOperationFromMessage(message); ok {
-				store.Outbox.Operations = appendUniqueMailboxOperation(store.Outbox.Operations, operation)
-			}
-		}
-		store.Scheduler = schedulerCheckpointFromMessages(resourceID, store.Mailbox.Messages)
-		hot, receipts, outbox, scheduler := prepareResourceMailboxDocuments(store)
-		stageDirectory := filepath.Join(stageRoot, store.ResourceKey)
-		if err := writeResourceMailboxStoreDocuments(stageDirectory, mailboxStoreMeta(store), hot, receipts, outbox, scheduler); err != nil {
-			return fmt.Errorf("stage resource mailbox %s: %w", resourceID, err)
-		}
-	}
-	if err := syncResourceMailboxDirectory(stageRoot); err != nil {
-		return err
-	}
-
-	// Commit each resource directory with an atomic rename. The durable marker
-	// is written only after every resource is visible; a retry merges any
-	// already committed directory without changing its advanced state.
-	for _, resourceID := range resourceIDs {
-		store := defaultResourceMailboxStore(workspacePath, resourceID)
-		stageDirectory := filepath.Join(stageRoot, store.ResourceKey)
-		if _, statErr := os.Stat(store.Directory); os.IsNotExist(statErr) {
-			if err := os.Rename(stageDirectory, store.Directory); err != nil {
-				return err
-			}
-			committed, loadErr := loadResourceMailboxStoreInternal(workspacePath, resourceID)
-			if loadErr != nil {
-				return loadErr
-			}
-			hot, receipts, _, _ := prepareResourceMailboxDocuments(committed)
-			_ = updateResourceMailboxLocators(workspacePath, committed, hot, receipts, resourceMailboxStore{})
-			continue
-		} else if statErr != nil {
-			return statErr
-		}
-		lock := resourceMailboxLock(workspacePath, resourceID)
-		lock.Lock()
-		current, loadErr := loadResourceMailboxStoreInternal(workspacePath, resourceID)
-		if loadErr != nil {
-			lock.Unlock()
-			return loadErr
-		}
-		before := cloneResourceMailboxStore(current)
-		for _, message := range byResource[resourceID] {
-			current.Mailbox.Messages, err = mergeLegacyMailboxMessage(current.Mailbox.Messages, message)
-			if err != nil {
-				lock.Unlock()
-				return err
-			}
-			if operation, ok := mailboxNotificationOperationFromMessage(message); ok {
-				current.Outbox.Operations = appendUniqueMailboxOperation(current.Outbox.Operations, operation)
-			}
-		}
-		if err := persistResourceMailboxStore(workspacePath, current, before); err != nil {
-			lock.Unlock()
-			return err
-		}
-		lock.Unlock()
-	}
-	if recordsChanged {
-		agentIndexMu.Lock()
-		writeErr := writeGenerationRecordsIndexLocked(workspacePath, clearedRecords)
-		agentIndexMu.Unlock()
-		if writeErr != nil {
-			return fmt.Errorf("clear migrated generation queues: %w", writeErr)
-		}
-	}
-	marker := resourceMailboxMigrationMarker{Version: resourceMailboxMigrationVersion, Status: "committed", CommittedAt: time.Now().Format(time.RFC3339Nano), SourceVersions: sourceVersions}
-	if err := writeResourceMailboxJSON(resourceMailboxMigrationPath(workspacePath), marker); err != nil {
-		return fmt.Errorf("commit mailbox migration marker: %w", err)
-	}
-	return nil
-}
-
-func cloneGenerationRecords(records []generationRecord) []generationRecord {
-	cloned := make([]generationRecord, len(records))
-	for index, record := range records {
-		cloned[index] = cloneGenerationRecord(record)
-	}
-	return cloned
-}
-
 func readResourceMailboxLocator(workspacePath, messageID string) (resourceMailboxLocator, bool, error) {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
@@ -1620,9 +1308,6 @@ func readResourceMailboxLocator(workspacePath, messageID string) (resourceMailbo
 
 func mailboxMessageByID(workspacePath, messageID string) (resourceMailboxMessage, bool, error) {
 	messageID = strings.TrimSpace(messageID)
-	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
-		return resourceMailboxMessage{}, false, err
-	}
 	if locator, found, err := readResourceMailboxLocator(workspacePath, messageID); err != nil {
 		return resourceMailboxMessage{}, false, err
 	} else if found {
@@ -1857,9 +1542,6 @@ func removeMailboxNotificationOperation(workspacePath, sourceMessageID string) e
 }
 
 func pendingResourceMailboxNotificationOperations(workspacePath string) ([]resourceMailboxNotificationOp, error) {
-	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
-		return nil, err
-	}
 	resourceIDs, err := listResourceMailboxResourceIDs(workspacePath)
 	if err != nil {
 		return nil, err

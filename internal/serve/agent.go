@@ -84,15 +84,14 @@ type generationRecord struct {
 	// any archived Project/Task generation stop. It records that reconciliation
 	// has entered the Stop -> stopped -> Archive sequence; unknown outcomes are
 	// retried until observed rather than treated as terminal.
-	ArchivedTaskStopRequested bool                     `json:"archivedTaskStopRequested,omitempty"`
-	PendingInitialMessage     string                   `json:"pendingInitialMessage,omitempty"`
-	PendingMessages           []resourceInboundMessage `json:"pendingMessages,omitempty"`
-	Title                     string                   `json:"title"`
-	Cwd                       string                   `json:"cwd"`
-	Status                    string                   `json:"status"`
-	CreatedAt                 string                   `json:"createdAt"`
-	UpdatedAt                 string                   `json:"updatedAt"`
-	LastOutputAt              string                   `json:"lastOutputAt,omitempty"`
+	ArchivedTaskStopRequested bool   `json:"archivedTaskStopRequested,omitempty"`
+	PendingInitialMessage     string `json:"pendingInitialMessage,omitempty"`
+	Title                     string `json:"title"`
+	Cwd                       string `json:"cwd"`
+	Status                    string `json:"status"`
+	CreatedAt                 string `json:"createdAt"`
+	UpdatedAt                 string `json:"updatedAt"`
+	LastOutputAt              string `json:"lastOutputAt,omitempty"`
 	// TurnNumber is the durable ordinal of the latest AgentHub turn observed
 	// for this generation. LastTurnID survives an idle edge so a PUA restart
 	// or repeated session projection cannot count the same turn twice.
@@ -134,18 +133,6 @@ type generationRecord struct {
 	RetireReason string `json:"retireReason,omitempty"`
 }
 
-type resourceInboundMessage struct {
-	ID     string                 `json:"id"`
-	Text   string                 `json:"text"`
-	Role   string                 `json:"role"`
-	Sender *agentHubMessageSender `json:"sender,omitempty"`
-	// Steer is selected and persisted immediately before the first delivery
-	// attempt. A pointer distinguishes a legacy/unattempted queued message from
-	// a message whose stable id was already sent with steer=false.
-	Steer      *bool  `json:"steer,omitempty"`
-	AcceptedAt string `json:"acceptedAt"`
-}
-
 const (
 	agentHubEventMaxCount         = 500
 	agentUploadMaxBytes           = 512 * 1024 * 1024
@@ -177,8 +164,6 @@ type agentUploadResponse struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
 }
-
-var agentIndexMu sync.Mutex
 
 type agentApprovalRequest struct {
 	RequestID string `json:"requestId"`
@@ -748,17 +733,6 @@ func cloneGenerationRecord(record generationRecord) generationRecord {
 		receipt := *record.LifecycleReceipt
 		cloned.LifecycleReceipt = &receipt
 	}
-	cloned.PendingMessages = append([]resourceInboundMessage(nil), record.PendingMessages...)
-	for index := range cloned.PendingMessages {
-		if cloned.PendingMessages[index].Sender != nil {
-			sender := *cloned.PendingMessages[index].Sender
-			cloned.PendingMessages[index].Sender = &sender
-		}
-		if cloned.PendingMessages[index].Steer != nil {
-			steer := *cloned.PendingMessages[index].Steer
-			cloned.PendingMessages[index].Steer = &steer
-		}
-	}
 	return cloned
 }
 
@@ -880,17 +854,6 @@ func generationTime(value string) time.Time {
 		return time.Time{}
 	}
 	return parsed
-}
-
-func writeGenerationRecordsIndexLocked(workspacePath string, records []generationRecord) error {
-	// Kept as a test/migration compatibility helper. Each record is now written
-	// through the generation store; no legacy global array is regenerated.
-	for _, record := range records {
-		if err := saveGenerationRecord(workspacePath, record); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func loadGenerationRecord(workspacePath, recordID string) (generationRecord, error) {

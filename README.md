@@ -271,7 +271,6 @@ AgentWorkspace/
     outbox.json                      recoverable notification operations
     scheduler.json                   latest Scheduler tick checkpoint
     commit.json                      mailbox multi-document recovery marker
-  .pua/runtime/resources/.mailbox-migration.json  durable mailbox migration marker
   .pua/runtime/resources/.message-locations/       rebuildable message lookup index
   wiki/
     index.md                  long-lived workspace knowledge

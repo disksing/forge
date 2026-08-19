@@ -37,7 +37,7 @@ facts → PlanGeneration → durable receipt → network/store effect
 
 ## 兼容与回滚
 
-`AdaptLegacyGenerationFacts` 和 `ApplyLegacyLifecyclePlan` 是现有 `generationRecord`/旧 mailbox projection 的唯一兼容边界。generation store 已将这些 opaque payload 放入按资源拆分的 current/retired 文件；旧的 `ReplacementPending`、`IdleSleepStopRequested`、`ArchivedTaskStopRequested`、`AgentHubStoppedObserved` 以及进程内 stop flag 只在 adapter 中映射，planner 不认识这些字段。迁移只在 Store 首次打开时执行，ready marker 建立后不会把一次性 legacy 读取放回 status/send/reconcile 热路径；retired 与缺少 `generationId` 的 cold 记录也不进入 lifecycle current lookup。
+`AdaptLegacyGenerationFacts` 和 `ApplyLegacyLifecyclePlan` 是现有 `generationRecord` 生命周期字段的唯一兼容边界。generation store 已将这些 opaque payload 放入按资源拆分的 current/retired 文件；旧的 `ReplacementPending`、`IdleSleepStopRequested`、`ArchivedTaskStopRequested`、`AgentHubStoppedObserved` 以及进程内 stop flag 只在 adapter 中映射，planner 不认识这些字段。generation store 迁移只在 Store 首次打开时执行，ready marker 建立后不会把一次性 generation legacy 读取放回 status/send/reconcile 热路径；mailbox 始终直接读取当前资源级 store，retired 与缺少 `generationId` 的 cold 记录也不进入 lifecycle current lookup。
 
 Workspace Generation 预算同样位于 planner 外围：poller 只在精确 Session 的 ready/stopped 安全边界读取 AgentHub materialized closed Turns，重建当前 generation 的 Turn 数与累计 wall-clock；达到 Workspace 配置的任一阈值后，先持久化原因 `turn_limit` 的 replacement intent，再交给上述统一 planner 执行 Stop → Archive → Retire。活动 Turn 或 approval 不进入预算收敛，下一次规范终态观察再评估。
 

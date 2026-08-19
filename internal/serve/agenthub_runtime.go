@@ -641,13 +641,6 @@ func (m *agentManager) recoverAgentHubGenerationLocked(ctx context.Context, cfg 
 			m.retireResourceGenerationLocked(context.Background(), rt)
 			return nil
 		})
-	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(record.PendingMessages) > 0 {
-		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
-			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, record.ResourceID); err != nil {
-				rt.addPUANotice(m, "warning", "resource/message", "Queued message recovery failed: "+err.Error())
-			}
-			return nil
-		})
 	}
 	if session.State == "archived" {
 		// The service missed the stopped edge while it was down. Release the
