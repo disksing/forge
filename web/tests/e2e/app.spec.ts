@@ -1605,7 +1605,7 @@ test("keeps mobile navigation and view selection in the Svelte app shell", async
 
   await page.locator("#mobileMenuButton").click();
   await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
-  await page.locator("#mobileSidebarBackdrop").click({ position: { x: 380, y: 400 } });
+  await page.locator("#mobileSidebarBackdrop").click();
   await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
   await page.locator("#mobileChatButton").click();
   await expect(page.locator("body")).toHaveClass(/mobile-chat-active/);
@@ -1615,6 +1615,20 @@ test("keeps mobile navigation and view selection in the Svelte app shell", async
   await page.locator("#mobileDetailsButton").click();
   await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
   await expect(page.locator("#detailsPanel")).toBeVisible();
+});
+
+test("closes the 440px navigation drawer without changing the selected resource", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+  await page.getByRole("button", { name: "Close navigation" }).click();
+
+  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task1$/);
+  await expect(page.locator("#projectTree .tree-item.active")).toContainText("Infrastructure task");
 });
 
 test("merges details and chat into one tabbed column in the two-column layout", async ({ page }) => {
