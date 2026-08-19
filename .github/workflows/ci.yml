@@ -16,6 +16,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify clean-checkout Go compilation
+        run: go test ./internal/pua ./agenthub/app -run '^$'
       - uses: actions/setup-node@v5
         with:
           node-version: "24"

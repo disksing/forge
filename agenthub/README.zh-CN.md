@@ -331,6 +331,9 @@ daemon 只读取统一的 `~/.agenthub` 布局。旧版本可能把 Session 存�
 
 ## 验证
 
+在干净的 PUA checkout 中可以直接编译和运行后端测试，不需要先构建任一前端。
+仓库根目录的 `scripts/build` 会构建两套前端，并在生成发布 binary 时强制校验入口文件。
+
 ```bash
 go test -race ./...
 go test -race -count=1 -tags=integration ./integration

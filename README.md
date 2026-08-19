@@ -411,6 +411,9 @@ scripts/build
 `scripts/build` validates and builds both frontends, embeds their generated
 assets, and produces `pua` plus `agenthub`. Node is required only for
 development and builds; neither shipped binary has a Node runtime dependency.
+Focused and full Go tests compile directly from a clean checkout without a
+frontend build. The release script enables an internal `embed_frontend` build
+tag that still fails if either generated frontend entrypoint is missing.
 For frontend development against an isolated Workspace, run
 `scripts/frontend-dev /path/to/isolated/AgentWorkspace` and open the Vite URL.
 See [web/README.md](web/README.md) for the PUA frontend ownership, lifecycle,

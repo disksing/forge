@@ -419,6 +419,11 @@ The no-authentication mode is only suitable for the local machine and trusted ne
 
 ## Verification
 
+Backend tests compile directly from a clean PUA checkout; they do not require
+building either frontend first. The repository-level `scripts/build` command
+builds both frontends and enforces their generated entrypoints for release
+binaries.
+
 ```bash
 go test -race ./...
 go test -race -count=1 -tags=integration ./integration
