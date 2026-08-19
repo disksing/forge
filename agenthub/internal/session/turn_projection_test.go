@@ -56,7 +56,7 @@ func TestClosedTurnProjectionPreservesMessagesAndCollapsesDetailRanges(t *testin
 	appendProjectionEvent(t, store, created.ID, "provider.error", turnID, map[string]any{"message": "retrying"})
 	appendProjectionEvent(t, store, created.ID, "future.visible", turnID, map[string]any{"label": "future"})
 	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "final "})
-	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "answer"})
+	finalReply := appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "answer"})
 	terminal := appendProjectionEvent(t, store, created.ID, EventTurnCompleted, turnID, map[string]any{})
 
 	page, err := store.TurnsPage(created.ID, 0, 0, true, 10)
@@ -70,6 +70,9 @@ func TestClosedTurnProjectionPreservesMessagesAndCollapsesDetailRanges(t *testin
 	if turn.StartEventID != input.ID || turn.FirstEventID != input.ID || turn.TurnStartedEventID != started.ID ||
 		turn.EndEventID != terminal.ID || !turn.Closed || turn.Status != "completed" {
 		t.Fatalf("turn boundaries = %+v", turn)
+	}
+	if turn.FinalReplyEventID != finalReply.ID || turn.FinalReplyPreview != "final answer" {
+		t.Fatalf("final reply = event %d, preview %q", turn.FinalReplyEventID, turn.FinalReplyPreview)
 	}
 	var messages []TurnItem
 	var activities []TurnItem
@@ -299,11 +302,14 @@ func TestAssistantProjectionKeepsLogicalVisibleBoundaries(t *testing.T) {
 	turnID := "turn_boundaries"
 	appendProjectionEvent(t, store, created.ID, EventMessageInput, turnID, MessageInput{Text: "go", Role: MessageRoleUser})
 	appendProjectionEvent(t, store, created.ID, "turn.started", turnID, nil)
-	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "one"})
+	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "progress"})
 	appendProjectionEvent(t, store, created.ID, "provider.metadata", turnID, map[string]any{"noise": true})
-	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "two"})
+	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": " update"})
 	appendProjectionEvent(t, store, created.ID, "message.reasoning.delta", turnID, map[string]any{"text": "boundary"})
-	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "three"})
+	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "final ", "method": "part-one"})
+	finalReply := appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "answer", "method": "part-two"})
+	appendProjectionEvent(t, store, created.ID, "message.reasoning.delta", turnID, map[string]any{"text": "trailing boundary"})
+	appendProjectionEvent(t, store, created.ID, "message.assistant.delta", turnID, map[string]any{"text": "\n\n"})
 	appendProjectionEvent(t, store, created.ID, EventTurnCompleted, turnID, map[string]any{})
 
 	turn, err := store.Turn(created.ID, turnID)
@@ -316,8 +322,57 @@ func TestAssistantProjectionKeepsLogicalVisibleBoundaries(t *testing.T) {
 			replies = append(replies, item.Text)
 		}
 	}
-	if len(replies) != 2 || replies[0] != "onetwo" || replies[1] != "three" {
+	if len(replies) != 3 || replies[0] != "progress update" || replies[1] != "final answer" || replies[2] != "\n\n" {
 		t.Fatalf("assistant logical messages = %#v", replies)
+	}
+	if turn.FinalReplyEventID != finalReply.ID || turn.FinalReplyPreview != "final answer" {
+		t.Fatalf("final reply = event %d, preview %q", turn.FinalReplyEventID, turn.FinalReplyPreview)
+	}
+}
+
+func TestMaterializedTurnDerivesFinalReplyFromItemsWithLegacyFallback(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "turns.jsonl")
+	now := time.Now()
+	withItems := TurnSummary{
+		ID: "turn_with_items", TurnID: "turn_with_items", Status: "completed", Closed: true,
+		StartedAt: now, StartEventID: 1, FirstEventID: 1, LastEventID: 6,
+		FinalReplyEventID: 2, FinalReplyPreview: "progress",
+		Items: []TurnItem{
+			{Type: "message", Role: MessageRoleAssistant, Text: "progress", StartEventID: 2, EndEventID: 2, StartedAt: now, EndedAt: now, Count: 1},
+			{Type: "activity", StartEventID: 3, EndEventID: 3, StartedAt: now, EndedAt: now, Count: 1, ThinkingCount: 1, ReasoningUpdateCount: 1},
+			{Type: "message", Role: MessageRoleAssistant, Text: "final reply", StartEventID: 4, EndEventID: 5, StartedAt: now, EndedAt: now, Count: 2},
+			{Type: "message", Role: MessageRoleAssistant, Text: "\n\n", StartEventID: 6, EndEventID: 6, StartedAt: now, EndedAt: now, Count: 1},
+		},
+	}
+	withoutItems := TurnSummary{
+		ID: "turn_without_items", TurnID: "turn_without_items", Status: "completed", Closed: true,
+		StartedAt: now, StartEventID: 10, FirstEventID: 10, LastEventID: 12,
+		FinalReplyEventID: 11, FinalReplyPreview: "legacy reply",
+		Items: nil,
+	}
+	if err := writeTurnRecordsAtomic(path, []TurnSummary{withItems, withoutItems}); err != nil {
+		t.Fatal(err)
+	}
+
+	turns, err := readTurnRecordsRepairTail(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 2 {
+		t.Fatalf("turns = %+v", turns)
+	}
+	if turns[0].FinalReplyEventID != 5 || turns[0].FinalReplyPreview != "final reply" {
+		t.Fatalf("derived final reply = event %d, preview %q", turns[0].FinalReplyEventID, turns[0].FinalReplyPreview)
+	}
+	if turns[1].FinalReplyEventID != 11 || turns[1].FinalReplyPreview != "legacy reply" {
+		t.Fatalf("legacy final reply = event %d, preview %q", turns[1].FinalReplyEventID, turns[1].FinalReplyPreview)
+	}
+	materialized, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(materialized), `"finalReplyPreview":"progress"`) {
+		t.Fatalf("materialized projection was eagerly rewritten: %s", materialized)
 	}
 }
 
