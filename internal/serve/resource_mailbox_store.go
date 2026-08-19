@@ -226,10 +226,10 @@ type resourceMailboxHotIndexReady struct {
 }
 
 var (
-	resourceMailboxLocks        sync.Map
-	resourceMailboxMigrationMu  sync.Mutex
-	resourceMailboxAggregateMu   sync.Mutex
-	resourceMailboxHotIndexMu    sync.Mutex
+	resourceMailboxLocks       sync.Map
+	resourceMailboxMigrationMu sync.Mutex
+	resourceMailboxAggregateMu sync.Mutex
+	resourceMailboxHotIndexMu  sync.Mutex
 )
 
 func resourceMailboxResourcesRoot(workspacePath string) string {
@@ -743,9 +743,12 @@ func readResourceMailboxHotIndexLocked(workspacePath string) ([]string, bool, er
 	root := resourceMailboxHotIndexRoot(workspacePath)
 	if _, err := os.Stat(root); os.IsNotExist(err) {
 		// An uninitialized workspace has no mailbox stores and is already known to
-		// have an empty active set. Avoid creating a runtime directory on every
-		// empty poll.
-		return []string{}, true, nil
+		// have an empty active set. If resource stores do exist, however, a missing
+		// hot directory is an incomplete index and must be rebuilt.
+		if _, resourceErr := os.Stat(resourceMailboxResourcesRoot(workspacePath)); os.IsNotExist(resourceErr) {
+			return []string{}, true, nil
+		}
+		return nil, false, nil
 	} else if err != nil {
 		return nil, false, err
 	}
@@ -794,7 +797,12 @@ func rebuildResourceMailboxHotIndex(workspacePath string) ([]string, error) {
 
 	root := resourceMailboxHotIndexRoot(workspacePath)
 	if _, err := os.Stat(root); os.IsNotExist(err) {
-		return []string{}, nil
+		if _, resourceErr := os.Stat(resourceMailboxResourcesRoot(workspacePath)); os.IsNotExist(resourceErr) {
+			return []string{}, nil
+		}
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			return nil, err
+		}
 	} else if err != nil {
 		return nil, err
 	}
@@ -1187,8 +1195,31 @@ func updateResourceMailboxLocators(workspacePath string, store resourceMailboxSt
 
 func persistResourceMailboxStore(workspacePath string, store resourceMailboxStore, before resourceMailboxStore) error {
 	hot, receipts, outbox, scheduler := prepareResourceMailboxDocuments(store)
-	if err := writeResourceMailboxStoreDocuments(store.Directory, mailboxStoreMeta(store), hot, receipts, outbox, scheduler); err != nil {
-		return err
+	active := resourceMailboxStoreNeedsHotWork(store)
+	if active {
+		// Keep the marker and mailbox commit in one ordering boundary. If the
+		// process dies after the marker but before the mailbox files are renamed,
+		// the next pass only performs a harmless extra read. The reverse ordering
+		// could lose a newly accepted message from the periodic reconciler.
+		resourceMailboxHotIndexMu.Lock()
+		markerErr := writeResourceMailboxHotMarkerLocked(workspacePath, store.ResourceID)
+		if markerErr == nil {
+			markerErr = writeResourceMailboxStoreDocuments(store.Directory, mailboxStoreMeta(store), hot, receipts, outbox, scheduler)
+		}
+		resourceMailboxHotIndexMu.Unlock()
+		if markerErr != nil {
+			return markerErr
+		}
+	} else {
+		if err := writeResourceMailboxStoreDocuments(store.Directory, mailboxStoreMeta(store), hot, receipts, outbox, scheduler); err != nil {
+			return err
+		}
+		// Removal is deliberately best effort after the authoritative mailbox
+		// commit. A stale marker is safe: it causes one bounded hot-store read,
+		// never loss of a retryable item.
+		resourceMailboxHotIndexMu.Lock()
+		_ = removeResourceMailboxHotMarkerLocked(workspacePath, store.ResourceID)
+		resourceMailboxHotIndexMu.Unlock()
 	}
 	store.Mailbox.NextSequence = hot.NextSequence
 	// Locators are rebuildable and non-authoritative. A failed index update must
@@ -1299,7 +1330,7 @@ func loadHotResourceMailbox(workspacePath, resourceID string) (resourceMailbox, 
 }
 
 func loadAllHotResourceMailboxes(workspacePath string) ([]resourceMailbox, error) {
-	resourceIDs, err := listResourceMailboxResourceIDs(workspacePath)
+	resourceIDs, err := listHotResourceMailboxResourceIDs(workspacePath)
 	if err != nil {
 		return nil, err
 	}
@@ -1744,6 +1775,11 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 			}
 			hot, receipts, _, _ := prepareResourceMailboxDocuments(committed)
 			_ = updateResourceMailboxLocators(workspacePath, committed, hot, receipts, resourceMailboxStore{})
+			if resourceMailboxStoreNeedsHotWork(committed) {
+				if markerErr := setResourceMailboxHotMarker(workspacePath, resourceID, true); markerErr != nil {
+					return markerErr
+				}
+			}
 			continue
 		} else if statErr != nil {
 			return statErr
@@ -2058,7 +2094,7 @@ func pendingResourceMailboxNotificationOperations(workspacePath string) ([]resou
 	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
 		return nil, err
 	}
-	resourceIDs, err := listResourceMailboxResourceIDs(workspacePath)
+	resourceIDs, err := listHotResourceMailboxResourceIDs(workspacePath)
 	if err != nil {
 		return nil, err
 	}

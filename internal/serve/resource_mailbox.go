@@ -1738,29 +1738,16 @@ func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspac
 	if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
 		return err
 	}
-	hotMailboxes, err := loadAllHotResourceMailboxes(workspace.Path)
+	resourceIDs, err := listHotResourceMailboxResourceIDs(workspace.Path)
 	if err != nil {
 		return err
 	}
-	resources := make(map[string]bool)
-	for _, mailbox := range hotMailboxes {
-		for _, message := range mailbox.Messages {
-			if message.Status == resourceMessageQueued || message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting {
-				resources[normalizedResourceID(message.ResourceID)] = true
-			}
-		}
-	}
-	ids := make([]string, 0, len(resources))
-	for id := range resources {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
 	type result struct {
 		resourceID string
 		err        error
 	}
-	results := make(chan result, len(ids))
-	for _, id := range ids {
+	results := make(chan result, len(resourceIDs))
+	for _, id := range resourceIDs {
 		resourceID := id
 		go func() {
 			err := m.withResourceController(ctx, workspace, resourceID, func() error {
@@ -1770,7 +1757,7 @@ func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspac
 		}()
 	}
 	var failures []string
-	for range ids {
+	for range resourceIDs {
 		outcome := <-results
 		if outcome.err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", outcome.resourceID, outcome.err))
