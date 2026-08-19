@@ -20,8 +20,6 @@ import (
 // code path that reads event history. Only changed projections are
 // persisted.
 
-const agentHubPollInterval = 2 * time.Second
-
 // Stop confirmation stays fail-closed: after the stop action returns, the
 // control path polls the session until it reports a durable stopped state.
 // The bounds are variables so tests can shrink them.
@@ -31,8 +29,8 @@ var (
 )
 
 // startAgentRecovery rebuilds generation records in the background so the HTTP
-// listener can serve immediately; the session poller runs right away and then
-// every interval as the fallback for any generation the recovery pass missed.
+// listener can serve immediately; the reconciliation loop runs right away and
+// retains a cold audit for any generation the recovery pass missed.
 func (m *agentManager) startAgentRecovery(ctx context.Context) {
 	m.runBackground(func() {
 		if err := m.recoverAgentHubGenerations(ctx); err != nil {
@@ -45,27 +43,13 @@ func (m *agentManager) startAgentRecovery(ctx context.Context) {
 // startAgentHubPoller polls AgentHub session state in the background until
 // ctx is cancelled.
 func (m *agentManager) startAgentHubPoller(ctx context.Context) {
-	m.runBackground(func() {
-		if err := m.pollAgentHubSessions(ctx); err != nil {
-			log.Printf("poll AgentHub sessions: %v", err)
-		}
-		ticker := time.NewTicker(agentHubPollInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := m.pollAgentHubSessions(ctx); err != nil {
-					log.Printf("poll AgentHub sessions: %v", err)
-				}
-			}
-		}
-	})
+	m.runBackground(func() { m.runReconcileLoop(ctx) })
 }
 
-// pollAgentHubSessions lists this instance's live AgentHub sessions once and
-// reconciles every local generation record against the result.
+// pollAgentHubSessions is the cold audit: it lists this instance's live
+// AgentHub sessions once, reconciles every local generation record, and runs
+// the recovery-only Workspace coordinators. The background fast path does not
+// call this function on every active-session interval.
 func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
@@ -94,11 +78,6 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 		puaWorkspace, openErr := app.OpenWorkspace(workspace.Path)
 		if openErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: inspect resources: %v", workspace.ID, openErr))
-			continue
-		}
-		runtimeConfig, runtimeErr := puaWorkspace.RuntimeConfig()
-		if runtimeErr != nil {
-			failures = append(failures, fmt.Sprintf("%s: read Workspace runtime: %v", workspace.ID, runtimeErr))
 			continue
 		}
 		records, loadErr := loadCurrentGenerationRecords(workspace.Path)
@@ -142,18 +121,8 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 					}
 				}
 			}
-			m.reconcileAgentHubGeneration(ctx, cfg, workspace, record, byExternalID, byID, client, runtimeConfig.GenerationPolicy)
+			m.reconcileAgentHubGeneration(ctx, cfg, workspace, record, byExternalID, byID, client)
 		}
-	}
-	profileConfig := agentHubServeConfig{
-		Workspaces:    cfg.Workspaces,
-		AgentProfiles: make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles)),
-	}
-	for _, route := range cfg.AgentProfiles {
-		profileConfig.AgentProfiles = append(profileConfig.AgentProfiles, agentHubProfileRoute{Key: route.Key, Description: route.Description, AgentName: route.AgentName})
-	}
-	if err := m.profileRoutesChanged(ctx, profileConfig, profileConfig); err != nil {
-		failures = append(failures, err.Error())
 	}
 	for _, workspace := range cfg.Workspaces {
 		if !m.server.ownsWorkspace(workspace.Path) {
@@ -182,7 +151,7 @@ type taskArchiveState struct {
 
 // inspectTaskArchiveStates batches resource inspection by project. Calling
 // ResourceValue for every retained generation would repeatedly scan the same task
-// directory on every two-second poll, which gets expensive precisely when a
+// directory on every cold audit, which gets expensive precisely when a
 // Workspace has accumulated many sessions.
 func inspectTaskArchiveStates(workspace *app.Workspace, records []generationRecord) map[string]taskArchiveState {
 	projectTasks := make(map[string]map[string]struct{})
@@ -366,14 +335,14 @@ func agentHubSessionMatchesRetirementTarget(cfg config, record generationRecord,
 // drives the archived-after-stopped reconciliation, while a session that is
 // truly gone conservatively moves live generations to recovering and keeps
 // terminal generations untouched.
-func (m *agentManager) reconcileAgentHubGeneration(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient, policy app.GenerationPolicy) {
+func (m *agentManager) reconcileAgentHubGeneration(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
 	_ = m.withResourceController(ctx, workspace, record.ResourceID, func() error {
-		m.reconcileAgentHubGenerationLocked(ctx, cfg, workspace, record, byExternalID, byID, client, policy)
+		m.reconcileAgentHubGenerationLocked(ctx, cfg, workspace, record, byExternalID, byID, client)
 		return nil
 	})
 }
 
-func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient, policy app.GenerationPolicy) {
+func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cfg config, workspace serveWorkspace, record generationRecord, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
 	session, found := byExternalID[sourceLookupKey(generationSourceInstanceID(cfg, record), record.SourceExternalID)]
 	if !found {
 		session, found = byID[strings.TrimSpace(record.AgentHubSessionID)]
@@ -553,21 +522,11 @@ func (m *agentManager) reconcileAgentHubGenerationLocked(ctx context.Context, cf
 			m.retireResourceGenerationLocked(context.Background(), rt)
 			return nil
 		})
-	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(updated.PendingMessages) > 0 {
-		_ = m.enqueueRuntimeOperation(rt, func() {
-			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, updated.ResourceID); err != nil {
-				rt.addPUANotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
-			}
-		})
 	}
-	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
+	if updated.GenerationID != "" && !resourceIdleSuspensionStable(updated, session) &&
+		(session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
 		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
 			rt.addPUANotice(m, "warning", "resource/idle-sleep", err.Error())
-		}
-	}
-	if updated.GenerationID != "" && (session.State == "ready" || session.State == "stopped") {
-		if err := m.reconcileGenerationPolicyLocked(ctx, workspace, updated.GenerationID, session, rt, client, policy); err != nil {
-			rt.addPUANotice(m, "warning", "generation/policy", err.Error())
 		}
 	}
 }
@@ -758,12 +717,8 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 			m.retireResourceGenerationLocked(context.Background(), rt)
 			return nil
 		})
-	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(record.PendingMessages) > 0 {
-		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
-			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, record.ResourceID); err != nil {
-				rt.addPUANotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
-			}
-			return nil
-		})
+	}
+	if m != nil {
+		m.requestReconcile(reconcileAgentHub)
 	}
 }

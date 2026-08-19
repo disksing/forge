@@ -22,8 +22,6 @@ func openTestPUAWorkspace(t *testing.T, path, language string) *app.Workspace {
 }
 
 func rewriteTestGenerationRecords(workspacePath string, records []generationRecord) error {
-	agentIndexMu.Lock()
-	defer agentIndexMu.Unlock()
 	byResource := make(map[string][]generationRecord)
 	for _, record := range records {
 		byResource[normalizedResourceID(record.ResourceID)] = append(byResource[normalizedResourceID(record.ResourceID)], record)
@@ -73,18 +71,16 @@ func saveRetiredGenerationForTest(t *testing.T, workspacePath string, record gen
 // newResourceMessage and enqueueResourceMessage reconstruct the retired
 // runtime enqueue helper for tests that exercise mailbox mutation,
 // serialization, and delivery retry without the removed run lifecycle handlers.
-func newResourceMessage(text, userName string) resourceInboundMessage {
+func newResourceMessage(text, userName string) resourceMailboxMessage {
 	role, sender := agentHubMessageProvenance(userName)
-	return resourceInboundMessage{
+	return resourceMailboxMessage{
 		ID: "msg-" + newGenerationRecordID(), Text: strings.TrimSpace(text), Role: role,
-		Sender: sender, AcceptedAt: time.Now().Format(time.RFC3339Nano),
+		Sender: sender, RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
+		AcceptedAt: time.Now().Format(time.RFC3339Nano),
 	}
 }
 
-func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) error {
-	if err := migrateLegacyResourceMailbox(rt.workspace.Path); err != nil {
-		return err
-	}
+func (rt *agentRuntime) enqueueResourceMessage(message resourceMailboxMessage) error {
 	record := rt.snapshotGeneration()
 	_, err := mutateResourceMailbox(rt.workspace.Path, func(mailbox *resourceMailbox) error {
 		for _, existing := range mailbox.Messages {
@@ -93,9 +89,13 @@ func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) e
 			}
 		}
 		mailbox.NextSequence++
-		actual := resourceMessageModeSteer
-		if message.Steer != nil && !*message.Steer {
-			actual = resourceMessageModeEnqueue
+		requested := strings.TrimSpace(message.RequestedMode)
+		if requested == "" {
+			requested = resourceMessageModeSteer
+		}
+		actual := strings.TrimSpace(message.ActualMode)
+		if actual == "" {
+			actual = requested
 		}
 		acceptedAt := strings.TrimSpace(message.AcceptedAt)
 		if acceptedAt == "" {
@@ -104,7 +104,7 @@ func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) e
 		mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
 			ID: message.ID, Sequence: mailbox.NextSequence, ResourceID: normalizedResourceID(record.ResourceID),
 			Text: message.Text, Role: message.Role, Sender: message.Sender,
-			RequestedMode: resourceMessageModeSteer, ActualMode: actual, ModeFrozen: message.Steer != nil, Status: resourceMessageQueued,
+			RequestedMode: requested, ActualMode: actual, ModeFrozen: message.ModeFrozen, Status: resourceMessageQueued,
 			AcceptedAt: acceptedAt, UpdatedAt: acceptedAt,
 		})
 		return nil

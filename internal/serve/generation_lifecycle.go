@@ -600,16 +600,7 @@ func GuardedLifecycleCommit(plan GenerationLifecyclePlan, facts GenerationLifecy
 // network effect. It is intentionally small and read-only; the caller decides
 // how to re-plan when the result is stale.
 func legacyLifecyclePlanStillCurrent(workspace serveWorkspace, plan GenerationLifecyclePlan, session *agentHubSession) (bool, error) {
-	if strings.TrimSpace(plan.GenerationID) != "" {
-		current, found, err := currentResourceGeneration(workspace.Path, plan.Guard.ResourceID)
-		if err != nil {
-			return false, err
-		}
-		if !found || current.GenerationID != plan.GenerationID {
-			return false, nil
-		}
-	}
-	record, found, err := currentGenerationRecordByID(workspace.Path, plan.GenerationID)
+	record, found, err := currentGenerationRecordByID(workspace.Path, plan.Guard.ResourceID, plan.GenerationID)
 	if err != nil {
 		return false, err
 	}
@@ -712,7 +703,7 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 	if facts.TurnID == "" && !facts.SessionKnown {
 		facts.TurnID = strings.TrimSpace(record.CurrentTurnID)
 	}
-	facts.MailboxPending, facts.NextMessage = legacyMailboxFacts(input.Mailbox, facts.ResourceID, record.PendingMessages)
+	facts.MailboxPending, facts.NextMessage = mailboxFacts(input.Mailbox, facts.ResourceID)
 	if facts.TurnID == "" && facts.NextMessage != nil {
 		facts.TurnID = firstNonEmpty(facts.NextMessage.InterruptTurnID, facts.NextMessage.TurnID)
 	}
@@ -846,7 +837,7 @@ func activeLegacyTurnID(session agentHubSession) string {
 	return strings.TrimSpace(session.CurrentTurnID)
 }
 
-func legacyMailboxFacts(mailbox resourceMailbox, resourceID string, legacy []resourceInboundMessage) (bool, *GenerationMessageFacts) {
+func mailboxFacts(mailbox resourceMailbox, resourceID string) (bool, *GenerationMessageFacts) {
 	message, found := selectPendingMailboxMessage(mailbox, resourceID)
 	if found {
 		mode := strings.TrimSpace(message.RequestedMode)
@@ -865,12 +856,6 @@ func legacyMailboxFacts(mailbox resourceMailbox, resourceID string, legacy []res
 			InterruptTurnID:  message.InterruptTurnID,
 			AgentHubAccepted: message.Status == resourceMessageDelivered,
 		}
-	}
-	for _, pending := range legacy {
-		if strings.TrimSpace(pending.ID) == "" {
-			continue
-		}
-		return true, &GenerationMessageFacts{ID: pending.ID, Status: GenerationMessageStatusQueued, RequestedMode: GenerationMessageModeEnqueue}
 	}
 	return false, nil
 }

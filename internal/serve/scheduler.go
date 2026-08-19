@@ -271,9 +271,6 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace serveWo
 	}
 	previousDigest, observedBefore := m.schedulerDigests[workspace.Path]
 	m.schedulerDigests[workspace.Path] = digest
-	if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
-		return err
-	}
 	if len(config.Schedules) == 0 {
 		return cancelPendingSchedulerTicks(ctx, workspace.Path)
 	}

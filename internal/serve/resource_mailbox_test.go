@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,13 +9,51 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/disksing/pua/internal/app"
+	"github.com/disksing/pua/internal/generation"
 )
+
+func TestCurrentGenerationRecordByIDUsesResourceScopedLookup(t *testing.T) {
+	_, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	target := idleTestGeneration(workspace, "project1.task1", "gen-target-current", "ses-target-current", time.Now())
+	unrelated := idleTestGeneration(workspace, "project1", "gen-unrelated-current", "ses-unrelated-current", time.Now())
+	if err := saveGenerationRecord(workspace.Path, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveGenerationRecord(workspace.Path, unrelated); err != nil {
+		t.Fatal(err)
+	}
+	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeConfig, err := puaWorkspace.RuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelatedKey, err := generation.ResourceKey(runtimeConfig.InstanceID, unrelated.ResourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelatedCurrent := filepath.Join(workspace.Path, ".pua", "runtime", "resources", unrelatedKey, "current.json")
+	if err := os.WriteFile(unrelatedCurrent, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	current, found, err := currentGenerationRecordByID(workspace.Path, target.ResourceID, target.GenerationID)
+	if err != nil || !found || current.GenerationID != target.GenerationID {
+		t.Fatalf("resource-scoped current lookup failed: current=%#v found=%v err=%v", current, found, err)
+	}
+	if _, found, err := currentGenerationRecordByID(workspace.Path, target.ResourceID, unrelated.GenerationID); err != nil || found {
+		t.Fatalf("resource-scoped current lookup accepted another generation: found=%v err=%v", found, err)
+	}
+}
 
 func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace serveWorkspace, resourceID, text, mode string, sender *agentHubMessageSender) resourceMailboxMessage {
 	t.Helper()
@@ -54,87 +93,54 @@ func TestPublicSessionStateKeepsWaitingOutOfTaskState(t *testing.T) {
 	}
 }
 
-func TestWorkspaceMailboxMigratesGenerationQueuesIdempotently(t *testing.T) {
-	fake := newRuntimeFakeAgentHub()
-	hub := httptest.NewServer(fake)
-	defer hub.Close()
-	_, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	steer := false
-	legacy := generationRecord{
-		ID: "gen-legacy", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
-		Generation: 3, GenerationID: "gen-legacy", AgentHubSessionID: "ses-legacy",
-		Title: "legacy", Cwd: workspace.Path, Status: "running",
-		CreatedAt: "2026-08-12T10:00:00Z", UpdatedAt: "2026-08-12T10:01:00Z",
-		PendingMessages: []resourceInboundMessage{{
-			ID: "msg-legacy", Text: "preserve me", Role: "agent",
-			Sender: &agentHubMessageSender{ID: "project1.task2", Name: "project1.task2"},
-			Steer:  &steer, AcceptedAt: "2026-08-12T10:00:30Z",
-		}},
-	}
-	if err := saveGenerationRecord(workspace.Path, legacy); err != nil {
-		t.Fatal(err)
-	}
-	for attempt := 0; attempt < 2; attempt++ {
-		if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
-			t.Fatal(err)
-		}
-	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(mailbox.Messages) != 1 {
-		t.Fatalf("migration duplicated or lost messages: %#v", mailbox.Messages)
-	}
-	message := mailbox.Messages[0]
-	if message.ID != "msg-legacy" || message.ResourceID != "project1.task1" || message.Text != "preserve me" ||
-		message.RequestedMode != resourceMessageModeSteer || message.ActualMode != resourceMessageModeEnqueue ||
-		!message.ModeFrozen ||
-		message.GenerationID != "gen-legacy" || message.AgentHubSessionID != "ses-legacy" ||
-		message.AcceptedAt != "2026-08-12T10:00:30Z" || message.Sender == nil || message.Sender.ID != "project1.task2" {
-		t.Fatalf("migrated message mismatch: %#v", message)
-	}
-	records, err := loadGenerationRecords(workspace.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(records) != 1 || len(records[0].PendingMessages) != 0 {
-		t.Fatalf("legacy generation queue was not cleared: %#v", records)
-	}
-}
-
-func TestResourceMailboxVersionOneMigratesToBoundedReceiptWithoutLosingMessage(t *testing.T) {
+func TestResourceMailboxIgnoresLegacyFiles(t *testing.T) {
 	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(agentRoot(root), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	recent := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
-	legacy := fmt.Sprintf(`{"version":1,"nextSequence":1,"messages":[{"id":"msg-v1","sequence":1,"resourceId":"workspace","text":"legacy","role":"user","requestedMode":"enqueue","actualMode":"enqueue","status":"delivered","acceptedAt":%q,"updatedAt":%q}]}`, recent, recent)
-	if err := os.WriteFile(resourceMailboxPath(root), []byte(legacy), 0o600); err != nil {
+	legacyPath := filepath.Join(agentRoot(root), "mailbox.json")
+	legacyData := []byte(`{"version":1,"messages":[{"id":"legacy-message"}]}`)
+	if err := os.WriteFile(legacyPath, legacyData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(resourceMailboxResourcesRoot(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	markerPath := filepath.Join(resourceMailboxResourcesRoot(root), ".mailbox-migration.json")
+	if err := os.WriteFile(markerPath, []byte(`not valid json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	message, err := acceptMailboxMessage(root, "workspace", resourceMessageRequest{Text: "current"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	mailbox, err := loadResourceMailbox(root)
-	if err != nil || mailbox.Version != resourceMailboxVersion || mailbox.NextSequence != 1 || len(mailbox.Messages) != 1 ||
-		mailbox.Messages[0].ID != "msg-v1" || !mailbox.Messages[0].receipt || mailbox.Messages[0].Text != "" {
-		t.Fatalf("v1 mailbox upgrade = %#v, %v", mailbox, err)
+	if err != nil || len(mailbox.Messages) != 1 || mailbox.Messages[0].ID != message.ID || mailbox.Messages[0].Text != "current" {
+		t.Fatalf("current mailbox = %#v, %v", mailbox, err)
 	}
-	if err := migrateLegacyResourceMailbox(root); err != nil {
+	if data, readErr := os.ReadFile(legacyPath); readErr != nil || !bytes.Equal(data, legacyData) {
+		t.Fatalf("legacy mailbox changed = %q, %v", data, readErr)
+	}
+	if data, readErr := os.ReadFile(markerPath); readErr != nil || string(data) != "not valid json" {
+		t.Fatalf("legacy marker changed = %q, %v", data, readErr)
+	}
+}
+
+func TestResourceMailboxEmptyWorkspaceHasNoStores(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(resourceMailboxPath(root))
-	if err != nil || string(data) != legacy {
-		t.Fatalf("legacy mailbox was not retained as rollback evidence = %s, %v", data, err)
+	mailbox, err := loadResourceMailbox(root)
+	if err != nil || mailbox.Version != resourceMailboxVersion || mailbox.NextSequence != 0 || len(mailbox.Messages) != 0 {
+		t.Fatalf("empty mailbox = %#v, %v", mailbox, err)
 	}
-	store, err := loadResourceMailboxStoreInternal(root, "workspace")
-	if err != nil || len(store.Receipts.Receipts) != 1 || store.Receipts.Receipts[0].ID != "msg-v1" {
-		t.Fatalf("migrated receipt store = %#v, %v", store.Receipts, err)
-	}
-	if message, found, lookupErr := mailboxMessageByID(root, "msg-v1"); lookupErr != nil || !found || !message.receipt || message.Text != "" {
-		t.Fatalf("migrated cold receipt lookup = %#v, found=%v err=%v", message, found, lookupErr)
-	}
-	var marker resourceMailboxMigrationMarker
-	if found, markerErr := readResourceMailboxJSON(resourceMailboxMigrationPath(root), &marker); markerErr != nil || !found || marker.Status != "committed" {
-		t.Fatalf("migration marker = %#v, found=%v err=%v", marker, found, markerErr)
+	resourceIDs, err := listResourceMailboxResourceIDs(root)
+	if err != nil || len(resourceIDs) != 0 {
+		t.Fatalf("empty resource stores = %#v, %v", resourceIDs, err)
 	}
 }
 
@@ -667,10 +673,14 @@ func TestResourceMailboxSeparatesTargetsAndRejectsPersistenceFailure(t *testing.
 	if _, err := app.Initialize(brokenWorkspace, "en"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureAgentDirs(brokenWorkspace); err != nil {
+	if err := os.MkdirAll(resourceMailboxResourcesRoot(brokenWorkspace), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(resourceMailboxPath(brokenWorkspace), 0o700); err != nil {
+	directory, _, _, err := resourceMailboxDirectory(brokenWorkspace, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(directory, []byte("blocks directory creation"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := acceptMailboxMessage(brokenWorkspace, "workspace", resourceMessageRequest{Text: "must not accept"}); err == nil {

@@ -1298,11 +1298,7 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		Warnings []app.ArchiveWarning `json:"warnings,omitempty"`
 	}{Path: archiveResult.Path, Warnings: archiveResult.Warnings})
 	if s.agents != nil {
-		s.agents.runBackground(func() {
-			if err := s.agents.pollAgentHubSessions(context.Background()); err != nil {
-				log.Printf("reconcile archived resource %s: %v", resourceID, err)
-			}
-		})
+		s.agents.requestReconcile(reconcileColdAudit)
 	}
 }
 
@@ -1679,9 +1675,6 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 		}
 		if _, err := puaWorkspace.EnsureScheduler(); err != nil {
 			return fmt.Errorf("initialize Workspace %s Scheduler: %w", workspace.ID, err)
-		}
-		if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
-			return fmt.Errorf("migrate Workspace %s resource mailbox: %w", workspace.ID, err)
 		}
 	}
 	return nil

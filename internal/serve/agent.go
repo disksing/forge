@@ -84,15 +84,14 @@ type generationRecord struct {
 	// any archived Project/Task generation stop. It records that reconciliation
 	// has entered the Stop -> stopped -> Archive sequence; unknown outcomes are
 	// retried until observed rather than treated as terminal.
-	ArchivedTaskStopRequested bool                     `json:"archivedTaskStopRequested,omitempty"`
-	PendingInitialMessage     string                   `json:"pendingInitialMessage,omitempty"`
-	PendingMessages           []resourceInboundMessage `json:"pendingMessages,omitempty"`
-	Title                     string                   `json:"title"`
-	Cwd                       string                   `json:"cwd"`
-	Status                    string                   `json:"status"`
-	CreatedAt                 string                   `json:"createdAt"`
-	UpdatedAt                 string                   `json:"updatedAt"`
-	LastOutputAt              string                   `json:"lastOutputAt,omitempty"`
+	ArchivedTaskStopRequested bool   `json:"archivedTaskStopRequested,omitempty"`
+	PendingInitialMessage     string `json:"pendingInitialMessage,omitempty"`
+	Title                     string `json:"title"`
+	Cwd                       string `json:"cwd"`
+	Status                    string `json:"status"`
+	CreatedAt                 string `json:"createdAt"`
+	UpdatedAt                 string `json:"updatedAt"`
+	LastOutputAt              string `json:"lastOutputAt,omitempty"`
 	// TurnNumber is the durable ordinal of the latest AgentHub turn observed
 	// for this generation. LastTurnID survives an idle edge so a PUA restart
 	// or repeated session projection cannot count the same turn twice.
@@ -102,7 +101,7 @@ type generationRecord struct {
 	TurnStartedAt string `json:"turnStartedAt,omitempty"`
 	// GenerationCompletedTurns and GenerationTurnDurationMS are derived from
 	// AgentHub's materialized closed Turns for this exact Session. The event
-	// cursor prevents a two-second poll from repeatedly fetching unchanged Turn
+	// cursor prevents active polling from repeatedly fetching unchanged Turn
 	// pages while still allowing older current generations to initialize once.
 	GenerationCompletedTurns int   `json:"generationCompletedTurns,omitempty"`
 	GenerationTurnDurationMS int64 `json:"generationTurnDurationMs,omitempty"`
@@ -132,18 +131,6 @@ type generationRecord struct {
 	// lifecycle reconciler.
 	Retired      bool   `json:"-"`
 	RetireReason string `json:"retireReason,omitempty"`
-}
-
-type resourceInboundMessage struct {
-	ID     string                 `json:"id"`
-	Text   string                 `json:"text"`
-	Role   string                 `json:"role"`
-	Sender *agentHubMessageSender `json:"sender,omitempty"`
-	// Steer is selected and persisted immediately before the first delivery
-	// attempt. A pointer distinguishes a legacy/unattempted queued message from
-	// a message whose stable id was already sent with steer=false.
-	Steer      *bool  `json:"steer,omitempty"`
-	AcceptedAt string `json:"acceptedAt"`
 }
 
 const (
@@ -178,8 +165,6 @@ type agentUploadResponse struct {
 	Size int64  `json:"size"`
 }
 
-var agentIndexMu sync.Mutex
-
 type agentApprovalRequest struct {
 	RequestID string `json:"requestId"`
 	Decision  string `json:"decision"`
@@ -210,8 +195,16 @@ type agentManager struct {
 	runtimes              map[string]*agentRuntime
 	subscribers           map[string]map[chan agentStreamMessage]bool
 	schedulerDigests      map[string]string
+	reconcileWake         chan struct{}
+	reconcilePending      reconcileRequest
 	now                   func() time.Time
 	idleSleepAfter        time.Duration
+	activePollInterval    time.Duration
+	stablePollInterval    time.Duration
+	coldAuditInterval     time.Duration
+	mailboxRetryInterval  time.Duration
+	notificationInterval  time.Duration
+	schedulerFallback     time.Duration
 }
 
 // runBackground tracks short-lived work started by an HTTP request. The
@@ -235,13 +228,20 @@ func (m *agentManager) waitBackground() {
 
 func newAgentManager(s *server) *agentManager {
 	return &agentManager{
-		server:              s,
-		resourceControllers: make(map[string]*resourceController),
-		runtimes:            make(map[string]*agentRuntime),
-		subscribers:         make(map[string]map[chan agentStreamMessage]bool),
-		schedulerDigests:    make(map[string]string),
-		now:                 time.Now,
-		idleSleepAfter:      defaultResourceIdleSleepAfter,
+		server:               s,
+		resourceControllers:  make(map[string]*resourceController),
+		runtimes:             make(map[string]*agentRuntime),
+		subscribers:          make(map[string]map[chan agentStreamMessage]bool),
+		schedulerDigests:     make(map[string]string),
+		reconcileWake:        make(chan struct{}, 1),
+		now:                  time.Now,
+		idleSleepAfter:       defaultResourceIdleSleepAfter,
+		activePollInterval:   2 * time.Second,
+		stablePollInterval:   10 * time.Second,
+		coldAuditInterval:    30 * time.Second,
+		mailboxRetryInterval: 10 * time.Second,
+		notificationInterval: 30 * time.Second,
+		schedulerFallback:    30 * time.Second,
 	}
 }
 
@@ -418,8 +418,9 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace serveWorkspace
 
 func (m *agentManager) registerRuntime(rt *agentRuntime) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.runtimes[rt.record.ID] = rt
+	m.mu.Unlock()
+	m.requestReconcile(reconcileAgentHub)
 }
 
 func (m *agentManager) removeRuntime(recordID string) {
@@ -689,6 +690,7 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 	})
 	if updated.CompletionMarker != "" && updated.CompletionMarker != previous && rt.manager != nil {
 		rt.manager.scheduleTaskTurnCompletion(rt, updated)
+		rt.manager.requestReconcile(reconcileNotifications | reconcileScheduler | reconcileAgentHub)
 	}
 }
 
@@ -747,17 +749,6 @@ func cloneGenerationRecord(record generationRecord) generationRecord {
 	if record.LifecycleReceipt != nil {
 		receipt := *record.LifecycleReceipt
 		cloned.LifecycleReceipt = &receipt
-	}
-	cloned.PendingMessages = append([]resourceInboundMessage(nil), record.PendingMessages...)
-	for index := range cloned.PendingMessages {
-		if cloned.PendingMessages[index].Sender != nil {
-			sender := *cloned.PendingMessages[index].Sender
-			cloned.PendingMessages[index].Sender = &sender
-		}
-		if cloned.PendingMessages[index].Steer != nil {
-			steer := *cloned.PendingMessages[index].Steer
-			cloned.PendingMessages[index].Steer = &steer
-		}
 	}
 	return cloned
 }
@@ -880,17 +871,6 @@ func generationTime(value string) time.Time {
 		return time.Time{}
 	}
 	return parsed
-}
-
-func writeGenerationRecordsIndexLocked(workspacePath string, records []generationRecord) error {
-	// Kept as a test/migration compatibility helper. Each record is now written
-	// through the generation store; no legacy global array is regenerated.
-	for _, record := range records {
-		if err := saveGenerationRecord(workspacePath, record); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func loadGenerationRecord(workspacePath, recordID string) (generationRecord, error) {

@@ -56,6 +56,7 @@ type runtimeFakeAgentHub struct {
 	actions              []string
 	resumeEnvironments   []map[string]string
 	listCalls            int
+	getSessionCalls      int
 	stopCalls            int
 	eventsAttempts       int
 	eventsCalls          int
@@ -112,6 +113,7 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	id, _ := url.PathUnescape(parts[2])
 	if len(parts) == 3 && r.Method == http.MethodGet {
 		f.mu.Lock()
+		f.getSessionCalls++
 		fail := f.failGetSessionID == id
 		session, ok := f.sessions[id]
 		f.mu.Unlock()
@@ -808,12 +810,8 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	if first.Title != "Runtime test task (gen #1)" {
 		t.Fatalf("resource generation title = %q", first.Title)
 	}
-	if len(first.PendingMessages) != 0 {
-		t.Fatalf("ready generation did not deliver first message: %#v", first.PendingMessages)
-	}
-
 	secondRecorder, second := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"second","userName":"Ada"}`)
-	if secondRecorder.Code != http.StatusOK || second.ID != first.ID || len(second.PendingMessages) != 0 {
+	if secondRecorder.Code != http.StatusOK || second.ID != first.ID {
 		t.Fatalf("running non-steer generation did not use the Workspace mailbox: code=%d run=%#v", secondRecorder.Code, second)
 	}
 	mailbox, err := loadResourceMailbox(workspace.Path)
@@ -1016,7 +1014,7 @@ func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testin
 		group.Add(2)
 		go func() {
 			defer group.Done()
-			if err := rt.enqueueResourceMessage(resourceInboundMessage{ID: fmt.Sprintf("msg-%03d", index), Text: "queued"}); err != nil {
+			if err := rt.enqueueResourceMessage(resourceMailboxMessage{ID: fmt.Sprintf("msg-%03d", index), Text: "queued"}); err != nil {
 				t.Errorf("enqueue %d: %v", index, err)
 			}
 		}()
@@ -1036,16 +1034,15 @@ func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mailbox.Messages) != messages || len(persisted.PendingMessages) != 0 || persisted.CompletionCursor != messages {
-		t.Fatalf("serialized runtime lost an update: mailbox=%d generationMessages=%d cursor=%d", len(mailbox.Messages), len(persisted.PendingMessages), persisted.CompletionCursor)
+	if len(mailbox.Messages) != messages || persisted.CompletionCursor != messages {
+		t.Fatalf("serialized runtime lost an update: mailbox=%d cursor=%d", len(mailbox.Messages), persisted.CompletionCursor)
 	}
 }
 
-func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
+func TestGenerationMutationRollsBackStateWhenDiskWriteFails(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	now := time.Now().Format(time.RFC3339Nano)
-	record := generationRecord{ID: "gen-disk-failure", GenerationID: "gen-run-disk-failure", WorkspaceID: workspace.ID, Generation: 1, Status: "idle", CreatedAt: now, UpdatedAt: now,
-		PendingMessages: []resourceInboundMessage{{ID: "msg-kept", Text: "keep me"}}}
+	record := generationRecord{ID: "gen-disk-failure", GenerationID: "gen-run-disk-failure", WorkspaceID: workspace.ID, Generation: 1, Status: "idle", CreatedAt: now, UpdatedAt: now, CompletionCursor: 1}
 	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
@@ -1058,11 +1055,11 @@ func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 	if err := os.WriteFile(runtimeDir, []byte("blocks directory creation"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.mutateGeneration(func(record *generationRecord) { record.PendingMessages = nil }); err == nil {
+	if _, err := rt.mutateGeneration(func(record *generationRecord) { record.CompletionCursor = 2 }); err == nil {
 		t.Fatal("expected generation persistence failure")
 	}
-	if got := rt.snapshotGeneration().PendingMessages; len(got) != 1 || got[0].ID != "msg-kept" {
-		t.Fatalf("failed write advanced in-memory mailbox: %#v", got)
+	if got := rt.snapshotGeneration().CompletionCursor; got != 1 {
+		t.Fatalf("failed write advanced in-memory state: %d", got)
 	}
 	if err := os.Remove(runtimeDir); err != nil {
 		t.Fatal(err)
@@ -1071,8 +1068,8 @@ func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	persisted, err := loadGenerationRecord(workspace.Path, record.ID)
-	if err != nil || len(persisted.PendingMessages) != 1 {
-		t.Fatalf("failed write removed durable mailbox: %#v, %v", persisted.PendingMessages, err)
+	if err != nil || persisted.CompletionCursor != 1 {
+		t.Fatalf("failed write changed durable state: %#v, %v", persisted, err)
 	}
 }
 
@@ -1099,7 +1096,7 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 	}
 	queuedRecorder, queued := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"after binding change"}`)
 	mailbox, mailboxErr := loadResourceMailbox(workspace.Path)
-	if queuedRecorder.Code != http.StatusOK || queued.ID != first.ID || len(queued.PendingMessages) != 0 || !queued.ReplacementPending ||
+	if queuedRecorder.Code != http.StatusOK || queued.ID != first.ID || !queued.ReplacementPending ||
 		mailboxErr != nil || len(mailbox.Messages) != 2 || mailbox.Messages[1].Status != resourceMessageQueued ||
 		mailbox.Messages[1].DowngradeReason != resourceMessageReasonGenerationReplacing {
 		t.Fatalf("message crossed the replacement boundary early: code=%d run=%#v", queuedRecorder.Code, queued)
@@ -1130,11 +1127,11 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(records) < 2 || records[0].Generation != 2 || records[0].AgentHubAgentName != "replacement-agent" || len(records[0].PendingMessages) != 0 {
+	if len(records) < 2 || records[0].Generation != 2 || records[0].AgentHubAgentName != "replacement-agent" {
 		t.Fatalf("replacement generation mismatch: %#v", records)
 	}
-	if len(records[1].PendingMessages) != 0 || records[1].Status != "stopped" {
-		t.Fatalf("old generation retained mailbox work: %#v", records[1])
+	if records[1].Status != "stopped" {
+		t.Fatalf("old generation status mismatch: %#v", records[1])
 	}
 	if replacementMessage.ActualMode != resourceMessageModeEnqueue ||
 		replacementMessage.DowngradeReason != resourceMessageReasonGenerationReplacing {
@@ -1149,16 +1146,8 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 		t.Fatalf("late old-generation input was not redirected to the resource mailbox (runs=%#v): %d %s", records, late.Code, late.Body.String())
 	}
 	redirected, err := loadGenerationRecords(workspace.Path)
-	newPending, oldPending := -1, -1
-	for _, record := range redirected {
-		if record.Generation == 2 {
-			newPending = len(record.PendingMessages)
-		} else if record.Generation == 1 {
-			oldPending = len(record.PendingMessages)
-		}
-	}
 	mailbox, mailboxErr = loadResourceMailbox(workspace.Path)
-	if err != nil || mailboxErr != nil || len(redirected) < 2 || newPending != 0 || oldPending != 0 || len(mailbox.Messages) != 3 || mailbox.Messages[2].Status != resourceMessageQueued {
+	if err != nil || mailboxErr != nil || len(redirected) < 2 || len(mailbox.Messages) != 3 || mailbox.Messages[2].Status != resourceMessageQueued {
 		t.Fatalf("redirected queue mismatch: runs=%#v err=%v", redirected, err)
 	}
 	fake.mu.Lock()

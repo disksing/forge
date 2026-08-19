@@ -23,6 +23,7 @@ func TestSchedulerHTTPAPIUsesApplicationStore(t *testing.T) {
 	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace}}); err != nil {
 		t.Fatal(err)
 	}
+	s.agents = newAgentManager(s)
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		recorder := httptest.NewRecorder()
 		s.handleWorkspace(recorder, httptest.NewRequest(method, path, strings.NewReader(body)))
@@ -35,6 +36,9 @@ func TestSchedulerHTTPAPIUsesApplicationStore(t *testing.T) {
 	var created app.Schedule
 	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil || created.ID == "" {
 		t.Fatalf("created schedule = %#v, %v", created, err)
+	}
+	if request := s.agents.takeReconcileRequests(); request&reconcileScheduler == 0 {
+		t.Fatalf("create schedule did not wake Scheduler reconciliation: %08b", request)
 	}
 	updatedResponse := request(http.MethodPut, "/api/workspaces/workspace-scheduler/scheduler/"+created.ID, `{"condition":"next week","target":"scheduler"}`)
 	var updated app.Schedule
@@ -130,6 +134,9 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
 	if err != nil || len(schedulerMessages(t, workspace.Path)) != 1 {
 		t.Fatalf("early interval reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
+	}
+	if next := manager.nextSchedulerReconcileDeadline(endedAt.Add(29 * time.Minute)); !next.Equal(endedAt.Add(30 * time.Minute)) {
+		t.Fatalf("next Scheduler deadline = %s, want %s", next, endedAt.Add(30*time.Minute))
 	}
 	// A later ordinary user message does not participate in Scheduler timing.
 	appendNotificationTestMessage(t, workspace.Path, resourceMailboxMessage{

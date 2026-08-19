@@ -529,6 +529,10 @@ func (m *agentManager) recoverAgentHubGenerations(ctx context.Context) error {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
+		if _, mailboxErr := rebuildResourceMailboxHotIndex(workspace.Path); mailboxErr != nil {
+			failures = append(failures, fmt.Sprintf("%s mailbox hot index: %v", workspace.ID, mailboxErr))
+			continue
+		}
 		if mailboxErr := m.reconcileWorkspaceMailboxes(ctx, workspace); mailboxErr != nil {
 			failures = append(failures, fmt.Sprintf("%s mailbox: %v", workspace.ID, mailboxErr))
 		}
@@ -631,7 +635,8 @@ func (m *agentManager) recoverAgentHubGenerationLocked(ctx context.Context, cfg 
 	if updated.CompletionMarker != "" && updated.CompletionMarker != updated.TaskStateCompletionMarker {
 		m.scheduleTaskTurnCompletion(rt, updated)
 	}
-	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
+	if updated.GenerationID != "" && !resourceIdleSuspensionStable(updated, session) &&
+		(session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
 		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
 			rt.addPUANotice(m, "warning", "resource/idle-sleep", err.Error())
 		}
@@ -639,13 +644,6 @@ func (m *agentManager) recoverAgentHubGenerationLocked(ctx context.Context, cfg 
 	if record.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
 		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
 			m.retireResourceGenerationLocked(context.Background(), rt)
-			return nil
-		})
-	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(record.PendingMessages) > 0 {
-		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
-			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, record.ResourceID); err != nil {
-				rt.addPUANotice(m, "warning", "resource/message", "Queued message recovery failed: "+err.Error())
-			}
 			return nil
 		})
 	}

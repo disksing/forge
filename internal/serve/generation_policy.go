@@ -106,91 +106,73 @@ func fetchGenerationUsage(ctx context.Context, client *agentHubClient, sessionID
 	return usage, nil
 }
 
-// reconcileGenerationPolicyLocked runs at a stable ready/stopped boundary
-// while the caller owns the resource controller. Keeping the one-time Turn
-// projection and any resulting lifecycle intent in that serialized pass
-// prevents a delayed background scan from racing Workspace shutdown.
-func (m *agentManager) reconcileGenerationPolicyLocked(ctx context.Context, workspace serveWorkspace, generationID string, observedSession agentHubSession, rt *agentRuntime, client *agentHubClient, policy app.GenerationPolicy) error {
-	if m == nil || client == nil || !policy.Enabled || (observedSession.State != "ready" && observedSession.State != "stopped") {
-		return nil
+// prepareGenerationPolicyForNewTurnLocked evaluates the generation budget only
+// when a queued mailbox input is about to start a new Turn. A terminal Turn can
+// therefore finish all of its completion bookkeeping before its generation is
+// replaced, and an over-budget idle generation does no work until new input
+// arrives. The caller owns the resource controller and has already verified the
+// exact inactive AgentHub Session.
+func (m *agentManager) prepareGenerationPolicyForNewTurnLocked(ctx context.Context, workspace serveWorkspace, record generationRecord, observedSession agentHubSession, rt *agentRuntime, client *agentHubClient) (bool, error) {
+	if m == nil || rt == nil || client == nil ||
+		(observedSession.State != "ready" && observedSession.State != "stopped") {
+		return false, nil
 	}
-	record := rt.snapshotGeneration()
-	if record.Retired || record.GenerationID != generationID || record.AgentHubSessionID != observedSession.ID ||
-		record.ReplacementPending || record.ArchivedTaskStopRequested {
-		return nil
-	}
-	usage := generationUsage{
-		CompletedTurns: record.GenerationCompletedTurns,
-		TurnDurationMS: record.GenerationTurnDurationMS,
-		LatestEventID:  record.GenerationUsageEventID,
-	}
-	if !record.GenerationUsageReady || record.GenerationUsageEventID < observedSession.LastEventID {
-		var err error
-		usage, err = fetchGenerationUsage(ctx, client, record.AgentHubSessionID)
-		if err != nil {
-			return fmt.Errorf("inspect generation Turn usage: %w", err)
-		}
-		if usage.LatestEventID < observedSession.LastEventID {
-			return fmt.Errorf("AgentHub Turn projection cursor %d trails Session cursor %d", usage.LatestEventID, observedSession.LastEventID)
-		}
-		updated, persistErr := rt.mutateGeneration(func(current *generationRecord) {
-			if current.GenerationID != generationID || current.AgentHubSessionID != observedSession.ID || current.Retired {
-				return
-			}
-			current.GenerationCompletedTurns = usage.CompletedTurns
-			current.GenerationTurnDurationMS = usage.TurnDurationMS
-			current.GenerationUsageEventID = usage.LatestEventID
-			current.GenerationUsageReady = true
-		})
-		if persistErr != nil {
-			return fmt.Errorf("persist generation Turn usage: %w", persistErr)
-		}
-		if updated.GenerationID != generationID || updated.AgentHubSessionID != observedSession.ID {
-			return nil
-		}
-	}
-	if !generationPolicyReached(policy, usage) {
-		return nil
-	}
-	return m.startGenerationPolicyReplacementLocked(context.WithoutCancel(ctx), workspace, generationID, rt, client)
-}
-
-func (m *agentManager) startGenerationPolicyReplacementLocked(ctx context.Context, workspace serveWorkspace, generationID string, rt *agentRuntime, client *agentHubClient) error {
 	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	runtimeConfig, err := puaWorkspace.RuntimeConfig()
 	if err != nil || !runtimeConfig.GenerationPolicy.Enabled {
-		return err
+		return false, err
 	}
-	record, found, err := currentResourceGeneration(workspace.Path, rt.snapshotGeneration().ResourceID)
-	if err != nil || !found || record.GenerationID != generationID || record.Retired || record.ReplacementPending || record.ArchivedTaskStopRequested {
-		return err
+	current, found, err := currentResourceGeneration(workspace.Path, record.ResourceID)
+	if err != nil || !found || current.GenerationID != record.GenerationID || current.AgentHubSessionID != observedSession.ID ||
+		current.Retired || current.ReplacementPending || current.ArchivedTaskStopRequested {
+		return false, err
 	}
-	usage := generationUsage{CompletedTurns: record.GenerationCompletedTurns, TurnDurationMS: record.GenerationTurnDurationMS}
-	if !record.GenerationUsageReady || !generationPolicyReached(runtimeConfig.GenerationPolicy, usage) {
-		return nil
+	usage := generationUsage{
+		CompletedTurns: current.GenerationCompletedTurns,
+		TurnDurationMS: current.GenerationTurnDurationMS,
+		LatestEventID:  current.GenerationUsageEventID,
 	}
-	session, err := client.GetSession(ctx, record.AgentHubSessionID)
+	if !current.GenerationUsageReady || current.GenerationUsageEventID < observedSession.LastEventID {
+		usage, err = fetchGenerationUsage(ctx, client, current.AgentHubSessionID)
+		if err != nil {
+			return false, fmt.Errorf("inspect generation Turn usage: %w", err)
+		}
+		if usage.LatestEventID < observedSession.LastEventID {
+			return false, fmt.Errorf("AgentHub Turn projection cursor %d trails Session cursor %d", usage.LatestEventID, observedSession.LastEventID)
+		}
+		updated, persistErr := rt.mutateGeneration(func(candidate *generationRecord) {
+			if candidate.GenerationID != current.GenerationID || candidate.AgentHubSessionID != observedSession.ID || candidate.Retired {
+				return
+			}
+			candidate.GenerationCompletedTurns = usage.CompletedTurns
+			candidate.GenerationTurnDurationMS = usage.TurnDurationMS
+			candidate.GenerationUsageEventID = usage.LatestEventID
+			candidate.GenerationUsageReady = true
+		})
+		if persistErr != nil {
+			return false, fmt.Errorf("persist generation Turn usage: %w", persistErr)
+		}
+		if updated.GenerationID != current.GenerationID || updated.AgentHubSessionID != observedSession.ID {
+			return false, nil
+		}
+		current = updated
+	}
+
+	// Re-read the policy after the AgentHub projection request so a concurrent
+	// settings update takes effect at this same Turn boundary.
+	runtimeConfig, err = puaWorkspace.RuntimeConfig()
 	if err != nil {
-		return fmt.Errorf("inspect generation before policy rotation: %w", err)
+		return false, err
 	}
-	cfg, _, err := m.agentHubRuntimeConfig()
-	if err != nil {
-		return err
-	}
-	if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
-		return fmt.Errorf("AgentHub Session %s does not match generation %s", session.ID, generationID)
-	}
-	if session.State == "running" || session.State == "waiting_approval" || len(session.PendingApprovalIDs) > 0 {
-		return nil
-	}
-	if session.State != "ready" && session.State != "stopped" && session.State != "stopping" && session.State != "archived" {
-		return nil
+	if !generationPolicyReached(runtimeConfig.GenerationPolicy, usage) {
+		return false, nil
 	}
 	updated, err := rt.mutateGeneration(func(current *generationRecord) {
-		if current.GenerationID != generationID || current.AgentHubSessionID != record.AgentHubSessionID || current.Retired {
+		if current.GenerationID != record.GenerationID || current.AgentHubSessionID != observedSession.ID ||
+			current.Retired || current.ReplacementPending || current.ArchivedTaskStopRequested {
 			return
 		}
 		current.ReplacementPending = true
@@ -202,9 +184,12 @@ func (m *agentManager) startGenerationPolicyReplacementLocked(ctx context.Contex
 		current.ResumeLastError = ""
 		current.UpdatedAt = m.resourceNow().Format(time.RFC3339Nano)
 	})
-	if err != nil || updated.GenerationID != generationID || !updated.ReplacementPending {
-		return err
+	if err != nil || updated.GenerationID != record.GenerationID || !updated.ReplacementPending {
+		return false, err
 	}
-	m.retireResourceGenerationLocked(ctx, rt)
-	return nil
+	_ = m.enqueueResourceController(workspace, record.ResourceID, func() error {
+		m.retireResourceGenerationLocked(context.WithoutCancel(ctx), rt)
+		return nil
+	})
+	return true, nil
 }

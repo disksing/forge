@@ -396,61 +396,69 @@ func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspa
 	return nil
 }
 
-func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next agentHubServeConfig) error {
-	_ = previous
-	var failures []string
-	for _, workspace := range next.Workspaces {
-		if !m.server.ownsWorkspace(workspace.Path) {
-			continue
-		}
-		puaWorkspace, err := app.OpenWorkspace(workspace.Path)
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
-			continue
-		}
-		runtimeConfig, err := puaWorkspace.RuntimeConfig()
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
-			continue
-		}
-		bindings := []struct {
-			id      string
-			binding app.AgentBinding
-		}{{id: "workspace", binding: runtimeConfig.AgentBinding}}
-		tree, err := puaWorkspace.Tree()
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
-			continue
-		}
-		bindings = append(bindings, struct {
-			id      string
-			binding app.AgentBinding
-		}{id: app.SchedulerResourceID, binding: tree.Scheduler.AgentBinding})
-		for _, project := range tree.Projects {
-			bindings = append(bindings, struct {
-				id      string
-				binding app.AgentBinding
-			}{id: project.ID, binding: project.AgentBinding})
-			for _, task := range project.Children {
-				bindings = append(bindings, struct {
-					id      string
-					binding app.AgentBinding
-				}{id: task.ID, binding: task.AgentBinding})
-			}
-		}
-		for _, item := range bindings {
-			if item.binding.Kind != "profile" {
-				continue
-			}
-			if err := m.resourceBindingChanged(ctx, workspace, item.id, item.binding); err != nil {
-				failures = append(failures, fmt.Sprintf("%s/%s: %v", workspace.ID, item.id, err))
-			}
-		}
+// prepareResourceGenerationForNewTurnLocked evaluates every lazy generation
+// boundary immediately before queued input starts a new Turn. Budget rotation
+// runs before Profile resolution so simultaneous changes produce one successor,
+// whose creation resolves the latest Profile. The caller owns the resource
+// controller and must stop mailbox delivery when replaced is true.
+func (m *agentManager) prepareResourceGenerationForNewTurnLocked(ctx context.Context, workspace serveWorkspace, record generationRecord, session agentHubSession, rt *agentRuntime, client *agentHubClient) (replaced bool, err error) {
+	replaced, err = m.prepareGenerationPolicyForNewTurnLocked(ctx, workspace, record, session, rt, client)
+	if err != nil || replaced {
+		return replaced, err
 	}
-	if len(failures) > 0 {
-		return fmt.Errorf("replace resource agent generations: %s", strings.Join(failures, "; "))
+	cfg, _, err := m.agentHubRuntimeConfig()
+	if err != nil {
+		return false, err
 	}
-	return nil
+	resolved, resolveErr := m.resolveResourceAgent(workspace, record.ResourceID, cfg)
+	if resolveErr != nil {
+		if rt != nil {
+			_, persistErr := rt.mutateGeneration(func(current *generationRecord) {
+				current.AgentConfigError = resolved.ConfigError
+				current.ResolvedProfile = ""
+				current.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+			})
+			if persistErr != nil {
+				return false, persistErr
+			}
+		}
+		return false, &resourceAPIError{Code: "binding_unavailable", Message: resolveErr.Error()}
+	}
+	if strings.EqualFold(record.AgentHubAgentName, resolved.AgentName) {
+		if record.BindingKind == resolved.Binding.Kind && record.BindingName == resolved.Binding.Name &&
+			record.ProfileRevision == resolved.ProfileRevision && record.ResolvedProfile == resolved.ResolvedProfile &&
+			record.AgentConfigError == resolved.ConfigError {
+			return false, nil
+		}
+		if rt == nil {
+			return false, errors.New("resource generation runtime is unavailable")
+		}
+		_, err := rt.mutateGeneration(func(current *generationRecord) {
+			current.BindingKind = resolved.Binding.Kind
+			current.BindingName = resolved.Binding.Name
+			current.ProfileRevision = resolved.ProfileRevision
+			current.ResolvedProfile = resolved.ResolvedProfile
+			current.AgentConfigError = resolved.ConfigError
+			current.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		})
+		return false, err
+	}
+	if rt == nil {
+		return false, errors.New("resource generation runtime is unavailable")
+	}
+	if _, err := rt.mutateGeneration(func(current *generationRecord) {
+		current.ReplacementPending = true
+		current.ResolvedProfile = resolved.ResolvedProfile
+		current.AgentConfigError = resolved.ConfigError
+		current.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+	}); err != nil {
+		return false, err
+	}
+	_ = m.enqueueResourceController(workspace, record.ResourceID, func() error {
+		m.retireResourceGenerationLocked(context.WithoutCancel(ctx), rt)
+		return nil
+	})
+	return true, nil
 }
 
 func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRuntime) {
