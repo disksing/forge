@@ -1066,8 +1066,16 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
 
   await page.getByLabel("Description").fill("Notify when the release is ready");
   await page.getByLabel("Condition").fill("When the release branch is green after 09:00 Shanghai time");
-  await page.getByLabel("Target resource ID").fill("project1.task1");
-  await page.getByRole("button", { name: "Add schedule", exact: true }).click();
+  const target = page.getByLabel("Target resource ID");
+  const addSchedule = page.getByRole("button", { name: "Add schedule", exact: true });
+  await target.fill("not-a-resource");
+  await expect(target).toHaveAttribute("aria-invalid", "true");
+  await expect(target).toHaveAttribute("aria-describedby", "schedule-target-error");
+  await expect(page.locator("#schedule-target-error")).toContainText("open resource in the current Workspace");
+  await expect(addSchedule).toBeDisabled();
+  await target.fill("project1.task1");
+  await expect(target).toHaveAttribute("aria-invalid", "false");
+  await addSchedule.click();
   await expect(page.locator(".schedule-list article")).toContainText("Notify when the release is ready");
   await expect(page.locator(".schedule-list article")).toContainText("project1.task1");
 
