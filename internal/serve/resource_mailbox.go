@@ -1190,13 +1190,14 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		active := session.State == "running" || session.State == "waiting_approval"
 		// A queued non-steer input at an inactive boundary is about to create a
 		// new Turn (including a steer that must be downgraded, and an interrupt
-		// after its old Turn has stopped). Resolve Profile routing here rather
-		// than from the periodic poller or settings write path. A true active-Turn
-		// steer deliberately keeps using the generation's current Agent.
+		// after its old Turn has stopped). Evaluate the generation budget and
+		// resolve Profile routing here rather than from the periodic poller or
+		// settings write path. A true active-Turn steer deliberately keeps using
+		// the current generation.
 		startsNewTurn := message.Status == resourceMessageQueued && !active &&
 			(!message.ModeFrozen || message.ActualMode != resourceMessageModeSteer)
 		if startsNewTurn {
-			replaced, prepareErr := m.prepareResourceGenerationForNewTurnLocked(ctx, workspace, record, rt)
+			replaced, prepareErr := m.prepareResourceGenerationForNewTurnLocked(ctx, workspace, record, session, rt, client)
 			if prepareErr != nil {
 				recordMailboxFailure(workspace.Path, message.ID, prepareErr)
 				return prepareErr

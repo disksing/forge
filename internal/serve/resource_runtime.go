@@ -396,12 +396,16 @@ func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspa
 	return nil
 }
 
-// prepareResourceGenerationForNewTurnLocked resolves the resource's current
-// binding only when a queued input has reached a real Turn boundary. Profile
-// edits therefore do not scan or mutate idle generations, while every new
-// Turn still observes the latest route. The caller owns the resource
+// prepareResourceGenerationForNewTurnLocked evaluates every lazy generation
+// boundary immediately before queued input starts a new Turn. Budget rotation
+// runs before Profile resolution so simultaneous changes produce one successor,
+// whose creation resolves the latest Profile. The caller owns the resource
 // controller and must stop mailbox delivery when replaced is true.
-func (m *agentManager) prepareResourceGenerationForNewTurnLocked(ctx context.Context, workspace serveWorkspace, record generationRecord, rt *agentRuntime) (replaced bool, err error) {
+func (m *agentManager) prepareResourceGenerationForNewTurnLocked(ctx context.Context, workspace serveWorkspace, record generationRecord, session agentHubSession, rt *agentRuntime, client *agentHubClient) (replaced bool, err error) {
+	replaced, err = m.prepareGenerationPolicyForNewTurnLocked(ctx, workspace, record, session, rt, client)
+	if err != nil || replaced {
+		return replaced, err
+	}
 	cfg, _, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		return false, err
