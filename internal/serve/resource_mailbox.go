@@ -945,6 +945,9 @@ func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace serv
 		}
 		return nil
 	})
+	if err == nil {
+		m.requestReconcile(reconcileNotifications)
+	}
 	return message, err
 }
 
@@ -995,6 +998,9 @@ func (m *agentManager) promoteWaitingMessage(ctx context.Context, workspace serv
 		}
 		return nil
 	})
+	if err == nil {
+		m.requestReconcile(reconcileNotifications)
+	}
 	return message, err
 }
 
@@ -1691,9 +1697,11 @@ func (m *agentManager) handleResourceMessages(w http.ResponseWriter, r *http.Req
 		if err := m.reconcileResourceMailboxLocked(context.Background(), workspace, resourceID); err != nil {
 			recordMailboxFailure(workspace.Path, message.ID, err)
 		}
+		m.requestReconcile(reconcileNotifications)
 		return nil
 	}); wakeErr != nil {
 		recordMailboxFailure(workspace.Path, message.ID, wakeErr)
+		m.requestReconcile(reconcileNotifications)
 	}
 	response := mailboxMessageResponse(message)
 	response.Reference = fmt.Sprintf("/api/workspaces/%s/messages/%s", workspaceID, message.ID)

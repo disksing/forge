@@ -46,6 +46,9 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 				writeError(w, createErr, http.StatusBadRequest)
 				return
 			}
+			if s.agents != nil {
+				s.agents.requestReconcile(reconcileScheduler)
+			}
 			writeJSON(w, created)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -68,6 +71,9 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 		if updateErr != nil {
 			writeError(w, updateErr, http.StatusBadRequest)
 			return
+		}
+		if s.agents != nil {
+			s.agents.requestReconcile(reconcileScheduler)
 		}
 		writeJSON(w, updated)
 		return
@@ -95,12 +101,18 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 			writeError(w, updateErr, http.StatusBadRequest)
 			return
 		}
+		if s.agents != nil {
+			s.agents.requestReconcile(reconcileScheduler)
+		}
 		writeJSON(w, updated)
 	case http.MethodDelete:
 		removed, removeErr := puaWorkspace.RemoveSchedule(id)
 		if removeErr != nil {
 			writeError(w, removeErr, http.StatusBadRequest)
 			return
+		}
+		if s.agents != nil {
+			s.agents.requestReconcile(reconcileScheduler)
 		}
 		writeJSON(w, removed)
 	default:

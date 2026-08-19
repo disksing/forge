@@ -101,7 +101,7 @@ type generationRecord struct {
 	TurnStartedAt string `json:"turnStartedAt,omitempty"`
 	// GenerationCompletedTurns and GenerationTurnDurationMS are derived from
 	// AgentHub's materialized closed Turns for this exact Session. The event
-	// cursor prevents a two-second poll from repeatedly fetching unchanged Turn
+	// cursor prevents active polling from repeatedly fetching unchanged Turn
 	// pages while still allowing older current generations to initialize once.
 	GenerationCompletedTurns int   `json:"generationCompletedTurns,omitempty"`
 	GenerationTurnDurationMS int64 `json:"generationTurnDurationMs,omitempty"`
@@ -195,8 +195,16 @@ type agentManager struct {
 	runtimes              map[string]*agentRuntime
 	subscribers           map[string]map[chan agentStreamMessage]bool
 	schedulerDigests      map[string]string
+	reconcileWake         chan struct{}
+	reconcilePending      reconcileRequest
 	now                   func() time.Time
 	idleSleepAfter        time.Duration
+	activePollInterval    time.Duration
+	stablePollInterval    time.Duration
+	coldAuditInterval     time.Duration
+	mailboxRetryInterval  time.Duration
+	notificationInterval  time.Duration
+	schedulerFallback     time.Duration
 }
 
 // runBackground tracks short-lived work started by an HTTP request. The
@@ -220,13 +228,20 @@ func (m *agentManager) waitBackground() {
 
 func newAgentManager(s *server) *agentManager {
 	return &agentManager{
-		server:              s,
-		resourceControllers: make(map[string]*resourceController),
-		runtimes:            make(map[string]*agentRuntime),
-		subscribers:         make(map[string]map[chan agentStreamMessage]bool),
-		schedulerDigests:    make(map[string]string),
-		now:                 time.Now,
-		idleSleepAfter:      defaultResourceIdleSleepAfter,
+		server:               s,
+		resourceControllers:  make(map[string]*resourceController),
+		runtimes:             make(map[string]*agentRuntime),
+		subscribers:          make(map[string]map[chan agentStreamMessage]bool),
+		schedulerDigests:     make(map[string]string),
+		reconcileWake:        make(chan struct{}, 1),
+		now:                  time.Now,
+		idleSleepAfter:       defaultResourceIdleSleepAfter,
+		activePollInterval:   2 * time.Second,
+		stablePollInterval:   10 * time.Second,
+		coldAuditInterval:    30 * time.Second,
+		mailboxRetryInterval: 10 * time.Second,
+		notificationInterval: 30 * time.Second,
+		schedulerFallback:    30 * time.Second,
 	}
 }
 
@@ -403,8 +418,9 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace serveWorkspace
 
 func (m *agentManager) registerRuntime(rt *agentRuntime) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.runtimes[rt.record.ID] = rt
+	m.mu.Unlock()
+	m.requestReconcile(reconcileAgentHub)
 }
 
 func (m *agentManager) removeRuntime(recordID string) {
@@ -674,6 +690,7 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 	})
 	if updated.CompletionMarker != "" && updated.CompletionMarker != previous && rt.manager != nil {
 		rt.manager.scheduleTaskTurnCompletion(rt, updated)
+		rt.manager.requestReconcile(reconcileNotifications | reconcileScheduler | reconcileAgentHub)
 	}
 }
 
