@@ -49,3 +49,12 @@ test("agent reorder handle keeps a mobile-sized touch target", async () => {
   assert.match(handleRule, /width: 44px;/);
   assert.match(handleRule, /height: 44px;/);
 });
+
+test("settings footer actions keep a mobile-sized touch target", async () => {
+  const css = await readFile(stylesPath, "utf8");
+  const footerActionsRule = rule(css, ".settings-savebar-actions .settings-button");
+
+  // Keep Cancel and Save all easy to tap in the narrowest supported viewport
+  // without changing their save/close behavior or the footer layout.
+  assert.match(footerActionsRule, /min-height: 44px;/);
+});

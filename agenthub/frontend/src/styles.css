@@ -944,6 +944,10 @@ select {
   gap: 8px;
 }
 
+.settings-savebar-actions .settings-button {
+  min-height: 44px;
+}
+
 .settings-button {
   padding: 8px 14px;
   border: 1px solid var(--line-strong);
