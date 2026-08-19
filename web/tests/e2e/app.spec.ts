@@ -673,6 +673,7 @@ test("navigates resources and creates a task through the canonical application f
 
 test("opens the cached Doctor report from the brand reminder", async ({ page }) => {
   await installMockApi(page, "project1.task1");
+  await page.setViewportSize({ width: 440, height: 844 });
   let refreshRequests = 0;
   await page.route("**/api/doctor", async (route) => {
     if (route.request().method() === "POST") {
@@ -683,21 +684,21 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
       checkedAt: now,
       checking: false,
       complete: true,
-      summary: { errors: 5, warnings: 0 },
+      summary: { errors: 16, warnings: 0 },
       workspaces: [{
         id: "ws-test",
         name: "Isolated E2E",
         path: "/tmp/pua-e2e",
         report: {
           complete: true,
-          summary: { errors: 1, warnings: 0 },
-          issues: [{
+          summary: { errors: 12, warnings: 0 },
+          issues: Array.from({ length: 12 }, (_, index) => ({
             severity: "error",
-            code: "agents_managed_section_modified",
-            message: "PUA managed AGENTS.md section has been modified",
-            path: "AGENTS.md",
-            suggestion: "Run pua migrate after reviewing local instructions.",
-          }],
+            code: index === 0 ? "agents_managed_section_modified" : `workspace_problem_${index}`,
+            message: index === 0 ? "PUA managed AGENTS.md section has been modified" : `Workspace problem ${index}`,
+            path: index === 0 ? "AGENTS.md" : `project${index}/task.md`,
+            suggestion: index === 0 ? "Run pua migrate after reviewing local instructions." : "Review this workspace problem.",
+          })),
         },
       }, {
         id: "ws-other",
@@ -713,12 +714,21 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
   });
 
   await page.goto("/w/ws-test/r/project1.task1");
-  await expect(page.locator("#doctorButton")).toHaveAttribute("aria-label", "1 errors and 0 warnings");
+  await expect(page.locator("#doctorButton")).toHaveAttribute("aria-label", "12 errors and 0 warnings");
+  await page.locator("#mobileMenuButton").click();
   await page.locator("#doctorButton").click();
   const dialog = page.getByRole("dialog", { name: "Workspace problems" });
   await expect(dialog).toContainText("PUA managed AGENTS.md section has been modified");
   await expect(dialog).toContainText("agents_managed_section_modified");
   await expect(dialog).not.toContainText("Other Workspace must stay hidden");
+  const close = dialog.getByRole("button", { name: "Close workspace problems" });
+  const closeBox = (await close.boundingBox())!;
+  expect(closeBox.width).toBe(44);
+  expect(closeBox.height).toBe(44);
+  const content = dialog.locator(".doctor-content");
+  await expect.poll(() => content.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await content.evaluate((node) => node.scrollTo(0, node.scrollHeight));
+  await expect.poll(() => content.evaluate((node) => node.scrollTop > 0)).toBe(true);
   await dialog.getByRole("button", { name: "Refresh workspace checks" }).click();
   await expect.poll(() => refreshRequests).toBe(1);
 });

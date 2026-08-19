@@ -197,6 +197,24 @@ describe("CSS ownership", () => {
     expect(rule).toContain("height: 44px;");
   });
 
+  it("keeps the Workspace problems close control touch-sized without moving list scrolling", () => {
+    const css = read("src/components/DoctorDialog.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const close = body(':where([data-component-owner="doctor-dialog"]) .doctor-close {');
+    expect(close).toContain("flex: 0 0 44px;");
+    expect(close).toContain("width: 44px;");
+    expect(close).toContain("height: 44px;");
+    expect(close).toContain("margin: -5px;");
+
+    const content = body(':where([data-component-owner="doctor-dialog"]) .doctor-content');
+    expect(content).toContain("overflow-y: auto;");
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {
