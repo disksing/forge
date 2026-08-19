@@ -101,6 +101,29 @@ describe("SettingsModal coordination", () => {
     expect(name.value).toBe("Probe");
   });
 
+  it("shows the default User value after saving an emptied user name", async () => {
+    const initial = model({ initialTab: "user" });
+    const channel = createModelChannel(initial);
+    const save = vi.fn(async () => {
+      channel.publish({ ...initial, dataVersion: 2, userName: "User" });
+      return "User";
+    });
+    initial.onSaveUser = save;
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsModal, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const name = target.querySelector<HTMLInputElement>("#settingsUserName")!;
+    input(name, "");
+    await tick();
+    expect(name.required).toBe(false);
+    name.form!.requestSubmit();
+
+    await vi.waitFor(() => expect(save).toHaveBeenCalledWith(""));
+    await vi.waitFor(() => expect(name.value).toBe("User"));
+  });
+
   it("composes all domain panels and preserves a dirty focused draft across data refreshes", async () => {
     const initial = model();
     const channel = createModelChannel(initial);

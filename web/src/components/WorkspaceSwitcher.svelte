@@ -98,6 +98,11 @@
     return Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="option"]:not([disabled])') ?? []);
   }
 
+  function workspaceLabel(workspace: ShellWorkspaceItem): string {
+    const name = workspace.name || workspace.id;
+    return workspace.path ? `${name} — ${workspace.path}` : name;
+  }
+
   function keydown(event: KeyboardEvent): void {
     const options = optionElements();
     if (!options.length) return;
@@ -164,7 +169,7 @@
       <div id="workspaceMenu" class="workspace-menu" role="listbox" tabindex="-1" bind:this={menu} onkeydown={keydown}>
         <div class="workspace-menu-title">Switch Workspace</div>
         {#each workspaces as workspace (workspace.id)}
-          <button type="button" class="workspace-menu-row" role="option" aria-selected={workspace.id === activeId} tabindex={workspace.id === activeId ? 0 : -1} data-workspace-id={workspace.id} disabled={Boolean(switchingId)} onclick={() => switchWorkspace(workspace.id)}>
+          <button type="button" class="workspace-menu-row" role="option" aria-label={workspaceLabel(workspace)} title={workspaceLabel(workspace)} aria-selected={workspace.id === activeId} tabindex={workspace.id === activeId ? 0 : -1} data-workspace-id={workspace.id} disabled={Boolean(switchingId)} onclick={() => switchWorkspace(workspace.id)}>
             <span class="workspace-avatar"><img src={workspace.iconSrc} alt="" aria-hidden="true" /></span>
             <span class="workspace-menu-main"><strong>{workspace.name || workspace.id}</strong><small>{workspace.path}</small></span>
             {#if workspace.id === activeId}<Icon name="check" className="workspace-menu-check" />{/if}

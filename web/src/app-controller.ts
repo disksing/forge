@@ -28,7 +28,7 @@ import {
 	SIDEBAR_FOLDER_DEFAULT_NAME,
 	type SidebarFolder,
 } from "./controllers/sidebar-folders";
-import { createUserSettingsController } from "./controllers/user-settings-controller";
+import { createUserSettingsController, normalizeUserNameForSave } from "./controllers/user-settings-controller";
 import { ApiError } from "./api/client";
 import { errorMessage } from "./runtime/errors";
 import { ResourceScope } from "./runtime/resource-scope";
@@ -373,7 +373,7 @@ const settingsController = createSettingsController({
 	userName: currentUserName,
 	saveUser: async (name) => {
 		if (!userSettingsController) throw new Error("User settings are unavailable.");
-		const normalized = userSettingsController.validate(name);
+		const normalized = normalizeUserNameForSave(name);
 		if (controllerState.activeWorkspaceId) await registerWorkspaceUser(controllerState.activeWorkspaceId, normalized);
 		const saved = userSettingsController.save(normalized);
 		if (controllerState.activeWorkspaceId) {

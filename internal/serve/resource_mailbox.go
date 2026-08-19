@@ -1195,15 +1195,6 @@ func (m *agentManager) acceptResourceMessageDurable(ctx context.Context, workspa
 	if archived {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "resource_archived", Message: fmt.Sprintf("resource %s is archived and no longer accepts messages", resourceID)}
 	}
-	if strings.Contains(resourceID, ".task") {
-		puaWorkspace, openErr := app.OpenWorkspace(workspace.Path)
-		if openErr != nil {
-			return resourceMailboxMessage{}, openErr
-		}
-		if _, stateErr := puaWorkspace.SetTaskState(resourceID, app.TaskStateInProgress, ""); stateErr != nil {
-			return resourceMailboxMessage{}, stateErr
-		}
-	}
 	message, err := acceptMailboxMessage(workspace.Path, resourceID, request)
 	if err != nil {
 		return resourceMailboxMessage{}, err

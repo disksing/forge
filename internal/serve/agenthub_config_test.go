@@ -83,7 +83,6 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 		}
 	}))
 	defer fake.Close()
-	t.Setenv("PUA_AGENTHUB_URL", "")
 	path := filepath.Join(t.TempDir(), "serve.json")
 	server := &server{config: path}
 	request := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub", strings.NewReader(`{
@@ -263,11 +262,10 @@ func TestAgentHubGenerationProjectionSchemaIgnoresUnknownOldFields(t *testing.T)
 	}
 }
 
-func TestAgentHubConfigEnvironmentOverrideAndValidation(t *testing.T) {
-	t.Setenv("PUA_AGENTHUB_URL", "http://agenthub.test:9000/")
-	endpoint, err := effectiveAgentHubEndpoint("http://configured.test:4646")
-	if err != nil || endpoint != "http://agenthub.test:9000" {
-		t.Fatalf("environment override: %q, %v", endpoint, err)
+func TestAgentHubConfigEndpointAndValidation(t *testing.T) {
+	endpoint, err := effectiveAgentHubEndpoint("http://configured.test:4646/agenthub/")
+	if err != nil || endpoint != "http://configured.test:4646/agenthub" {
+		t.Fatalf("configured endpoint: %q, %v", endpoint, err)
 	}
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)

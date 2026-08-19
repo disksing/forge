@@ -25,3 +25,19 @@ func TestMainRejectsUnknownFlagsAndPositionalArgs(t *testing.T) {
 		t.Fatalf("expected positional argument to fail, got %v", err)
 	}
 }
+
+func TestMainValidatesAgentHubModeArguments(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--agenthub-mode=unknown"}, "invalid --agenthub-mode"},
+		{[]string{"--agenthub-mode=external"}, "--agenthub-endpoint is required"},
+		{[]string{"--agenthub-endpoint=http://127.0.0.1:4646/agenthub"}, "only valid"},
+		{[]string{"--agenthub-mode=external", "--agenthub-endpoint=http://127.0.0.1:4646"}, "must end in /agenthub"},
+	} {
+		if err := Main(test.args); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Errorf("Main(%v) error = %v, want %q", test.args, err, test.want)
+		}
+	}
+}

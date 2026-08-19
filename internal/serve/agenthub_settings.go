@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"strings"
 )
 
 type agentHubSettingsResponse struct {
+	Mode               string              `json:"mode"`
 	Config             agentHubServeConfig `json:"config"`
 	ConfiguredEndpoint string              `json:"configuredEndpoint"`
 	EffectiveEndpoint  string              `json:"effectiveEndpoint"`
@@ -74,15 +74,21 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 			return agentHubSettingsResponse{}, statErr
 		}
 	}
+	persistedConfig := cfg
 	configured := cfg.AgentHubEndpoint
 	if configured == "" {
 		configured = defaultAgentHubEndpoint
 	}
-	effective, err := effectiveAgentHubEndpoint(configured)
+	effective, err := s.effectiveAgentHubEndpoint(configured)
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
+	if s.agentHubMode != "" {
+		configured = effective
+		cfg.AgentHubEndpoint = effective
+	}
 	response := agentHubSettingsResponse{
+		Mode:               s.agentHubMode,
 		Config:             cfg,
 		ConfiguredEndpoint: configured,
 		EffectiveEndpoint:  effective,
@@ -115,7 +121,7 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
-	if !reflect.DeepEqual(response.Config, cfg) {
+	if !reflect.DeepEqual(persistedConfig, cfg) {
 		if err := writeAgentHubConfigFile(s.config, cfg); err != nil {
 			return agentHubSettingsResponse{}, err
 		}
@@ -134,12 +140,12 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
-	effective := configured
-	if override := strings.TrimSpace(os.Getenv("PUA_AGENTHUB_URL")); override != "" {
-		effective, err = normalizeAgentHubEndpoint(override)
-		if err != nil {
-			return agentHubSettingsResponse{}, err
-		}
+	effective, err := s.effectiveAgentHubEndpoint(configured)
+	if err != nil {
+		return agentHubSettingsResponse{}, err
+	}
+	if s.agentHubMode != "" {
+		configured = effective
 	}
 	client, err := newAgentHubClient(effective, nil)
 	if err != nil {
@@ -175,6 +181,7 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		s.doctor.requestScan()
 	}
 	return agentHubSettingsResponse{
+		Mode:               s.agentHubMode,
 		Config:             cfg,
 		ConfiguredEndpoint: configured,
 		EffectiveEndpoint:  effective,
@@ -247,7 +254,7 @@ func (s *server) validatePersistedAgentHubConfig(ctx context.Context) (bool, err
 	if cfg.AgentHubInstanceID == "" {
 		return false, nil
 	}
-	effective, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
+	effective, err := s.effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
 		return true, err
 	}

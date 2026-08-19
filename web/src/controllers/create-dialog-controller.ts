@@ -1,5 +1,5 @@
 import type { AgentOption } from "../models/common";
-import type { CreateDialogModel, CreateDraft, TaskPreview, TaskTemplate } from "../models/create";
+import { isValidResourceSlug, type CreateDialogModel, type CreateDraft, type TaskPreview, type TaskTemplate } from "../models/create";
 import type { ResourceAgentBindingModel, ResourceAgentProfileModel } from "../models/detail";
 import { errorMessage } from "../runtime/errors";
 
@@ -281,6 +281,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 	async function submit(next: CreateDraft): Promise<void> {
 		if (!state.open || state.submitting) return;
 		syncDraft(next);
+		if (state.type === "project" && (!state.description.trim() || !isValidResourceSlug(state.slug))) return;
 		const workspaceId = dependencies.workspaceId();
 		const dialogIdentity = state.identity;
 		state.submitting = true;

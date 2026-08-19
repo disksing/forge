@@ -22,9 +22,22 @@ func taskStateContinuationExhaustedNote(language string) string {
 	return strings.TrimSpace(localize.MustRender(language, "task-continuation-exhausted.txt", nil))
 }
 
+func taskWaitingScheduleText(language, resourceID string) string {
+	return strings.TrimSpace(localize.MustRender(language, "task-waiting-schedule.md", map[string]string{"ResourceID": resourceID}))
+}
+
+func taskWaitingScheduleExhaustedNote(language string) string {
+	return strings.TrimSpace(localize.MustRender(language, "task-waiting-schedule-exhausted.txt", nil))
+}
+
 func taskStateContinuationMessageID(resourceID, generationID, chainID, marker string, attempt int) string {
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", resourceID, generationID, chainID, marker, attempt)))
 	return "task-state-" + hex.EncodeToString(digest[:12])
+}
+
+func taskWaitingScheduleMessageID(resourceID, generationID, chainID, marker string, attempt int) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", resourceID, generationID, chainID, marker, attempt)))
+	return "task-waiting-schedule-" + hex.EncodeToString(digest[:12])
 }
 
 func taskDetail(workspacePath, resourceID string) (app.ResourceDetailView, bool, error) {
@@ -72,27 +85,31 @@ func (m *agentManager) recordTaskStartFailure(workspace serveWorkspace, message 
 // prepareTaskWorkChain runs at the durable delivery boundary. Ordinary input
 // starts a fresh budget; a generated continuation keeps the current budget.
 func (m *agentManager) prepareTaskWorkChain(workspace serveWorkspace, message resourceMailboxMessage, rt *agentRuntime) error {
-	if !strings.Contains(normalizedResourceID(message.ResourceID), ".task") {
+	if !strings.Contains(normalizedResourceID(message.ResourceID), ".task") || message.Status != resourceMessageQueued {
 		return nil
 	}
 	detail, task, err := taskDetail(workspace.Path, message.ResourceID)
 	if err != nil || !task {
 		return err
 	}
+	if message.Type != resourceMessageTypeTaskContinuation {
+		if _, err = rt.mutateGeneration(func(record *generationRecord) {
+			record.TaskStateChainID = message.ID
+			record.TaskStateContinuationCount = 0
+			// A fresh external work chain supersedes any terminal marker from
+			// the previous Turn. Consume it before exposing in_progress so a
+			// delayed completion worker cannot attribute the new state to the
+			// old Turn.
+			record.TaskStateCompletionMarker = record.CompletionMarker
+		}); err != nil {
+			return err
+		}
+	}
 	puaWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return err
 	}
-	if _, err := puaWorkspace.SetTaskState(detail.ID, app.TaskStateInProgress, ""); err != nil {
-		return err
-	}
-	if message.Type == resourceMessageTypeTaskContinuation {
-		return nil
-	}
-	_, err = rt.mutateGeneration(func(record *generationRecord) {
-		record.TaskStateChainID = message.ID
-		record.TaskStateContinuationCount = 0
-	})
+	_, err = puaWorkspace.SetTaskState(detail.ID, app.TaskStateInProgress, "")
 	return err
 }
 
@@ -102,10 +119,10 @@ func (m *agentManager) scheduleTaskTurnCompletion(rt *agentRuntime, record gener
 	}
 	// Most terminal events do not require another Turn. Handle those inline so
 	// startup recovery cannot leave an unnecessary background write racing with
-	// shutdown or test Workspace cleanup. Only an in-progress Task needs to
-	// re-enter the resource controller to enqueue a continuation.
+	// shutdown or test Workspace cleanup. In-progress Tasks and waiting Tasks
+	// need the resource controller for continuation or Scheduler validation.
 	detail, task, err := taskDetail(rt.workspace.Path, record.ResourceID)
-	if err == nil && (!task || detail.State != app.TaskStateInProgress) {
+	if err == nil && (!task || (detail.State != app.TaskStateInProgress && detail.State != app.TaskStateWaiting)) {
 		_ = markTaskTurnCompletionHandled(rt, record.CompletionMarker)
 		return
 	}
@@ -125,6 +142,43 @@ func markTaskTurnCompletionHandled(rt *agentRuntime, marker string) error {
 	return err
 }
 
+func taskHasTargetSchedule(puaWorkspace *app.Workspace, resourceID string) (bool, error) {
+	config, err := puaWorkspace.Scheduler()
+	if err != nil {
+		return false, err
+	}
+	resourceID = normalizedResourceID(resourceID)
+	for _, schedule := range config.Schedules {
+		if normalizedResourceID(schedule.Target) == resourceID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// taskCompletionSupersededByWork distinguishes a genuinely quiescent terminal
+// boundary from an old completion observed while newer input is already queued
+// or active. The resource controller serializes this check with delivery.
+func taskCompletionSupersededByWork(workspacePath string, record generationRecord) (bool, error) {
+	if generationHasActiveTurn(record) {
+		return true, nil
+	}
+	mailbox, err := loadHotResourceMailbox(workspacePath, record.ResourceID)
+	if err != nil {
+		return false, err
+	}
+	for _, message := range mailbox.Messages {
+		if normalizedResourceID(message.ResourceID) != normalizedResourceID(record.ResourceID) {
+			continue
+		}
+		if message.Status == resourceMessageQueued ||
+			((message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting) && message.ID != record.TaskStateChainID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *agentRuntime) error {
 	record := rt.snapshotGeneration()
 	if !strings.Contains(normalizedResourceID(record.ResourceID), ".task") {
@@ -138,12 +192,28 @@ func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *a
 	if err != nil || !task {
 		return err
 	}
-	if detail.State != app.TaskStateInProgress {
+	if detail.State != app.TaskStateInProgress && detail.State != app.TaskStateWaiting {
+		return markTaskTurnCompletionHandled(rt, marker)
+	}
+	superseded, err := taskCompletionSupersededByWork(rt.workspace.Path, record)
+	if err != nil {
+		return err
+	}
+	if superseded {
 		return markTaskTurnCompletionHandled(rt, marker)
 	}
 	puaWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
 	if err != nil {
 		return err
+	}
+	if detail.State == app.TaskStateWaiting {
+		scheduled, scheduleErr := taskHasTargetSchedule(puaWorkspace, record.ResourceID)
+		if scheduleErr != nil {
+			return scheduleErr
+		}
+		if scheduled {
+			return markTaskTurnCompletionHandled(rt, marker)
+		}
 	}
 	language, err := puaWorkspace.Language()
 	if err != nil {
@@ -151,6 +221,9 @@ func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *a
 	}
 	if record.TaskStateContinuationCount >= maxTaskStateRecoveryAttempts {
 		note := taskStateContinuationExhaustedNote(language)
+		if detail.State == app.TaskStateWaiting {
+			note = taskWaitingScheduleExhaustedNote(language)
+		}
 		if _, err := puaWorkspace.SetTaskState(record.ResourceID, app.TaskStateError, note); err != nil {
 			return err
 		}
@@ -162,14 +235,21 @@ func (m *agentManager) handleTaskTurnCompletionLocked(ctx context.Context, rt *a
 		return err
 	}
 	messageID := taskStateContinuationMessageID(record.ResourceID, record.GenerationID, record.TaskStateChainID, marker, attempt)
+	text := taskStateContinuationText(language)
+	reason := "task_state_in_progress"
+	if detail.State == app.TaskStateWaiting {
+		messageID = taskWaitingScheduleMessageID(record.ResourceID, record.GenerationID, record.TaskStateChainID, marker, attempt)
+		text = taskWaitingScheduleText(language, record.ResourceID)
+		reason = "task_waiting_without_schedule"
+	}
 	generated := resourceMailboxMessage{
-		ID: messageID, ResourceID: record.ResourceID, Text: taskStateContinuationText(language),
+		ID: messageID, ResourceID: record.ResourceID, Text: text,
 		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue,
 		Type: resourceMessageTypeTaskContinuation,
 		Causation: &resourceMessageCausation{
 			Type: resourceMessageTypeTaskContinuation, SourceWorkspaceInstanceID: instanceID,
 			SourceResourceID: record.ResourceID, MessageID: record.TaskStateChainID, GenerationID: record.GenerationID,
-			TurnID: record.CompletionTurnID, TurnReference: marker, Reason: "task_state_in_progress",
+			TurnID: record.CompletionTurnID, TurnReference: marker, Reason: reason,
 		},
 	}
 	if _, err := acceptGeneratedMailboxMessage(rt.workspace.Path, generated); err != nil {

@@ -10,6 +10,7 @@ export type SettingsWorkspace = WorkspaceOption;
 export type PUASettingsConfig = WorkspaceConfig;
 
 export interface AgentHubData {
+	mode?: string;
 	configuredEndpoint?: string;
 	connected?: boolean;
 	compatible?: boolean;
@@ -129,7 +130,8 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			userName: dependencies.userName(),
 			appearance: dependencies.appearance(),
 			agentHub: {
-				configuredEndpoint: hub.configuredEndpoint || "http://127.0.0.1:4646",
+				mode: hub.mode || "embedded",
+				configuredEndpoint: hub.configuredEndpoint || "http://127.0.0.1:4646/agenthub",
 				connected: Boolean(hub.connected),
 				compatible: Boolean(hub.compatible),
 				error: hub.error || "",
@@ -240,7 +242,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 
 	async function addWorkspace(): Promise<void> {
 		const path = state.workspacePath.trim();
-		if (!path) throw new Error("Workspace path is required.");
+		if (!path) return;
 		const created = state.createWorkspace;
 		const workspace = await dependencies.request<SettingsWorkspace>("/api/workspaces", {
 			method: "POST", body: JSON.stringify({
@@ -318,7 +320,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		await dependencies.request("/api/settings/agenthub", {
 			method: "PUT",
 			body: JSON.stringify({
-				endpoint: state.data?.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
+				endpoint: state.data?.agentHub?.configuredEndpoint || "http://127.0.0.1:4646/agenthub",
 				agentProfiles: (state.data?.agentProfiles || []).map((profile) => ({ ...profile }))
 			})
 		});

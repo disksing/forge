@@ -182,6 +182,28 @@ describe("CreateDialog child components", () => {
     expect(footerTexts()).toEqual(["Back", "Cancel", "Next"]);
   });
 
+  it("skips the template step when the project has no templates", async () => {
+    const current = draft();
+    const host = mountWizard(current, model(current, { templates: [] }));
+    await tick();
+
+    expect(host.querySelector('[aria-label="Template"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Basic information"]')).toBeTruthy();
+    expect(host.querySelector(".wizard-step-pos")?.textContent?.trim()).toBe("Step 1 of 3");
+    expect([...host.querySelectorAll(".wizard-step-label")].map((item) => item.textContent?.trim())).toEqual([
+      "Title & slug", "Details", "Start options",
+    ]);
+
+    const nextButton = () => host.querySelector<HTMLButtonElement>('.wizard-footer button[type="submit"]')!;
+    expect(nextButton().textContent?.trim()).toBe("Next");
+    expect(nextButton().disabled).toBe(true);
+    current.title = "Blank task";
+    host.querySelector<HTMLFormElement>("form")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    await tick();
+    expect(host.querySelector('[aria-label="Details"]')).toBeTruthy();
+    expect(host.querySelector(".wizard-step-pos")?.textContent?.trim()).toBe("Step 2 of 3");
+  });
+
   it("preselects the resolved default binding for the start step", async () => {
     const current = draft();
     mountWizard(current, model(current, {

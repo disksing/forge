@@ -4,14 +4,26 @@
 
 Generation 生命周期的 canonical facts、operation 优先级、网络 effect 与 guarded commit 边界见 [`generation_lifecycle.md`](generation_lifecycle.md)。planner 是纯决策层；resource controller 串行化同一稳定 resource 的调度；store adapter 负责 durable receipt/current/retired 事实；AgentHub client 只负责网络副作用。统一恢复顺序为 `facts → plan → effect → guarded commit → replan`，旧 generation 的过期结果不得覆盖新 current。
 
+## AgentHub 运行形态
+
+`pua serve` 默认使用 `--agenthub-mode=embedded`：PUA 与 AgentHub 共用一个进程、一个 listener 和网络暴露边界。PUA Web/API 使用 `/` 与 `/api/...`；AgentHub Web、API 和文档固定位于 `/agenthub/`、`/agenthub/v1/...` 和 `/agenthub/api.md`。PUA 仍通过该 HTTP contract 调用 AgentHub，不直接依赖 Provider/runtime。
+
+需要分离部署时，先运行 `agenthub serve`，再显式启动：
+
+```sh
+pua serve --agenthub-mode=external \
+  --agenthub-endpoint=http://127.0.0.1:4646/agenthub
+```
+
+external endpoint 必须是以 `/agenthub` 结尾的规范 base URL。两种形态只改变 host/port，不改变 path。external 模式不取得 AgentHub daemon lock，也不在 PUA 退出时停止外置服务。
+
 ## 配置与所有权
 
-持久化配置使用 schema version 4，包含 Workspace、AgentHub endpoint、PUA instance ID、Profile 路由，以及新建 Workspace/Project/Task 的分类型默认 Profile。Application、CLI 和 Web 界面创建资源时都读取持久化到 Workspace 的同一组默认值；类型默认不可解析时使用全局 `default`。读取 version 3 时会补齐三个 `default` 并写回 version 4。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 PUA 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
+持久化服务配置使用 schema version 6，包含 Workspace、当前 AgentHub endpoint、PUA instance ID 和 Profile 路由。embedded 模式会把从 PUA listener 派生的 endpoint 写回配置；该值仅用于展示与运行时连接，不用于推断下次启动的模式。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 PUA 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
 
-可用环境变量：
+服务启动形态由 CLI flag 决定，不会根据持久化 endpoint 隐式切换。可用环境变量：
 
 ```text
-PUA_AGENTHUB_URL    AgentHub endpoint override
 PUA_SERVE_CONFIG    serve configuration file path
 ```
 
@@ -107,6 +119,8 @@ curl -sS -X POST http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESS
 绑定或 Profile 映射变化会标记旧代际替换：活动 Turn 先完成，之后底层 AgentHub Session stop 并 archive，新代际按需创建。删除仍被引用的自定义 Profile 不会改写资源显式绑定；解析按资源类型默认、再按全局 `default` 回退，同时在 generation 暴露 `agentConfigError` 和实际 `resolvedProfile`。原 Profile 恢复后周期 reconciler 会重新收敛。
 
 PUA 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconciler 更新 durable generation 记录、Profile 解析和全部资源 runtime。Task 或 Project 归档首先以一个可恢复的顶层目录移动提交事实；它不因活动 Turn、queued/hot mailbox 或 Stop/Archive 的未知失败而阻断。Project 子树中的所有 generation 随后由 resource planner/reconciler 异步执行 Stop、确认 `stopped`、Archive；未知响应、服务重启和中间状态均由持久事实与重复 reconcile 恢复。
+
+Task 工作流状态在 mailbox 只接受未投递时不切换；资源控制器只在真实投递边界将 Task 设为 `in_progress`，并在新工作链中消费上一 Turn 的终止标记。Turn 终止收口只在没有更新 queued 消息或活动 Turn 时生成自动续推；`in_progress` 会获得继续推进提醒，`waiting` 则要求 `scheduler.json` 至少有一条 target 精确指向当前 Task 的调度项，否则生成注册唤醒 condition 的系统提醒。两类收口共用持久化 marker、确定性消息 ID 和最多 3 次的工作链恢复预算。
 
 同一周期 reconciler 还读取每个 Workspace 的 `scheduler.json` 并生成稳定、enqueue-only 的 `scheduler_tick` mailbox 消息；该消息显式以 `requestedMode=enqueue`、`actualMode=enqueue`、`ModeFrozen=true` 接受，不能被生成消息公共 helper 改成 `steer`。空列表不会生成消息；配置变化在 Scheduler 忙碌时最多保留一个 waiting tick。间隔基准只接受由 Server tick 触发且 canonical 状态为 `completed` 的 Turn 结束时间，普通用户 Turn 不会重置计时；失败 tick 和无法恢复历史的 tick 使用恢复原因重新唤醒。资源级 `scheduler.json` checkpoint 保留最近 tick 的稳定 ID、generation/Session/Turn、配置 digest 和 delivery/Turn terminal 边界，即使 tick receipt 已 compact，Server 重启也不会重复或丢失恢复判断。
 

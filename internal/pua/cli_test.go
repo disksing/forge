@@ -361,9 +361,11 @@ func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	}
 	serveHelp := run(t, "serve", "--help")
 	for _, marker := range []string{
-		"usage: pua serve [--addr=<address>] [--workspace=<path>] [--version]",
+		"usage: pua serve [--addr=<address>] [--workspace=<path>]",
+		"--agenthub-mode=embedded|external",
+		"--agenthub-endpoint=<url>",
+		"/agenthub/v1/",
 		"in-process application API",
-		"PUA_AGENTHUB_URL",
 		"PUA_SERVE_CONFIG",
 	} {
 		if !strings.Contains(serveHelp, marker) {
@@ -477,7 +479,7 @@ func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 				"Do not also send the same result with pua message send",
 			},
 			projectAnchors:   []string{"# Project Agent Instructions", "AgentWorkspace Project directory", "Resource ID: project1", "../AGENTS.md"},
-			taskAnchors:      []string{"# Task Agent Instructions", "AgentWorkspace Task directory", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"},
+			taskAnchors:      []string{"# Task Agent Instructions", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"},
 			wrongLanguage:    "## 1. 工作环境",
 			localOnlyHeading: "## 1. Environment",
 		},
@@ -493,7 +495,7 @@ func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 				"不要再用 pua message send 发送同一结果",
 			},
 			projectAnchors:   []string{"# 项目 Agent 指引", "Project 目录", "当前资源 ID：project1", "../AGENTS.md"},
-			taskAnchors:      []string{"# 任务 Agent 指引", "Task 目录", "当前资源 ID：project1.task1", "../AGENTS.md", "../../AGENTS.md"},
+			taskAnchors:      []string{"# 任务 Agent 指引", "当前资源 ID：project1.task1", "../AGENTS.md", "../../AGENTS.md"},
 			wrongLanguage:    "## 1. Environment",
 			localOnlyHeading: "## 1. 工作环境",
 		},
@@ -681,7 +683,7 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		assertDir(t, filepath.Join(root, "project1", "task1", "worktree"))
 		subtaskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
-		for _, want := range []string{"# Task Agent Instructions", "AgentWorkspace Task directory", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"} {
+		for _, want := range []string{"# Task Agent Instructions", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"} {
 			if !strings.Contains(subtaskAgents, want) {
 				t.Fatalf("Task AGENTS.md is missing %q:\n%s", want, subtaskAgents)
 			}
@@ -1824,7 +1826,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
 		writeStaleManagedBlock(t, taskAgents, "You are working in an AgentWorkspace Project directory.", "old project prompt")
 		appendFile(t, subtaskAgents, "\n# Child Notes\n\nKeep child note.\n")
-		writeStaleManagedBlock(t, subtaskAgents, "You are working in an AgentWorkspace Task directory.", "old child prompt")
+		writeStaleManagedBlock(t, subtaskAgents, "Resource ID: project1.task1", "old child prompt")
 		archivedBefore := readFile(t, archivedAgents)
 
 		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {

@@ -210,9 +210,8 @@ describe("CreateDialog task wizard", () => {
     channel.publish({ ...first, identity: "dialog-2:task:project1", draft: { ...first.draft, title: "New dialog" } });
     await tick();
 
-    // A fresh dialog starts over on the template step with the new draft.
-    expect(target.querySelector(".wizard-steps li.active")?.textContent).toContain("Template");
-    await advance(target);
+    // A fresh dialog starts over on the title step with the new draft.
+    expect(target.querySelector(".wizard-steps li.active")?.textContent).toContain("Title & slug");
     expect(target.querySelector<HTMLInputElement>('input[name="title"]')?.value).toBe("New dialog");
   });
 
@@ -229,5 +228,62 @@ describe("CreateDialog task wizard", () => {
     target.querySelector<HTMLButtonElement>(".wizard-footer button.secondary-button")!.click();
     await tick();
     expect(target.querySelector<HTMLInputElement>('input[name="title"]')?.value).toBe("Remember me");
+  });
+});
+
+describe("CreateDialog project form", () => {
+  it("disables Create and shows the required description until it is filled", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const current = model({
+      identity: "dialog-1:project",
+      onSubmit,
+      draft: { ...model().draft, type: "project" },
+    });
+    const { target } = mountDialog(current);
+    await tick();
+
+    const description = target.querySelector<HTMLTextAreaElement>('textarea[name="description"]')!;
+    const create = target.querySelector<HTMLButtonElement>('#createDialogForm button[type="submit"]')!;
+    expect(description.required).toBe(true);
+    expect(description.getAttribute("aria-invalid")).toBe("true");
+    expect(description.getAttribute("aria-describedby")).toBe("project-description-error");
+    expect(target.querySelector("#project-description-error")?.textContent).toContain("required");
+    expect(create.disabled).toBe(true);
+
+    create.click();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    description.value = "A focused project";
+    description.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+
+    expect(description.getAttribute("aria-invalid")).toBe("false");
+    expect(description.getAttribute("aria-describedby")).toBeNull();
+    expect(target.querySelector("#project-description-error")).toBeNull();
+
+    const slug = target.querySelector<HTMLInputElement>('input[name="slug"]')!;
+    slug.value = "bad slug";
+    slug.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+
+    expect(slug.getAttribute("aria-invalid")).toBe("true");
+    expect(slug.getAttribute("aria-describedby")).toBe("project-slug-error");
+    expect(target.querySelector("#project-slug-error")?.textContent).toContain("only letters");
+    expect(create.disabled).toBe(true);
+    create.click();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    slug.value = "focused-project";
+    slug.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+
+    expect(slug.getAttribute("aria-invalid")).toBe("false");
+    expect(slug.getAttribute("aria-describedby")).toBeNull();
+    expect(target.querySelector("#project-slug-error")).toBeNull();
+    expect(create.disabled).toBe(false);
+
+    create.click();
+    await tick();
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ type: "project", description: "A focused project", slug: "focused-project" }));
   });
 });

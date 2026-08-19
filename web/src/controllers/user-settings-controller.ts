@@ -17,6 +17,11 @@ export function validateUserName(value: unknown): string {
 	return name;
 }
 
+export function normalizeUserNameForSave(value: unknown): string {
+	const name = String(value || "");
+	return name ? validateUserName(name) : "User";
+}
+
 export function normalizeUserName(value: unknown): string {
 	const trimmed = String(value || "").trim();
 	if (!trimmed) return "User";
@@ -50,7 +55,7 @@ export function createUserSettingsController(scope: ResourceScope, onChange: () 
 	}
 
 	function save(value: unknown): string {
-		const normalized = validateUserName(value);
+		const normalized = normalizeUserNameForSave(value);
 		try {
 			window.localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify({
 				version: USER_SETTINGS_VERSION,
