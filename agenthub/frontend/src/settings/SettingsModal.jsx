@@ -7,6 +7,7 @@ import { ProvidersPanel } from "./ProvidersPanel";
 import { AgentsPanel } from "./AgentsPanel";
 import { GeneralPanel } from "./GeneralPanel.jsx";
 import { ActivityPanel } from "./ActivityPanel.jsx";
+import { loadSettingsAuxiliary, loadSettingsConfig } from "./loadSettings.js";
 import {
   companionPreferencesEqual,
   loadCompanionPreferences,
@@ -48,6 +49,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
   const [providerToggleError, setProviderToggleError] = useState("");
   const dialogRef = useRef(null);
   const savedTimer = useRef(null);
+  const loadGeneration = useRef(0);
 
   const serverDirty = draft && snapshot ? isDirty(draft, snapshot) : false;
   const activityDirty = activityDraft && activitySnapshot
@@ -62,27 +64,38 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
   const displayErrors = showErrors || errors.length > 0;
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setPhase("loading");
     setLoadError("");
     setConflict(false);
     setSaveError("");
     setShowErrors(false);
+    setProbes([]);
+    setQuota({ providers: [] });
     try {
-      const [configBody, agentsBody, quotaBody] = await Promise.all([
-        api("/v1/config"),
-        api("/v1/agents"),
-        api("/v1/quota").catch((error) => ({ quota: { providers: [], error: error.message } })),
-      ]);
+      const configBody = await loadSettingsConfig(api);
+      if (generation !== loadGeneration.current) return;
       const next = createDraft(configBody.config || {});
       const nextActivity = loadCompanionPreferences();
       setDraft(next);
       setSnapshot(clone(next));
       setActivityDraft(nextActivity);
       setActivitySnapshot(clone(nextActivity));
-      setProbes(agentsBody.probes || []);
-      setQuota(quotaBody.quota || { providers: [] });
       setPhase("ready");
+
+      // Do not make the usable configuration wait for provider probes or
+      // quota. Each auxiliary request has its own deadline and stale loads
+      // cannot overwrite a newer retry or a remounted dialog.
+      loadSettingsAuxiliary(api).then(({ agentsBody, quotaBody }) => {
+        if (generation !== loadGeneration.current) return;
+        setProbes(agentsBody.probes || []);
+        setQuota(quotaBody.quota || { providers: [] });
+      }).catch(() => {
+        // loadSettingsAuxiliary settles individual failures; this guard keeps
+        // an unexpected implementation error from replacing usable settings.
+      });
     } catch (value) {
+      if (generation !== loadGeneration.current) return;
       setLoadError(value.message || "Failed to load the configuration");
       setPhase("error");
     }
@@ -90,6 +103,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
 
   useEffect(() => {
     load();
+    return () => { loadGeneration.current += 1; };
   }, [load]);
 
   // Move focus into the dialog on open; restore it to the trigger button on
