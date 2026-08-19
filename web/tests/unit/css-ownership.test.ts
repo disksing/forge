@@ -215,6 +215,24 @@ describe("CSS ownership", () => {
     expect(content).toContain("overflow-y: auto;");
   });
 
+  it("keeps the mobile navigation trigger at a 44px touch size without growing the toolbar row", () => {
+    const css = read("src/components/MobileToolbar.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const toolbar = body(':where([data-component-owner="mobile-toolbar"]).mobile-toolbar {');
+    expect(toolbar).toContain("grid-template-columns: 44px minmax(0, 1fr) 44px;");
+    expect(toolbar).toContain("padding: 4px 10px;");
+    expect(toolbar).toContain("padding-top: calc(4px + env(safe-area-inset-top, 0px));");
+
+    const trigger = body(':where([data-component-owner="mobile-toolbar"]) .mobile-icon-button');
+    expect(trigger).toContain("width: 44px;");
+    expect(trigger).toContain("height: 44px;");
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {
@@ -264,6 +282,25 @@ describe("CSS ownership", () => {
     expect(label).toContain("overflow: hidden;");
     expect(label).toContain("text-overflow: ellipsis;");
     expect(label).toContain("white-space: nowrap;");
+  });
+
+  it("keeps composer actions at a mobile touch size without growing the bar", () => {
+    const css = read("src/components/ChatComposer.css");
+    const touchSelector = ':where([data-component-owner="chat-composer"]) .chat-send-button,';
+    const touchStart = css.indexOf(touchSelector);
+    expect(touchStart, touchSelector).toBeGreaterThanOrEqual(0);
+    const touchRule = css.slice(css.indexOf("{", touchStart), css.indexOf("}", touchStart) + 1);
+    expect(touchRule).toContain("width: 44px;");
+    expect(touchRule).toContain("height: 44px;");
+    expect(touchRule).toContain("min-width: 44px;");
+    expect(touchRule).toContain("flex: 0 0 44px;");
+    expect(touchRule).toContain("margin: -6px;");
+
+    const adjacentSelector = ':where([data-component-owner="chat-composer"]) .chat-composer-action + .chat-send-button';
+    const adjacentStart = css.indexOf(adjacentSelector);
+    expect(adjacentStart, adjacentSelector).toBeGreaterThanOrEqual(0);
+    const adjacentRule = css.slice(css.indexOf("{", adjacentStart), css.indexOf("}", adjacentStart) + 1);
+    expect(adjacentRule).toContain("margin-left: 6px;");
   });
 
   it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {

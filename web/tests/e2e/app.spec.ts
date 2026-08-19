@@ -1656,7 +1656,25 @@ test("closes the 440px navigation drawer without changing the selected resource"
   await installShellMockApi(page);
   await page.goto("/w/ws-a/r/project1.task1");
 
-  await page.locator("#mobileMenuButton").click();
+  const menuButton = page.locator("#mobileMenuButton");
+  const menuBox = await menuButton.boundingBox();
+  const toolbarBox = await page.locator(".mobile-toolbar").boundingBox();
+  const detailsBox = await page.locator("#detailsPanel").boundingBox();
+  expect(menuBox).not.toBeNull();
+  expect(toolbarBox).not.toBeNull();
+  expect(detailsBox).not.toBeNull();
+  expect(menuBox!.width).toBe(44);
+  expect(menuBox!.height).toBe(44);
+  expect(toolbarBox!.height).toBe(52);
+  expect(detailsBox!.y).toBe(52);
+
+  const documentSize = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await menuButton.click();
   await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
   await page.getByRole("button", { name: "Close navigation" }).click();
 
