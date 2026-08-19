@@ -618,6 +618,14 @@ async function loadTree(options: LoadTreeOptions = {}) {
 	if (controllerState.selectedId === "workspace") await loadWorkspaceAgents();
 	else if (controllerState.selectedId) await loadDetail(controllerState.selectedId);
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
+	// Resource details do not depend on the AgentHub-backed status snapshot.
+	// Publish the tree and detail as soon as they are ready so a slow or
+	// temporarily blocked status read cannot leave a refreshed page showing
+	// "Loading details..." indefinitely.
+	controllerState.navigationLoading = false;
+	controllerState.navigationError = "";
+	publishViewModels();
+	if (options.updateURL !== false) syncURL({ replace: Boolean(options.replaceURL) });
 	await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId());
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	await refreshInbox(workspaceId);
@@ -1199,10 +1207,24 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 	syncURL();
 	saveUIState().catch((err) => console.warn("failed to save UI state", err));
 	renderSelectionPanels();
-	await Promise.all([
-		id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: forceDetail }),
-		refreshResourceMessageStatus(controllerState.activeWorkspaceId, id)
-	]);
+	const detailPromise = id === "workspace"
+		? loadWorkspaceAgents({ force: Boolean(options.forceDetail) })
+		: loadDetail(id, { force: forceDetail });
+	// Keep rejection handling attached immediately: the status request may
+	// finish before the detail request, but it must not create an unhandled
+	// rejection while navigation is already showing the detail.
+	const statusPromise = refreshResourceMessageStatus(controllerState.activeWorkspaceId, id).then(
+		() => ({ ok: true as const }),
+		error => ({ ok: false as const, error })
+	);
+	await detailPromise;
+	if (!isCurrentWorkspaceView(controllerState.activeWorkspaceId, controllerState.navigationVersion)) return;
+	// Details are independent of the status/read side effects below. Render
+	// them immediately so selection remains usable when the status endpoint is
+	// delayed by resource reconciliation.
+	renderSelectionPanels();
+	const statusResult = await statusPromise;
+	if (!statusResult.ok) throw statusResult.error;
 	if (!isCurrentWorkspaceView(controllerState.activeWorkspaceId, controllerState.navigationVersion)) return;
 	await markSelectedResourceRead();
 	renderSelectionPanels();

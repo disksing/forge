@@ -60,7 +60,11 @@ describe("Archive resource flow", () => {
     });
   }
 
-  async function startApp() {
+  async function startApp(options: { blockProjectStatus?: boolean; initialResourceId?: string } = {}) {
+    window.history.replaceState({}, "", options.initialResourceId ? `/w/ws-test/r/${options.initialResourceId}` : "/");
+    let releaseProjectStatus!: () => void;
+    const projectStatusReady = new Promise<void>((resolve) => { releaseProjectStatus = resolve; });
+
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: false,
       media: query,
@@ -135,6 +139,7 @@ describe("Archive resource flow", () => {
       }
       const statusMatch = url.pathname.match(/^\/api\/workspaces\/ws-test\/resources\/([^/]+)\/status$/);
       if (statusMatch && method === "GET") {
+        if (options.blockProjectStatus && decodeURIComponent(statusMatch[1]) === "project1") await projectStatusReady;
         return json({ acceptsMessages: true, waitingMessages: [], canSteerWaiting: false, session: { state: "idle" } });
       }
       throw new Error(`Unexpected ${method} ${url.pathname}${url.search}`);
@@ -156,9 +161,11 @@ describe("Archive resource flow", () => {
     const controller = await import("../../src/app-controller");
     stopPUAApp = controller.stopPUAApp;
     controller.startPUAApp(publisher);
+    const initialRenderCount = appShellModels.length;
 
     // Wait for the initial tree load to finish.
     await vi.waitFor(() => {
+      expect(appShellModels.length).toBeGreaterThan(initialRenderCount);
       const latest = appShellModels.at(-1);
       expect(latest?.loading).toBe(false);
       expect(latest?.projects.find((project) => project.id === "project1")?.children.map((task) => task.id)).toEqual(["project1.task1", "project1.task2"]);
@@ -172,7 +179,7 @@ describe("Archive resource flow", () => {
       });
     }
 
-    return { state, appShellModels, detailModels, selectResource };
+    return { state, appShellModels, detailModels, selectResource, releaseProjectStatus };
   }
 
   it("updates only the affected tree nodes without reloading the whole tree", async () => {
@@ -244,5 +251,33 @@ describe("Archive resource flow", () => {
     const latest = appShellModels.at(-1);
     expect(latest?.projects.find((project) => project.id === "project1")?.children.map((task) => task.id)).toEqual(["project1.task1", "project1.task2"]);
     expect(detailModels.at(-1)?.resourceId).toBe("project1.task1");
+  });
+
+  it("publishes project details before a delayed status response", async () => {
+    const { appShellModels, detailModels, releaseProjectStatus } = await startApp({ blockProjectStatus: true });
+    const selection = appShellModels.at(-1)!.onSelectResource("project1");
+
+    await vi.waitFor(() => {
+      const latest = detailModels.at(-1);
+      expect(latest?.resourceId).toBe("project1");
+      expect(latest?.loading).toBe(false);
+      expect(latest?.detail?.id).toBe("project1");
+    });
+
+    releaseProjectStatus();
+    await selection;
+  });
+
+  it("publishes project details during a refresh before status is available", async () => {
+    const { detailModels, releaseProjectStatus } = await startApp({ blockProjectStatus: true, initialResourceId: "project1" });
+
+    await vi.waitFor(() => {
+      const latest = detailModels.at(-1);
+      expect(latest?.resourceId).toBe("project1");
+      expect(latest?.loading).toBe(false);
+      expect(latest?.detail?.id).toBe("project1");
+    });
+
+    releaseProjectStatus();
   });
 });
