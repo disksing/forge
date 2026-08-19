@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Warning, X } from "@phosphor-icons/react";
 import { api } from "../api";
-import { buildPayload, createDraft, isDirty, normalizeConfig, validateDraft } from "./configModel";
+import { buildPayload, canSaveDraft, createDraft, isDirty, normalizeConfig, validateDraft } from "./configModel";
 import { applyProviderToggle, requestProviderToggle } from "./providerSwitches";
 import { ProvidersPanel } from "./ProvidersPanel";
 import { AgentsPanel } from "./AgentsPanel";
@@ -59,6 +59,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
       ? [...validateDraft(draft), ...validateCompanionPreferences(activityDraft)]
       : []
   ), [draft, activityDraft]);
+  const displayErrors = showErrors || errors.length > 0;
 
   const load = useCallback(async () => {
     setPhase("loading");
@@ -257,7 +258,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
                     onClick={() => setSection(item.id)}
                   >
                     <span>{item.label}</span>
-                    {showErrors && count ? <span className="settings-nav-badge">{count}</span> : null}
+                    {displayErrors && count ? <span className="settings-nav-badge">{count}</span> : null}
                   </button>
                 );
               })}
@@ -265,7 +266,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
             <div className="settings-content">
               <div className="settings-panel">
                 {section === "general" ? (
-                  <GeneralPanel draft={draft} errors={errors} showErrors={showErrors} mutate={mutate} />
+                  <GeneralPanel draft={draft} errors={errors} showErrors={displayErrors} mutate={mutate} />
                 ) : null}
                 {section === "activity" ? (
                   <ActivityPanel value={activityDraft} mutate={mutateActivity} quota={quota} />
@@ -280,7 +281,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
                   />
                 ) : null}
                 {section === "agents" ? (
-                  <AgentsPanel draft={draft} probes={probes} errors={errors} showErrors={showErrors} mutate={mutate} />
+                  <AgentsPanel draft={draft} probes={probes} errors={errors} showErrors={displayErrors} mutate={mutate} />
                 ) : null}
               </div>
               <footer className="settings-savebar">
@@ -304,7 +305,7 @@ export function SettingsModal({ onClose, onSaved, triggerRef }) {
                     <button
                       className="settings-button settings-button-primary"
                       onClick={() => save(false)}
-                      disabled={!dirty || saving}
+                      disabled={!canSaveDraft(dirty, errors, saving)}
                     >
                       {saving ? "Saving…" : "Save all"}
                     </button>
