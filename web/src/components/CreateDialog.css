@@ -42,6 +42,19 @@
   padding: 18px 20px;
 }
 
+:where([data-component-owner="create-dialog"]) .create-dialog-header > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+:where([data-component-owner="create-dialog"]) .create-dialog-header > .icon-button {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  /* Keep the 30px header footprint while expanding the touch target. */
+  margin: -7px;
+}
+
 :where([data-component-owner="create-dialog"]) .create-dialog-header strong {
   display: block;
   color: var(--text);

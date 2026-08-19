@@ -238,6 +238,23 @@ describe("CSS ownership", () => {
     expect(label).toContain("white-space: nowrap;");
   });
 
+  it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {
+    const css = read("src/components/CreateDialog.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const title = body(':where([data-component-owner="create-dialog"]) .create-dialog-header > div');
+    const close = body(':where([data-component-owner="create-dialog"]) .create-dialog-header > .icon-button');
+    expect(title).toContain("min-width: 0;");
+    expect(close).toContain("flex: 0 0 44px;");
+    expect(close).toContain("width: 44px;");
+    expect(close).toContain("height: 44px;");
+    expect(close).toContain("margin: -7px;");
+  });
+
   it("wraps overlong chat message tokens without stranding trailing characters", () => {
     // overflow-wrap:anywhere breaks a token at the exact overflow point and
     // can leave a single trailing character on its own line; break-word only
