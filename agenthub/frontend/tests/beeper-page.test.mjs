@@ -22,6 +22,7 @@ test("the app selects a standalone page that reuses Companion", async () => {
 	assert.ok(main.includes("isBeeperPath(window.location.pathname) ? BeeperPage : App"));
 	assert.ok(page.includes("<Companion"));
 	assert.ok(page.includes("standalone"));
+	assert.ok(page.includes("pauseLiveUpdates={settingsOpen}"));
 	assert.ok(page.includes("<SettingsModal"));
 	assert.ok(!page.includes("beeper-page-header"));
 	assert.ok(!page.includes("Back to AgentHub"));

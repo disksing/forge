@@ -15,6 +15,7 @@ export function BeeperPage() {
       <Companion
         standalone
         revision={companionRevision}
+        pauseLiveUpdates={settingsOpen}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       {settingsOpen ? (

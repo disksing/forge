@@ -104,6 +104,11 @@ export function App() {
   const eventsSessionRef = useRef("");
 
   useEffect(() => {
+    // EventSource uses one long-lived HTTP/1.1 connection. Chrome limits the
+    // number of connections per origin, so release the session stream while
+    // Settings is open; otherwise its config request can sit behind streams
+    // from this and other AgentHub tabs until the loading deadline expires.
+    if (settingsOpen) return undefined;
     if (!activeId) { eventsSessionRef.current = ""; setEvents([]); setEventsLoading(false); return undefined; }
     if (eventsSessionRef.current !== activeId) {
       eventsSessionRef.current = activeId;
@@ -166,7 +171,7 @@ export function App() {
         setError(value.message);
       });
     return () => { disposed = true; source?.close(); };
-  }, [activeId, eventReloadKey]);
+  }, [activeId, eventReloadKey, settingsOpen]);
 
   // Keep the conversation pinned to the bottom while the user is already
   // near it; jumping between sessions always lands on the latest events.
@@ -423,7 +428,11 @@ export function App() {
         )}
       </aside>
 
-      <Companion revision={companionRevision} onOpenSettings={() => setSettingsOpen(true)} />
+      <Companion
+        revision={companionRevision}
+        pauseLiveUpdates={settingsOpen}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
       {settingsOpen && (
         <SettingsModal
