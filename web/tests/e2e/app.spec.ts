@@ -1668,6 +1668,12 @@ test("closes the 440px navigation drawer without changing the selected resource"
   expect(toolbarBox!.height).toBe(52);
   expect(detailsBox!.y).toBe(52);
 
+  for (const tab of await page.locator('.mobile-view-switcher [role="tab"]').all()) {
+    const tabBox = await tab.boundingBox();
+    expect(tabBox).not.toBeNull();
+    expect(tabBox!.height).toBeGreaterThanOrEqual(44);
+  }
+
   const documentSize = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,

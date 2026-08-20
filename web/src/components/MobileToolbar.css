@@ -58,7 +58,7 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
   }
 
   :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button {
-    min-height: 34px;
+    min-height: 44px;
     border-radius: 4px;
     background: transparent;
     color: var(--muted);
