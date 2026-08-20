@@ -433,8 +433,10 @@ the configured refresh interval.
   available, `status`, and optional `used`, `limit`, rate and projection data.
   Providers that report a `balance` payload instead of a `quotas` array (e.g.
   DeepSeek credit balance) are normalized into one quota row with
-  `kind:"balance"`, whose remaining share is the current balance divided by
-  `onWatch.balanceTotal` (default `100`).
+  `kind:"balance"`, whose remaining share defaults to current balance / 100.
+  The raw balance is also exposed as `value` so browsers can re-derive
+  percentages against a per-provider balance total configured in the Activity
+  settings.
   `windowPositionPercent` is the percentage of the known reset window still
   remaining: `100` is the right edge at the start of a window and it moves
   toward the left edge (`0`) as reset approaches.

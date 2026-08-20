@@ -34,6 +34,10 @@ type Quota struct {
 	CurrentRate           *float64 `json:"currentRate,omitempty"`
 	ProjectedUtil         *float64 `json:"projectedUtil,omitempty"`
 	Stale                 bool     `json:"stale,omitempty"`
+	// Value is the raw underlying amount of a balance-style quota (e.g. a
+	// provider credit balance) before any display normalization. Clients use
+	// it to re-derive percentages against their own balance total.
+	Value *float64 `json:"value,omitempty"`
 }
 
 type ProviderQuota struct {
@@ -282,7 +286,7 @@ func (s *Service) fetchProvider(ctx context.Context, settings config.OnWatch, id
 		absorb(normalizeQuota(value, now, settings.RefreshIntervalSeconds))
 	}
 	if value := upstream.Balance; value != nil {
-		absorb(normalizeBalance(*value, settings.BalanceTotal))
+		absorb(normalizeBalance(*value))
 	}
 	if capturedAt, err := time.Parse(time.RFC3339, upstream.CapturedAt); err == nil && now.Sub(capturedAt) > time.Duration(settings.RefreshIntervalSeconds*2)*time.Second {
 		provider.Stale = true
@@ -328,17 +332,14 @@ func normalizeQuota(value upstreamQuota, now time.Time, refreshInterval int) Quo
 }
 
 // normalizeBalance converts a balance payload into a single quota row. The
-// remaining share is the current balance divided by the configured balance
-// total (default 100), so the row reads "N% left" without exposing the
-// underlying currency amounts; used and limit carry the plain-number amounts
-// implied by that share.
-func normalizeBalance(value upstreamBalance, balanceTotal float64) Quota {
-	total := balanceTotal
-	if total <= 0 {
-		total = config.DefaultBalanceTotal
-	}
-	remaining := clamp(100*value.Total/total, 0, 100)
-	used := clamp(total-value.Total, 0, total)
+// remaining share is computed against a default balance total of 100 so the
+// API stays self-consistent without a configured denominator; the raw current
+// balance is exposed through Value so browsers can re-derive percentages
+// against their own per-provider balance total.
+func normalizeBalance(value upstreamBalance) Quota {
+	limit := float64(100)
+	remaining := clamp(100*value.Total/limit, 0, 100)
+	used := clamp(limit-value.Total, 0, limit)
 	status := strings.ToLower(strings.TrimSpace(value.Status))
 	if status == "" {
 		if value.Available {
@@ -350,7 +351,8 @@ func normalizeBalance(value upstreamBalance, balanceTotal float64) Quota {
 	return Quota{
 		Kind: "balance", Label: firstNonEmpty(value.Name, "Balance"),
 		RemainingPercent: remaining, UsedPercent: clamp(100-remaining, 0, 100),
-		Status: status, Used: &used, Limit: &total, CurrentRate: &value.Rate,
+		Status: status, Used: &used, Limit: &limit, CurrentRate: &value.Rate,
+		Value: &value.Total,
 	}
 }
 
@@ -401,7 +403,7 @@ func endpointURL(baseURL, path string, query url.Values) (string, error) {
 }
 
 func settingsSignature(settings config.OnWatch) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d\x00%v", settings.ServerURL, settings.AuthMode, settings.Username, settings.Password, settings.RefreshIntervalSeconds, settings.BalanceTotal)))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", settings.ServerURL, settings.AuthMode, settings.Username, settings.Password, settings.RefreshIntervalSeconds)))
 	return hex.EncodeToString(sum[:])
 }
 

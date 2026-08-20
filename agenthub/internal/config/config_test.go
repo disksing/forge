@@ -153,12 +153,6 @@ func TestLoadAcceptsAndDropsLegacyCompanionConfig(t *testing.T) {
 	if loaded.OnWatch.ServerURL != "http://127.0.0.1:9211" || loaded.OnWatch.RefreshIntervalSeconds != 60 {
 		t.Fatalf("OnWatch defaults = %+v", loaded.OnWatch)
 	}
-	if loaded.OnWatch.BalanceTotal != DefaultBalanceTotal {
-		t.Fatalf("config without onWatch must carry the default balanceTotal, got %v", loaded.OnWatch.BalanceTotal)
-	}
-	if Defaults().OnWatch.BalanceTotal != DefaultBalanceTotal {
-		t.Fatalf("default balanceTotal = %v, want %v", Defaults().OnWatch.BalanceTotal, DefaultBalanceTotal)
-	}
 	if loaded.LegacyCompanion != nil {
 		t.Fatalf("legacy companion config survived normalization: %s", loaded.LegacyCompanion)
 	}
@@ -205,11 +199,6 @@ func TestOnWatchConfigValidation(t *testing.T) {
 	cfg.OnWatch.Password = ""
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "password") {
 		t.Fatalf("missing password validation = %v", err)
-	}
-	cfg = Defaults()
-	cfg.OnWatch.BalanceTotal = -1
-	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "balanceTotal") {
-		t.Fatalf("negative balanceTotal validation = %v", err)
 	}
 }
 

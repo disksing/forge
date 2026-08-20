@@ -19,7 +19,7 @@ import {
   activityPulsesForFrame, activitySessionHoldsTone, activitySessionNeedsTone,
   activitySessions, activitySessionTerminal, companionPlacement, companionPositionFromPixels,
   companionPositionPixels, formatDuration, normalizeCompanionPosition, normalizeCompanionSize,
-  filterQuotaSnapshot, pruneActivityPulses, quotaCycleItems, resizeCompanionSize, SessionToneAllocator,
+  filterQuotaSnapshot, applyBalanceTotals, pruneActivityPulses, quotaCycleItems, resizeCompanionSize, SessionToneAllocator,
 } from "./model.js";
 
 const POSITION_STORAGE_KEY = "agenthub.companion.position.v1";
@@ -123,8 +123,8 @@ export function Companion({ revision = 0, onOpenSettings, standalone = false, pa
   const quotaRequest = useRef(null);
 
   const visibleQuota = useMemo(
-    () => filterQuotaSnapshot(quota, companion.hiddenQuotaKeys),
-    [quota, companion.hiddenQuotaKeys],
+    () => filterQuotaSnapshot(applyBalanceTotals(quota, companion.balanceTotals), companion.hiddenQuotaKeys),
+    [quota, companion],
   );
   const cycleItems = useMemo(() => quotaCycleItems(visibleQuota), [visibleQuota]);
   const cycleItem = cycleItems[quotaIndex % Math.max(1, cycleItems.length)];

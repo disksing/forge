@@ -55,7 +55,6 @@ export const DEFAULT_ONWATCH = {
   username: "admin",
   password: "",
   refreshIntervalSeconds: 60,
-  balanceTotal: 100,
 };
 
 // The model option is not a free-text field: the settings UI loads the
@@ -143,7 +142,6 @@ export function normalizeConfig(config = {}) {
     username: String(rawOnWatch.username ?? DEFAULT_ONWATCH.username).trim(),
     password: String(rawOnWatch.password ?? ""),
     refreshIntervalSeconds: Number(rawOnWatch.refreshIntervalSeconds) || DEFAULT_ONWATCH.refreshIntervalSeconds,
-    balanceTotal: Number.isFinite(Number(rawOnWatch.balanceTotal)) ? Number(rawOnWatch.balanceTotal) : DEFAULT_ONWATCH.balanceTotal,
   };
   return {
     version: Number(config.version) || 1,
@@ -222,9 +220,6 @@ export function validateDraft(draft) {
   }
   if (![30, 60, 300].includes(draft.onWatch.refreshIntervalSeconds)) {
     push("general", 0, "refreshIntervalSeconds", "Select a supported refresh interval");
-  }
-  if (!Number.isFinite(draft.onWatch.balanceTotal) || draft.onWatch.balanceTotal < 0) {
-    push("general", 0, "balanceTotal", "Balance total must be a non-negative number");
   }
   const providers = draft.agentProviders || [];
   const providerIds = new Set();

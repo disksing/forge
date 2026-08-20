@@ -32,13 +32,12 @@ type Agent struct {
 }
 
 type OnWatch struct {
-	Enabled                bool    `json:"enabled"`
-	ServerURL              string  `json:"serverUrl"`
-	AuthMode               string  `json:"authMode"`
-	Username               string  `json:"username,omitempty"`
-	Password               string  `json:"password"`
-	RefreshIntervalSeconds int     `json:"refreshIntervalSeconds"`
-	BalanceTotal           float64 `json:"balanceTotal"`
+	Enabled                bool   `json:"enabled"`
+	ServerURL              string `json:"serverUrl"`
+	AuthMode               string `json:"authMode"`
+	Username               string `json:"username,omitempty"`
+	Password               string `json:"password"`
+	RefreshIntervalSeconds int    `json:"refreshIntervalSeconds"`
 }
 
 // AgentNameMaxLength bounds the length of an agent name (counted in runes
@@ -290,16 +289,8 @@ func defaultOnWatch() OnWatch {
 		AuthMode:               "trusted_proxy",
 		Username:               "admin",
 		RefreshIntervalSeconds: 60,
-		BalanceTotal:           DefaultBalanceTotal,
 	}
 }
-
-// DefaultBalanceTotal is the denominator used to normalize balance-style
-// quotas (e.g. a DeepSeek credit balance reported by OnWatch): the displayed
-// remaining share is current balance / balanceTotal. The value is a plain
-// number and deliberately not currency-denominated; zero means "unset" and
-// falls back to this default.
-const DefaultBalanceTotal = 100
 
 // WithDefaults fills fields absent from configurations written by older
 // AgentHub versions. Companion preferences moved to browser-local storage;
@@ -334,9 +325,6 @@ func (value OnWatch) validate() error {
 	}
 	if value.Enabled && value.AuthMode == "basic" && value.Password == "" {
 		return errors.New("onWatch.password is required for basic authentication")
-	}
-	if value.BalanceTotal < 0 {
-		return errors.New("onWatch.balanceTotal must not be negative")
 	}
 	return nil
 }

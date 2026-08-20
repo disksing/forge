@@ -68,7 +68,7 @@ func TestSnapshotNormalizesProviderSchemasAndCaches(t *testing.T) {
 	}
 }
 
-func TestSnapshotNormalizesBalanceProviderAndBalanceTotal(t *testing.T) {
+func TestSnapshotNormalizesBalanceProvider(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -104,39 +104,42 @@ func TestSnapshotNormalizesBalanceProviderAndBalanceTotal(t *testing.T) {
 	if quota.Kind != "balance" || quota.Label != "Balance" || quota.Status != "healthy" {
 		t.Fatalf("quota = %+v", quota)
 	}
-	// Default balance total is 100: 91.61 / 100 = 91.61% remaining.
+	// The default display total is 100: 91.61 / 100 = 91.61% remaining. The
+	// raw balance is exposed through Value so the browser can re-derive
+	// percentages against a user-configured total.
 	if math.Abs(quota.RemainingPercent-91.61) > 1e-9 || math.Abs(quota.UsedPercent-8.39) > 1e-9 {
 		t.Fatalf("balance quota percents = %+v", quota)
 	}
 	if quota.Used == nil || quota.Limit == nil || math.Abs(*quota.Used-8.39) > 1e-9 || *quota.Limit != 100 {
 		t.Fatalf("balance quota amounts = %+v", quota)
 	}
+	if quota.Value == nil || math.Abs(*quota.Value-91.61) > 1e-9 {
+		t.Fatalf("balance quota value = %+v", quota)
+	}
 	if quota.CurrentRate == nil || *quota.CurrentRate != 1.7 {
 		t.Fatalf("balance quota rate = %+v", quota)
 	}
 
-	// A different balance total invalidates the cache and renormalizes.
-	settings.BalanceTotal = 200
-	second := service.Snapshot(context.Background(), settings)
-	quota = second.Providers[0].Quotas[0]
-	if math.Abs(quota.RemainingPercent-45.805) > 1e-9 || *quota.Limit != 200 || math.Abs(*quota.Used-108.39) > 1e-9 {
-		t.Fatalf("balance quota after total change = %+v", quota)
-	}
-	if calls.Load() != 4 {
-		t.Fatalf("upstream calls = %d, want 4 (catalog + provider for each of two signatures)", calls.Load())
+	// The snapshot is cached until expiry; a second read does not refetch.
+	_ = service.Snapshot(context.Background(), settings)
+	if calls.Load() != 2 {
+		t.Fatalf("upstream calls = %d, want 2 (catalog + provider)", calls.Load())
 	}
 }
 
-func TestNormalizeBalanceFallsBackToDefaultTotal(t *testing.T) {
-	quota := normalizeBalance(upstreamBalance{Name: "Balance", Available: true, Total: 25, Status: "exhausted"}, 0)
+func TestNormalizeBalanceExposesRawValue(t *testing.T) {
+	quota := normalizeBalance(upstreamBalance{Name: "Balance", Available: true, Total: 25, Status: "exhausted"})
 	if quota.Kind != "balance" || quota.Status != "exhausted" {
 		t.Fatalf("quota = %+v", quota)
 	}
 	if quota.Limit == nil || *quota.Limit != 100 || math.Abs(quota.RemainingPercent-25) > 1e-9 {
 		t.Fatalf("quota = %+v", quota)
 	}
-	quota = normalizeBalance(upstreamBalance{Name: "Balance", Available: false, Total: 10}, 50)
-	if quota.Status != "unavailable" || math.Abs(quota.RemainingPercent-20) > 1e-9 {
+	if quota.Value == nil || *quota.Value != 25 {
+		t.Fatalf("quota value = %+v", quota)
+	}
+	quota = normalizeBalance(upstreamBalance{Name: "Balance", Available: false, Total: 10})
+	if quota.Status != "unavailable" || math.Abs(quota.RemainingPercent-10) > 1e-9 {
 		t.Fatalf("unavailable quota = %+v", quota)
 	}
 }
