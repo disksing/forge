@@ -233,6 +233,11 @@
 }
 
 @media (max-width: 980px) {
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-name-row .secondary-button,
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-desc-row .secondary-button {
+    min-height: 44px;
+  }
+
   /* The global mobile rule forces .secondary-button to width:100%. Inside the
      user card header that percentage resolves against the shrink-to-fit
      actions group, so the Delete button grows to the full group width while
@@ -241,6 +246,13 @@
      content width. */
   .resource-settings-user-actions .secondary-button {
     width: auto;
+  }
+
+  /* Keep both user actions easy to tap without changing the card's natural
+     vertical flow or the details pane's existing scroll container. */
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-user-actions .secondary-button,
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-user-save {
+    min-height: 44px;
   }
 }
 

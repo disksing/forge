@@ -344,6 +344,25 @@ describe("CSS ownership", () => {
     expect(narrowRule).toContain("width: auto;");
   });
 
+  it("keeps Workspace user actions at a 44px mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const deleteAction = body(':where([data-component-owner="resource-settings-panel"]) .resource-settings-user-actions .secondary-button');
+    const saveAction = body(':where([data-component-owner="resource-settings-panel"]) .resource-settings-user-save');
+    expect(deleteAction).toContain("min-height: 44px;");
+    expect(saveAction).toContain("min-height: 44px;");
+
+    // Delete remains intrinsic-width on narrow layouts, while Save preference
+    // can continue using the card width without changing either button's role.
+    const narrowDelete = body('.resource-settings-user-actions .secondary-button');
+    expect(narrowDelete).toContain("width: auto;");
+  });
+
   it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {
     const css = read("src/components/CreateDialog.css");
     const body = (selector: string) => {
@@ -359,6 +378,21 @@ describe("CSS ownership", () => {
     expect(close).toContain("width: 44px;");
     expect(close).toContain("height: 44px;");
     expect(close).toContain("margin: -7px;");
+  });
+
+  it("keeps Project Settings General actions at a mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const nameSelector = ':where([data-component-owner="resource-settings-panel"]) .resource-settings-name-row .secondary-button';
+    const descriptionSelector = ':where([data-component-owner="resource-settings-panel"]) .resource-settings-desc-row .secondary-button';
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+
+    for (const selector of [nameSelector, descriptionSelector]) {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThan(mobileStart);
+      const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+      expect(rule).toContain("min-height: 44px;");
+    }
   });
 
   it("wraps overlong chat message tokens without stranding trailing characters", () => {
