@@ -2003,6 +2003,9 @@ test("keeps the Scheduler navigation drawer entry at a 44px touch size", async (
   await expect(scheduler).toHaveAttribute("type", "button");
   await expect(scheduler).toHaveAccessibleName("Scheduler Natural-language schedules");
 
+  // The drawer slides in, so wait for its transform to settle before comparing
+  // the entry's geometry with the drawer bounds.
+  await expect.poll(async () => (await drawer.boundingBox())?.x ?? -1).toBe(0);
   const drawerBox = (await drawer.boundingBox())!;
   const schedulerBox = (await scheduler.boundingBox())!;
   expect(schedulerBox.height).toBeGreaterThanOrEqual(44);
