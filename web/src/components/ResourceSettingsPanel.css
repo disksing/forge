@@ -242,6 +242,13 @@
   .resource-settings-user-actions .secondary-button {
     width: auto;
   }
+
+  /* Keep both user actions easy to tap without changing the card's natural
+     vertical flow or the details pane's existing scroll container. */
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-user-actions .secondary-button,
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-user-save {
+    min-height: 44px;
+  }
 }
 
 .resource-settings-name-input,

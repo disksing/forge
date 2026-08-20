@@ -344,6 +344,25 @@ describe("CSS ownership", () => {
     expect(narrowRule).toContain("width: auto;");
   });
 
+  it("keeps Workspace user actions at a 44px mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const deleteAction = body(':where([data-component-owner="resource-settings-panel"]) .resource-settings-user-actions .secondary-button');
+    const saveAction = body(':where([data-component-owner="resource-settings-panel"]) .resource-settings-user-save');
+    expect(deleteAction).toContain("min-height: 44px;");
+    expect(saveAction).toContain("min-height: 44px;");
+
+    // Delete remains intrinsic-width on narrow layouts, while Save preference
+    // can continue using the card width without changing either button's role.
+    const narrowDelete = body('.resource-settings-user-actions .secondary-button');
+    expect(narrowDelete).toContain("width: auto;");
+  });
+
   it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {
     const css = read("src/components/CreateDialog.css");
     const body = (selector: string) => {
