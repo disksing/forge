@@ -238,29 +238,51 @@ type upstreamQuota struct {
 	AgeSeconds            *int64   `json:"ageSeconds"`
 }
 
+// upstreamBalance mirrors the "balance" payload OnWatch serves for
+// balance-tracked providers (e.g. DeepSeek credit balance), as an alternative
+// to the "quotas" array other providers return.
+type upstreamBalance struct {
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	Available    bool    `json:"available"`
+	Currency     string  `json:"currency"`
+	Total        float64 `json:"total"`
+	Granted      float64 `json:"granted"`
+	ToppedUp     float64 `json:"toppedUp"`
+	Rate         float64 `json:"rate"`
+	Status       string  `json:"status"`
+	TotalTracked float64 `json:"totalTracked"`
+}
+
 func (s *Service) fetchProvider(ctx context.Context, settings config.OnWatch, id, label string, now time.Time) (ProviderQuota, error) {
 	var upstream struct {
-		CapturedAt  string          `json:"capturedAt"`
-		PlanType    string          `json:"planType"`
-		PlanName    string          `json:"planName"`
-		Membership  string          `json:"membership"`
-		LoginMethod string          `json:"login_method"`
-		Quotas      []upstreamQuota `json:"quotas"`
+		CapturedAt  string           `json:"capturedAt"`
+		PlanType    string           `json:"planType"`
+		PlanName    string           `json:"planName"`
+		Membership  string           `json:"membership"`
+		LoginMethod string           `json:"login_method"`
+		Quotas      []upstreamQuota  `json:"quotas"`
+		Balance     *upstreamBalance `json:"balance"`
 	}
 	if err := s.getJSON(ctx, settings, "/api/current", url.Values{"provider": []string{id}}, &upstream); err != nil {
 		return ProviderQuota{}, err
 	}
 	provider := ProviderQuota{
 		Provider: id, Label: providerLabel(id, label), PlanLabel: firstNonEmpty(upstream.PlanName, upstream.PlanType, upstream.Membership, upstream.LoginMethod),
-		CapturedAt: upstream.CapturedAt, Status: "healthy", Quotas: make([]Quota, 0, len(upstream.Quotas)),
+		CapturedAt: upstream.CapturedAt, Status: "healthy", Quotas: make([]Quota, 0, len(upstream.Quotas)+1),
 	}
-	for _, value := range upstream.Quotas {
-		quota := normalizeQuota(value, now, settings.RefreshIntervalSeconds)
+	absorb := func(quota Quota) {
 		provider.Quotas = append(provider.Quotas, quota)
 		if statusRank(quota.Status) > statusRank(provider.Status) {
 			provider.Status = quota.Status
 		}
 		provider.Stale = provider.Stale || quota.Stale
+	}
+	for _, value := range upstream.Quotas {
+		absorb(normalizeQuota(value, now, settings.RefreshIntervalSeconds))
+	}
+	if value := upstream.Balance; value != nil {
+		absorb(normalizeBalance(*value, settings.BalanceTotal))
 	}
 	if capturedAt, err := time.Parse(time.RFC3339, upstream.CapturedAt); err == nil && now.Sub(capturedAt) > time.Duration(settings.RefreshIntervalSeconds*2)*time.Second {
 		provider.Stale = true
@@ -302,6 +324,33 @@ func normalizeQuota(value upstreamQuota, now time.Time, refreshInterval int) Quo
 		ResetInSeconds: resetSeconds, ResetsAt: value.ResetsAt, WindowPositionPercent: windowPosition,
 		Status: status, Used: value.Used, Limit: value.Limit, CurrentRate: value.CurrentRate,
 		ProjectedUtil: value.ProjectedUtil, Stale: stale,
+	}
+}
+
+// normalizeBalance converts a balance payload into a single quota row. The
+// remaining share is the current balance divided by the configured balance
+// total (default 100), so the row reads "N% left" without exposing the
+// underlying currency amounts; used and limit carry the plain-number amounts
+// implied by that share.
+func normalizeBalance(value upstreamBalance, balanceTotal float64) Quota {
+	total := balanceTotal
+	if total <= 0 {
+		total = config.DefaultBalanceTotal
+	}
+	remaining := clamp(100*value.Total/total, 0, 100)
+	used := clamp(total-value.Total, 0, total)
+	status := strings.ToLower(strings.TrimSpace(value.Status))
+	if status == "" {
+		if value.Available {
+			status = "healthy"
+		} else {
+			status = "unavailable"
+		}
+	}
+	return Quota{
+		Kind: "balance", Label: firstNonEmpty(value.Name, "Balance"),
+		RemainingPercent: remaining, UsedPercent: clamp(100-remaining, 0, 100),
+		Status: status, Used: &used, Limit: &total, CurrentRate: &value.Rate,
 	}
 }
 
@@ -352,7 +401,7 @@ func endpointURL(baseURL, path string, query url.Values) (string, error) {
 }
 
 func settingsSignature(settings config.OnWatch) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d", settings.ServerURL, settings.AuthMode, settings.Username, settings.Password, settings.RefreshIntervalSeconds)))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%d\x00%v", settings.ServerURL, settings.AuthMode, settings.Username, settings.Password, settings.RefreshIntervalSeconds, settings.BalanceTotal)))
 	return hex.EncodeToString(sum[:])
 }
 

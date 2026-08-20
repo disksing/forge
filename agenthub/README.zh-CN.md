@@ -133,7 +133,8 @@ $HOME/.agenthub/config.json
     "authMode": "trusted_proxy",
     "username": "admin",
     "password": "",
-    "refreshIntervalSeconds": 60
+    "refreshIntervalSeconds": 60,
+    "balanceTotal": 100
   }
 }
 ```

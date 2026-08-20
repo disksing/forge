@@ -60,6 +60,12 @@ export function GeneralPanel({ draft, errors, showErrors, mutate }) {
             <option value={30}>Every 30 seconds</option><option value={60}>Every 60 seconds</option><option value={300}>Every 5 minutes</option>
           </select>
         </label>
+        <label className="settings-field">
+          <span>Balance total</span>
+          <input className={error("balanceTotal") ? "invalid" : ""} type="number" min="0" step="any" value={onWatch.balanceTotal} onChange={(event) => update("balanceTotal", Number(event.target.value))} />
+          <small>Denominator for balance-style quotas (e.g. DeepSeek): remaining = current balance / balance total. Defaults to 100.</small>
+          <FieldError error={error("balanceTotal")} />
+        </label>
         <div className="settings-test-row">
           <button type="button" className="settings-button" disabled={testing} onClick={testConnection}>{testing ? <><CircleNotch className="spin" size={14} />Testing…</> : "Test Connection"}</button>
           {testResult ? <span className={testResult.ok ? "ok" : "error"}>{testResult.ok ? <CheckCircle size={15} /> : <Warning size={15} />}{testResult.message}</span> : null}

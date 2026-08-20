@@ -127,6 +127,17 @@ test("server config ignores legacy companion settings", () => {
 	assert.deepEqual(validateDraft(normalized), []);
 });
 
+test("onWatch balanceTotal defaults to 100 and survives a round trip", () => {
+	const normalized = normalizeConfig({ onWatch: { enabled: true, serverUrl: "http://localhost:9211", authMode: "none", refreshIntervalSeconds: 60 } });
+	assert.equal(normalized.onWatch.balanceTotal, 100);
+	const custom = normalizeConfig({ onWatch: { enabled: true, serverUrl: "http://localhost:9211", authMode: "none", refreshIntervalSeconds: 60, balanceTotal: 250 } });
+	assert.equal(custom.onWatch.balanceTotal, 250);
+	assert.deepEqual(validateDraft(custom), []);
+	const invalid = createDraft({ onWatch: { enabled: true, serverUrl: "http://localhost:9211", authMode: "none", refreshIntervalSeconds: 60, balanceTotal: -5 } });
+	const errors = validateDraft(invalid);
+	assert.ok(errors.some((item) => item.field === "balanceTotal"));
+});
+
 test("normalizeConfig keeps agent environment and drops empty names", () => {
   const normalized = normalizeConfig({
     agentProviders: [{ id: "p", name: "P", type: "codex", enabled: true }],

@@ -140,7 +140,8 @@ On first startup, if the config does not exist, AgentHub generates its own minim
     "authMode": "trusted_proxy",
     "username": "admin",
     "password": "",
-    "refreshIntervalSeconds": 60
+    "refreshIntervalSeconds": 60,
+    "balanceTotal": 100
   }
 }
 ```
