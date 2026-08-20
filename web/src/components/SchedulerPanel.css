@@ -37,6 +37,7 @@
   font: inherit;
   padding: 8px 9px;
 }
+.schedule-editor input { min-height: 44px; }
 .schedule-editor textarea { resize: vertical; }
 .schedule-editor > button { justify-self: start; }
 .schedule-editor > button {
@@ -46,7 +47,7 @@
   color: #fff;
   display: inline-flex;
   gap: 7px;
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 12px;
 }
 .schedule-editor > button:disabled { cursor: not-allowed; opacity: .55; }

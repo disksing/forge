@@ -1229,6 +1229,47 @@ test("keeps Scheduler schedules content inside a 440px viewport", async ({ page 
   await expectNoSchedulerOverflow();
 });
 
+test("keeps Scheduler schedule controls at a 44px touch size on a 440px viewport", async ({ page }) => {
+  const harness = await installMockApi(page);
+  await page.setViewportSize({ width: 440, height: 844 });
+  await page.goto("/w/ws-test/r/scheduler");
+
+  const editor = page.locator(".schedule-editor");
+  const description = page.getByRole("textbox", { name: "Description", exact: true });
+  const condition = page.getByRole("textbox", { name: "Condition", exact: true });
+  const target = page.getByRole("textbox", { name: "Target resource ID", exact: true });
+  const addSchedule = page.getByRole("button", { name: "Add schedule", exact: true });
+
+  await expect(description).toHaveAttribute("placeholder", "What should the Scheduler understand?");
+  await expect(condition).toHaveAttribute("placeholder", "For example: when the release branch is green after 09:00 Shanghai time");
+  await expect(condition).toHaveAttribute("rows", "3");
+  await expect(target).toHaveAttribute("placeholder", "workspace, scheduler, project1, or project1.task1");
+  await expect(addSchedule).toHaveAttribute("type", "button");
+  await expect(addSchedule).toBeDisabled();
+
+  const editorBox = await editor.boundingBox();
+  expect(editorBox).not.toBeNull();
+  for (const control of [description, condition, target, addSchedule]) {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(editorBox!.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(editorBox!.x + editorBox!.width + 1);
+  }
+
+  await description.fill("Notify when the release is ready");
+  await condition.fill("When the release branch is green after 09:00 Shanghai time");
+  await target.fill("project1.task1");
+  await expect(addSchedule).toBeEnabled();
+  await addSchedule.click();
+  await expect.poll(() => harness.schedulerBodies.length).toBe(1);
+  expect(harness.schedulerBodies[0].body).toEqual({
+    description: "Notify when the release is ready",
+    condition: "When the release branch is green after 09:00 Shanghai time",
+    target: "project1.task1",
+  });
+});
+
 test("keeps Svelte Detail documents, History, previews, diffs, and edits stable during refresh", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
