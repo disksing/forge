@@ -303,6 +303,26 @@ describe("CSS ownership", () => {
     expect(adjacentRule).toContain("margin-left: 6px;");
   });
 
+  it("keeps Project detail actions at a 44px touch size without narrow-layout overflow", () => {
+    const detailCss = read("src/components/DetailPanel.css");
+    const detailStart = detailCss.indexOf(':where([data-component-owner="detail-panel"]) .details-actions button {');
+    expect(detailStart).toBeGreaterThanOrEqual(0);
+    const detailRule = detailCss.slice(detailCss.indexOf("{", detailStart), detailCss.indexOf("}", detailStart) + 1);
+    expect(detailRule).toContain("min-height: 44px;");
+
+    const markdownCss = read("src/components/MarkdownDocument.css");
+    const markdownSelector = ':where([data-component-owner="markdown-document"]) .markdown-document-actions .secondary-button';
+    const markdownStart = markdownCss.indexOf(markdownSelector);
+    expect(markdownStart).toBeGreaterThanOrEqual(0);
+    const markdownRule = markdownCss.slice(markdownCss.indexOf("{", markdownStart), markdownCss.indexOf("}", markdownStart) + 1);
+    expect(markdownRule).toContain("min-height: 44px;");
+
+    const narrowRuleStart = markdownCss.lastIndexOf(`${markdownSelector} {`);
+    expect(narrowRuleStart).toBeGreaterThanOrEqual(0);
+    const narrowRule = markdownCss.slice(markdownCss.indexOf("{", narrowRuleStart), markdownCss.indexOf("}", narrowRuleStart) + 1);
+    expect(narrowRule).toContain("width: auto;");
+  });
+
   it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {
     const css = read("src/components/CreateDialog.css");
     const body = (selector: string) => {
