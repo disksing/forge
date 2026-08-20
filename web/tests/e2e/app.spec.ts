@@ -2273,6 +2273,70 @@ test("keeps the Workspace Generation lifecycle Save target at 44px in a 440px vi
   expect(documentOverflow).toBeLessThanOrEqual(1);
 });
 
+test("keeps Scheduler Settings controls at a 44px touch size in a 440px viewport", async ({ page }) => {
+  const harness = await installMockApi(page);
+  await page.setViewportSize({ width: 440, height: 844 });
+  await page.goto("/w/ws-test/r/scheduler");
+
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("tab", { name: "Settings", exact: true }).click();
+
+  const content = panel.locator("#detailsContent");
+  const contentBox = (await content.boundingBox())!;
+  const binding = panel.getByRole("button", { name: "Scheduler Agent binding", exact: true });
+  const interval = panel.getByRole("spinbutton", { name: "Scheduler wake interval in minutes" });
+  const save = panel.locator(".resource-settings-interval").getByRole("button", { name: "Save", exact: true });
+
+  await expect(binding).toHaveAttribute("type", "button");
+  await expect(binding).toHaveAttribute("aria-haspopup", "listbox");
+  await expect(binding).toHaveAttribute("aria-expanded", "false");
+  await expect(interval).toHaveAttribute("type", "number");
+  await expect(interval).toHaveAttribute("aria-label", "Scheduler wake interval in minutes");
+  await expect(save).toHaveAttribute("type", "button");
+  await expect(save).toBeDisabled();
+
+  for (const control of [binding, interval, save]) {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(contentBox.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+  }
+
+  await binding.click();
+  const menu = page.getByRole("listbox", { name: "Scheduler Agent binding", exact: true });
+  await expect(menu).toBeVisible();
+  await expect(binding).toHaveAttribute("aria-expanded", "true");
+  await expect(menu.getByRole("option")).toHaveCount(5);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(binding).toHaveAttribute("aria-expanded", "false");
+
+  await interval.fill("45");
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect.poll(() => harness.schedulerBodies.length).toBe(1);
+  expect(harness.schedulerBodies[0]).toMatchObject({
+    method: "PUT",
+    path: "/api/workspaces/ws-test/scheduler/settings",
+    body: { agentBinding: { kind: "profile", name: "fast" }, wakeIntervalMinutes: 45 },
+  });
+  await expect(interval).toHaveValue("45");
+  await expect(save).toBeDisabled();
+
+  const detailsSize = await content.evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }));
+  expect(detailsSize.scrollWidth).toBeLessThanOrEqual(detailsSize.clientWidth);
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+});
+
 test("keeps every System Settings tab reachable without horizontal scrolling in a 390px mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installMockApi(page, "project1");

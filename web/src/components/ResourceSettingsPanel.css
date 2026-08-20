@@ -239,6 +239,12 @@
     min-height: 44px;
   }
 
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-scheduler-agent .agent-binding-button,
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-interval input,
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-interval .secondary-button {
+    min-height: 44px;
+  }
+
   :where([data-component-owner="resource-settings-panel"]) .resource-settings-name-row .secondary-button,
   :where([data-component-owner="resource-settings-panel"]) .resource-settings-desc-row .secondary-button {
     min-height: 44px;

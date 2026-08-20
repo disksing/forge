@@ -242,7 +242,7 @@
       </div>
     </section>
   {:else if model.resourceType === "scheduler"}
-    <section class="resource-settings-section">
+    <section class="resource-settings-section resource-settings-scheduler-agent">
       <div class="resource-settings-section-head">
         <strong>Agent</strong>
       </div>
