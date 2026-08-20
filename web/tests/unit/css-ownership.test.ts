@@ -284,6 +284,21 @@ describe("CSS ownership", () => {
     expect(close).toContain("margin: -7px;");
   });
 
+  it("keeps Project Settings General actions at a mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const nameSelector = ':where([data-component-owner="resource-settings-panel"]) .resource-settings-name-row .secondary-button';
+    const descriptionSelector = ':where([data-component-owner="resource-settings-panel"]) .resource-settings-desc-row .secondary-button';
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+
+    for (const selector of [nameSelector, descriptionSelector]) {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThan(mobileStart);
+      const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+      expect(rule).toContain("min-height: 44px;");
+    }
+  });
+
   it("wraps overlong chat message tokens without stranding trailing characters", () => {
     // overflow-wrap:anywhere breaks a token at the exact overflow point and
     // can leave a single trailing character on its own line; break-word only
