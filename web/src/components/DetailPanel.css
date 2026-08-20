@@ -13,7 +13,7 @@
 }
 
 :where([data-component-owner="detail-panel"]) .details-actions button {
-  min-height: 32px;
+  min-height: 44px;
   border-radius: 6px;
   background: var(--accent);
   color: #fff;
@@ -196,7 +196,7 @@
 }
 
 :where([data-component-owner="detail-panel"]) .details-actions button {
-  min-height: 30px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
