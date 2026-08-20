@@ -1987,6 +1987,40 @@ test("keeps the 440px workspace drawer controls at a 44px touch size", async ({ 
   await expect(page).toHaveURL(/\/w\/ws-b$/);
 });
 
+test("keeps the Scheduler navigation drawer entry at a 44px touch size", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+
+  const drawer = page.locator("#mobileSidebar");
+  const scheduler = page.locator('[data-component-owner="scheduler-nav"] > button');
+  await expect(scheduler).toBeVisible();
+  await expect(scheduler).toBeEnabled();
+  await expect(scheduler).toHaveAttribute("title", "Workspace Scheduler");
+  await expect(scheduler).toHaveAttribute("type", "button");
+  await expect(scheduler).toHaveAccessibleName("Scheduler Natural-language schedules");
+
+  const drawerBox = (await drawer.boundingBox())!;
+  const schedulerBox = (await scheduler.boundingBox())!;
+  expect(schedulerBox.height).toBeGreaterThanOrEqual(44);
+  expect(schedulerBox.x).toBeGreaterThanOrEqual(drawerBox.x);
+  expect(schedulerBox.x + schedulerBox.width).toBeLessThanOrEqual(drawerBox.x + drawerBox.width + 1);
+
+  const documentSize = await page.evaluate(() => ({
+    bodyClient: document.body.clientWidth,
+    bodyScroll: document.body.scrollWidth,
+    htmlClient: document.documentElement.clientWidth,
+    htmlScroll: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize).toEqual({ bodyClient: 440, bodyScroll: 440, htmlClient: 440, htmlScroll: 440 });
+
+  await scheduler.click();
+  await expect(page).toHaveURL(/\/w\/ws-test\/r\/scheduler$/);
+});
+
 test("keeps Workspace Wiki file rows at a 44px touch size without overflow", async ({ page }) => {
   await page.setViewportSize({ width: 440, height: 844 });
   await installShellMockApi(page);
