@@ -308,7 +308,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
         projects: [projectSnapshot, ...(createdProject ? [{ ...createdProject, userState: resourceStates[createdProject.id] }] : [])],
         activity,
-        wiki: { exists: true, entries: [{ name: "index.md", path: "wiki/index.md", type: "file", size: 28 }] },
+        wiki: { exists: true, entries: [
+          { name: "index.md", path: "wiki/index.md", type: "file", size: 28 },
+          { name: "link-preview.md", path: "wiki/link-preview.md", type: "file", size: 28 },
+        ] },
       });
     }
     const readMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/read$/);
@@ -967,6 +970,78 @@ test("keeps Workspace Agent binding selectors at a mobile touch size without ove
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
   const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(documentOverflow).toBeLessThanOrEqual(1);
+});
+
+test("keeps Wiki file preview controls at a 44px touch size without overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page, "workspace");
+  await page.goto("/w/ws-test");
+
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("tab", { name: "Wiki", exact: true }).click();
+  const fileRow = panel.getByRole("button", { name: /link-preview\.md/ });
+  await expect(fileRow).toBeVisible();
+  await expect(fileRow).toHaveAttribute("type", "button");
+  await fileRow.hover();
+
+  const download = panel.getByRole("link", { name: "Download link-preview.md", exact: true });
+  await expect(download).toBeVisible();
+  await expect(download).toHaveAttribute("download", "link-preview.md");
+  await expect(download).toHaveAttribute("title", "Download link-preview.md");
+  await expect(download).toHaveAttribute("aria-label", "Download link-preview.md");
+  await expect(download).toHaveAttribute("href", /download=1/);
+  const downloadBox = (await download.boundingBox())!;
+  expect(downloadBox.width).toBeGreaterThanOrEqual(44);
+  expect(downloadBox.height).toBeGreaterThanOrEqual(44);
+  expect(downloadBox.x).toBeGreaterThanOrEqual(0);
+  expect(downloadBox.x + downloadBox.width).toBeLessThanOrEqual(440);
+  const contentSize = await panel.locator("#detailsContent").evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  expect(contentSize.scrollWidth).toBeLessThanOrEqual(contentSize.clientWidth);
+
+  await fileRow.click();
+  const dialog = page.getByRole("dialog", { name: "File preview" });
+  await expect(dialog).toContainText("link-preview.md");
+  const fullScreen = dialog.getByRole("button", { name: "Open file full screen" });
+  const close = dialog.getByRole("button", { name: "Close", exact: true });
+  for (const button of [fullScreen, close]) {
+    await expect(button).toHaveAttribute("type", "button");
+    await expect.poll(async () => (await button.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(44);
+    await expect.poll(async () => (await button.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    const box = (await button.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(440);
+  }
+  await expect(fullScreen).toHaveAttribute("title", "Open file full screen");
+  await expect(fullScreen).toHaveAttribute("aria-label", "Open file full screen");
+  await expect(close).toHaveAttribute("title", "Close");
+  await expect(close).toHaveAttribute("aria-label", "Close");
+
+  const dialogGeometry = await dialog.evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+  }));
+  expect(dialogGeometry.scrollWidth).toBeLessThanOrEqual(dialogGeometry.clientWidth);
+  expect(dialogGeometry.scrollHeight).toBeLessThanOrEqual(dialogGeometry.clientHeight);
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await close.click();
+  await expect(dialog).toHaveCount(0);
 });
 
 test("navigates to a newly created project", async ({ page }) => {

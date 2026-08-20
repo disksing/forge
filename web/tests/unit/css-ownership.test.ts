@@ -187,6 +187,20 @@ describe("CSS ownership", () => {
     expect(css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1)).toContain("width: auto;");
   });
 
+  it("keeps Wiki file preview actions at a 44px mobile touch size", () => {
+    const previewCss = read("src/components/FilePreviewModal.css");
+    const previewMobileStart = previewCss.indexOf("@media (max-width:980px)");
+    expect(previewMobileStart).toBeGreaterThanOrEqual(0);
+    const previewMobileCss = previewCss.slice(previewMobileStart);
+    expect(previewMobileCss).toContain(".file-modal-actions > .secondary-button {\n    min-height: 44px;");
+    expect(previewMobileCss).toContain(".file-modal-actions > .icon-button {\n    flex: 0 0 44px;\n    width: 44px;\n    height: 44px;");
+
+    const browserCss = read("src/components/FileBrowser.css");
+    const browserMobileStart = browserCss.indexOf("@media (max-width: 980px)");
+    expect(browserMobileStart).toBeGreaterThanOrEqual(0);
+    expect(browserCss.slice(browserMobileStart)).toContain(".artifact-download {\n    flex: 0 0 44px;\n    width: 44px;\n    height: 44px;");
+  });
+
   it("keeps the System Settings close control at the mobile touch target size", () => {
     const css = read("src/components/SettingsModal.css");
     const selector = ':where([data-component-owner="settings"]) .settings-close';
