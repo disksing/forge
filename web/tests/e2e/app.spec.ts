@@ -1195,6 +1195,40 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
   expect(harness.schedulerBodies[1].body).toMatchObject({ wakeIntervalMinutes: 45 });
 });
 
+test("keeps Scheduler schedules content inside a 440px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page);
+  await page.goto("/w/ws-test/r/scheduler");
+
+  const measureSchedulerOverflow = async () => page.locator("#detailsContent").evaluate((root) => [
+    { name: "details-content", element: root },
+    ...Array.from(root.querySelectorAll<HTMLElement>(".schedule-editor, .schedule-list, .schedule-list > *"))
+      .map((element) => ({ name: element.className || element.tagName.toLowerCase(), element })),
+  ].map(({ name, element }) => ({ name, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth })));
+  const expectNoSchedulerOverflow = async () => {
+    const dimensions = await measureSchedulerOverflow();
+    for (const dimension of dimensions) {
+      expect(dimension.scrollWidth - dimension.clientWidth, dimension.name).toBeLessThanOrEqual(1);
+    }
+    const documentSize = await page.evaluate(() => ({
+      bodyClient: document.body.clientWidth,
+      bodyScroll: document.body.scrollWidth,
+      htmlClient: document.documentElement.clientWidth,
+      htmlScroll: document.documentElement.scrollWidth,
+    }));
+    expect(documentSize).toEqual({ bodyClient: 440, bodyScroll: 440, htmlClient: 440, htmlScroll: 440 });
+  };
+
+  await expect(page.getByText("No schedules. The Server will not create empty Scheduler Turns.")).toBeVisible();
+  await expectNoSchedulerOverflow();
+
+  await page.getByLabel("Description").fill("Notify when the release is ready");
+  await page.getByLabel("Condition").fill("When the release branch is green after 09:00 Shanghai time and the deployment checklist is complete");
+  await page.getByRole("button", { name: "Add schedule", exact: true }).click();
+  await expect(page.locator(".schedule-list article")).toContainText("Notify when the release is ready");
+  await expectNoSchedulerOverflow();
+});
+
 test("keeps Svelte Detail documents, History, previews, diffs, and edits stable during refresh", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
