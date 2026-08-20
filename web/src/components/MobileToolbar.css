@@ -27,18 +27,20 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
     z-index: 45;
     grid-row: 1;
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
     align-items: center;
     gap: 10px;
-    padding: 6px 10px;
-    padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    /* Keep the 52px app-shell row while giving the navigation trigger a
+       44px touch target. */
+    padding: 4px 10px;
+    padding-top: calc(4px + env(safe-area-inset-top, 0px));
     border-bottom: 1px solid var(--line);
     background: #fff;
   }
 
   :where([data-component-owner="mobile-toolbar"]) .mobile-icon-button {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     display: grid;
     place-items: center;
     border-radius: 6px;
@@ -56,7 +58,7 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
   }
 
   :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button {
-    min-height: 34px;
+    min-height: 44px;
     border-radius: 4px;
     background: transparent;
     color: var(--muted);

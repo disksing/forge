@@ -33,6 +33,10 @@
   gap: 8px;
 }
 
+:where([data-component-owner="markdown-document"]) .markdown-document-actions .secondary-button {
+  min-height: 44px;
+}
+
 :where([data-component-owner="markdown-document"]) .markdown-document-actions + .markdown-view > :first-child {
   padding-right: 190px;
 }

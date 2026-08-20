@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "../../src/api/client";
 import { ChatSessionController } from "../../src/components/chat-state";
-import type { AgentEvent, ChatContextSnapshot, ResourceHistoryGeneration, ResourceHistoryTurnSummary, ResourceMessageStatus } from "../../src/components/models";
+import type { AgentEvent, AgentNotice, ChatContextSnapshot, ResourceHistoryGeneration, ResourceHistoryTurnSummary, ResourceMessageStatus } from "../../src/components/models";
 
 const controllers: ChatSessionController[] = [];
 afterEach(() => controllers.splice(0).forEach((controller) => controller.dispose()));
@@ -45,6 +45,7 @@ class FakeEventSource {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void { this.listeners.set(type, listener as (event: MessageEvent) => void); }
   close(): void { this.closed = true; this.readyState = 2; }
   emit(event: AgentEvent): void { this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(event) })); }
+  emitNotice(notice: AgentNotice): void { this.listeners.get("pua.notice")?.(new MessageEvent("pua.notice", { data: JSON.stringify(notice) })); }
   failPermanently(): void { this.readyState = 2; this.onerror?.(new Event("error")); }
 }
 
@@ -53,6 +54,10 @@ function controller(fetchImpl: typeof fetch, callbacks: ConstructorParameters<ty
   const value = new ChatSessionController({ api: new ApiClient(fetchImpl), eventSourceFactory: (url) => new FakeEventSource(url) as unknown as EventSource, ...callbacks });
   controllers.push(value);
   return value;
+}
+
+function notice(text: string, level = "info"): AgentNotice {
+  return { source: "pua", type: "pua.notice", data: { level, method: "resource/test", text } };
 }
 
 describe("resource conversation controller", () => {
@@ -512,6 +517,49 @@ describe("resource conversation controller", () => {
     value.activate("workspace-a", "task-a", status(1));
     expect(latest.generationId).toBe("gen-2");
     expect(latest.blocks.map((block) => block.key)).toEqual(["gen-1:old", "gen-2:new"]);
+  });
+
+  it("automatically expires transient PUA notices", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [] }], page: { limit: 5, hasMore: false } }));
+    const value = controller(fetchImpl, { noticeTimeoutMs: 10 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    FakeEventSource.instances[0].emitNotice(notice("Recovered"));
+    expect(latest.notices.map((item) => item.data?.text)).toEqual(["Recovered"]);
+    await vi.waitFor(() => expect(latest.notices).toHaveLength(0));
+  });
+
+  it("dismisses a PUA notice and accepts the same notice again", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [] }], page: { limit: 5, hasMore: false } }));
+    const value = controller(fetchImpl, { noticeTimeoutMs: 1000 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const repeated = notice("Coordinator failed", "error");
+
+    FakeEventSource.instances[0].emitNotice(repeated);
+    value.dismissNotice(repeated);
+    expect(latest.notices).toHaveLength(0);
+    FakeEventSource.instances[0].emitNotice(repeated);
+    expect(latest.notices.map((item) => item.data?.text)).toEqual(["Coordinator failed"]);
+  });
+
+  it("clears notices when the current Generation changes", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [], page: { limit: 5, hasMore: false } }));
+    const value = controller(fetchImpl, { noticeTimeoutMs: 1000 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status(1));
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    FakeEventSource.instances[0].emitNotice(notice("Generation one notice"));
+    expect(latest.notices).toHaveLength(1);
+    value.activate("workspace-a", "task-a", status(2));
+    expect(latest.notices).toHaveLength(0);
   });
 
   it("keeps an in-flight status sync alive across a parent view refresh", async () => {

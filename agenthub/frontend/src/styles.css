@@ -519,17 +519,30 @@ select {
   min-width: 0;
 }
 
+/* Keep the delete action easy to hit on narrow settings screens while the
+   icon itself remains visually compact. The card head is a flex row, so the
+   fixed basis reserves the touch target without widening the card. */
+.settings-card-head > .icon-button {
+  flex: 0 0 44px;
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+}
+
 /* Drag handle used to reorder agent cards. It is the only draggable surface
    of a card, so dragging never conflicts with expanding, editing, or the
    delete button. Keyboard focus moves the row up/down with the arrow keys. */
 .settings-drag-handle {
   display: inline-flex;
-  flex-shrink: 0;
+  flex: 0 0 44px;
+  min-width: 44px;
+  min-height: 44px;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin: -4px 0 -4px -8px;
+  width: 44px;
+  height: 44px;
+  margin: -10px 0 -10px -8px;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -940,6 +953,10 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.settings-savebar-actions .settings-button {
+  min-height: 44px;
 }
 
 .settings-button {

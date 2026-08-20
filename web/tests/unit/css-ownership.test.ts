@@ -197,6 +197,63 @@ describe("CSS ownership", () => {
     expect(rule).toContain("height: 44px;");
   });
 
+  it("keeps the Workspace problems close control touch-sized without moving list scrolling", () => {
+    const css = read("src/components/DoctorDialog.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const close = body(':where([data-component-owner="doctor-dialog"]) .doctor-close {');
+    expect(close).toContain("flex: 0 0 44px;");
+    expect(close).toContain("width: 44px;");
+    expect(close).toContain("height: 44px;");
+    expect(close).toContain("margin: -5px;");
+
+    const content = body(':where([data-component-owner="doctor-dialog"]) .doctor-content');
+    expect(content).toContain("overflow-y: auto;");
+  });
+
+  it("keeps the mobile navigation trigger at a 44px touch size without growing the toolbar row", () => {
+    const css = read("src/components/MobileToolbar.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const toolbar = body(':where([data-component-owner="mobile-toolbar"]).mobile-toolbar {');
+    expect(toolbar).toContain("grid-template-columns: 44px minmax(0, 1fr) 44px;");
+    expect(toolbar).toContain("padding: 4px 10px;");
+    expect(toolbar).toContain("padding-top: calc(4px + env(safe-area-inset-top, 0px));");
+
+    const trigger = body(':where([data-component-owner="mobile-toolbar"]) .mobile-icon-button');
+    expect(trigger).toContain("width: 44px;");
+    expect(trigger).toContain("height: 44px;");
+  });
+
+  it("keeps resource detail tabs at a mobile touch target size", () => {
+    const css = read("src/components/DetailPanel.css");
+    const selector = ':where([data-component-owner="detail-panel"]) .details-tab';
+    const start = css.indexOf(`${selector} {`);
+    expect(start, selector).toBeGreaterThanOrEqual(0);
+    const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+
+    // The four Project detail tabs must remain easy to tap at the narrowest
+    // supported viewport without changing their horizontal layout.
+    expect(rule).toContain("min-height: 44px;");
+  });
+
+  it("keeps the mobile Workspace view tabs at a 44px touch size", () => {
+    const css = read("src/components/MobileToolbar.css");
+    const selector = ':where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button';
+    const start = css.indexOf(selector);
+    expect(start, selector).toBeGreaterThanOrEqual(0);
+    const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    expect(rule).toContain("min-height: 44px;");
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {
@@ -265,6 +322,45 @@ describe("CSS ownership", () => {
     expect(adjacentStart, adjacentSelector).toBeGreaterThanOrEqual(0);
     const adjacentRule = css.slice(css.indexOf("{", adjacentStart), css.indexOf("}", adjacentStart) + 1);
     expect(adjacentRule).toContain("margin-left: 6px;");
+  });
+
+  it("keeps Project detail actions at a 44px touch size without narrow-layout overflow", () => {
+    const detailCss = read("src/components/DetailPanel.css");
+    const detailStart = detailCss.indexOf(':where([data-component-owner="detail-panel"]) .details-actions button {');
+    expect(detailStart).toBeGreaterThanOrEqual(0);
+    const detailRule = detailCss.slice(detailCss.indexOf("{", detailStart), detailCss.indexOf("}", detailStart) + 1);
+    expect(detailRule).toContain("min-height: 44px;");
+
+    const markdownCss = read("src/components/MarkdownDocument.css");
+    const markdownSelector = ':where([data-component-owner="markdown-document"]) .markdown-document-actions .secondary-button';
+    const markdownStart = markdownCss.indexOf(markdownSelector);
+    expect(markdownStart).toBeGreaterThanOrEqual(0);
+    const markdownRule = markdownCss.slice(markdownCss.indexOf("{", markdownStart), markdownCss.indexOf("}", markdownStart) + 1);
+    expect(markdownRule).toContain("min-height: 44px;");
+
+    const narrowRuleStart = markdownCss.lastIndexOf(`${markdownSelector} {`);
+    expect(narrowRuleStart).toBeGreaterThanOrEqual(0);
+    const narrowRule = markdownCss.slice(markdownCss.indexOf("{", narrowRuleStart), markdownCss.indexOf("}", narrowRuleStart) + 1);
+    expect(narrowRule).toContain("width: auto;");
+  });
+
+  it("keeps Workspace user actions at a 44px mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const deleteAction = body(':where([data-component-owner="resource-settings-panel"]) .resource-settings-user-actions .secondary-button');
+    const saveAction = body(':where([data-component-owner="resource-settings-panel"]) .resource-settings-user-save');
+    expect(deleteAction).toContain("min-height: 44px;");
+    expect(saveAction).toContain("min-height: 44px;");
+
+    // Delete remains intrinsic-width on narrow layouts, while Save preference
+    // can continue using the card width without changing either button's role.
+    const narrowDelete = body('.resource-settings-user-actions .secondary-button');
+    expect(narrowDelete).toContain("width: auto;");
   });
 
   it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {

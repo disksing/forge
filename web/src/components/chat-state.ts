@@ -14,6 +14,9 @@ const HISTORY_LIMIT = 5;
 const EVENT_LIMIT = 250;
 const STREAM_BATCH_WINDOW_MS = 80;
 const STATUS_SYNC_INTERVAL_MS = 2000;
+// PUA notices are live, non-durable diagnostics. Keep them readable without
+// letting a stale notice occupy the conversation until the page is refreshed.
+const NOTICE_TIMEOUT_MS = 10000;
 // Terminal materialization retries bridge the gap between a streamed terminal
 // frame and the canonical Turn projection serving it. The backoff covers slow
 // history head reads; when the budget is exhausted the Turn stays pending and
@@ -49,6 +52,7 @@ interface ResourceChatContext {
   orphanEvents: Map<string, AgentEvent[]>;
   detailChain: Promise<void>;
   notices: AgentNotice[];
+  noticeTimers: Map<string, ReturnType<typeof setTimeout>>;
   nextCursor: string;
   hasMoreBefore: boolean;
   loading: boolean;
@@ -78,6 +82,7 @@ export interface ChatSessionControllerOptions {
   streamBatchWindowMs?: number;
   statusSyncIntervalMs?: number;
   terminalRetryDelaysMs?: number[];
+  noticeTimeoutMs?: number;
   realtime?: boolean;
 }
 
@@ -93,6 +98,7 @@ export class ChatSessionController {
   private readonly streamBatchWindowMs: number;
   private readonly statusSyncIntervalMs: number;
   private readonly terminalRetryDelaysMs: number[];
+  private readonly noticeTimeoutMs: number;
   private readonly realtime: boolean;
   private activeKey = "";
   private disposed = false;
@@ -105,6 +111,7 @@ export class ChatSessionController {
     this.streamBatchWindowMs = Math.max(0, options.streamBatchWindowMs ?? STREAM_BATCH_WINDOW_MS);
     this.statusSyncIntervalMs = Math.max(1, options.statusSyncIntervalMs ?? STATUS_SYNC_INTERVAL_MS);
     this.terminalRetryDelaysMs = (options.terminalRetryDelaysMs ?? TERMINAL_RETRY_DELAYS_MS).map((value) => Math.max(0, value));
+    this.noticeTimeoutMs = Math.max(0, options.noticeTimeoutMs ?? NOTICE_TIMEOUT_MS);
     this.realtime = options.realtime !== false;
   }
 
@@ -221,6 +228,12 @@ export class ChatSessionController {
     this.emit();
   }
 
+  dismissNotice(notice: AgentNotice): void {
+    const context = this.activeContext();
+    if (!context || !this.removeNotice(context, noticeIdentity(notice))) return;
+    this.emit();
+  }
+
   // Turn detail requests are serialized per context. The Chat timeline fills
   // the viewport bottom-up one Turn at a time, and its visibility observer can
   // still produce bursts when a run of collapsed Turns enters view; a chain
@@ -301,7 +314,10 @@ export class ChatSessionController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    for (const context of this.contexts.values()) this.deactivate(context);
+    for (const context of this.contexts.values()) {
+      this.deactivate(context);
+      this.clearNotices(context);
+    }
     this.api.dispose();
     this.contexts.clear();
     this.listeners.clear();
@@ -312,7 +328,7 @@ export class ChatSessionController {
     const context: ResourceChatContext = {
       key: contextKey(workspaceId, resourceId), workspaceId, resourceId, status: null, generationId: "",
       requestGeneration: 1, streamGeneration: 0, segments: new Map(), details: new Map(), detailLoading: new Set(),
-      detailErrors: new Map(), expandedTurns: new Set(), liveEvents: new Map(), orphanEvents: new Map(), detailChain: Promise.resolve(), notices: [], nextCursor: "", hasMoreBefore: false,
+      detailErrors: new Map(), expandedTurns: new Set(), liveEvents: new Map(), orphanEvents: new Map(), detailChain: Promise.resolve(), notices: [], noticeTimers: new Map(), nextCursor: "", hasMoreBefore: false,
       loading: false, loadingOlder: false, loaded: false, error: "", stream: null, pendingEvents: [], headRefreshing: false,
       terminalMaterializing: new Set(), terminalPending: new Set(), terminalError: "", flushTimer: null, statusSyncTimer: null, statusSyncInFlight: false,
     };
@@ -681,9 +697,35 @@ export class ChatSessionController {
   }
 
   private appendNotice(context: ResourceChatContext, notice: AgentNotice): void {
-    if (context.notices.some((candidate) => noticeIdentity(candidate) === noticeIdentity(notice))) return;
+    const identity = noticeIdentity(notice);
+    if (context.notices.some((candidate) => noticeIdentity(candidate) === identity)) return;
     context.notices.push(notice);
-    if (context.notices.length > 20) context.notices.splice(0, context.notices.length - 20);
+    const timer = setTimeout(() => {
+      if (!this.removeNotice(context, identity) || !this.isActive(context)) return;
+      this.emit();
+    }, this.noticeTimeoutMs);
+    context.noticeTimers.set(identity, timer);
+    while (context.notices.length > 20) {
+      const oldest = context.notices[0];
+      if (!oldest) break;
+      this.removeNotice(context, noticeIdentity(oldest));
+    }
+  }
+
+  private removeNotice(context: ResourceChatContext, identity: string): boolean {
+    const index = context.notices.findIndex((notice) => noticeIdentity(notice) === identity);
+    if (index < 0) return false;
+    context.notices.splice(index, 1);
+    const timer = context.noticeTimers.get(identity);
+    if (timer !== undefined) clearTimeout(timer);
+    context.noticeTimers.delete(identity);
+    return true;
+  }
+
+  private clearNotices(context: ResourceChatContext): void {
+    for (const timer of context.noticeTimers.values()) clearTimeout(timer);
+    context.noticeTimers.clear();
+    context.notices = [];
   }
 
   private scheduleEventFlush(context: ResourceChatContext): void {
@@ -746,6 +788,7 @@ export class ChatSessionController {
     context.terminalMaterializing.clear();
     context.terminalPending.clear();
     context.terminalError = "";
+    this.clearNotices(context);
   }
 
   private deactivate(context?: ResourceChatContext): void {
