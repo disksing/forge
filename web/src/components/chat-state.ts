@@ -151,10 +151,11 @@ export class ChatSessionController {
     context.status = status;
     context.generationId = nextGeneration;
     const nextSessionId = String(status?.session?.id || "");
+    const nextGenerationStatus = String(status?.generation?.status || "");
     if (generationChanged) {
       this.resetForGeneration(context);
       void this.loadInitial(context);
-    } else if (context.loaded && !context.loading && nextSessionId && nextSessionId !== previousSessionId && this.hasUnresolvedGap(context, nextGeneration)) {
+    } else if (context.loaded && !context.loading && this.shouldReloadUnresolvedGap(context, nextGeneration, previousSessionId, nextSessionId, nextGenerationStatus)) {
       this.reloadGapContext(context);
     } else if (!context.loaded && !context.loading) {
       void this.loadInitial(context);
@@ -203,6 +204,12 @@ export class ChatSessionController {
     if (!generationId) return false;
     const segment = context.segments.get(generationId);
     return Boolean(segment?.gap && !(segment?.turns || []).length);
+  }
+
+  private shouldReloadUnresolvedGap(context: ResourceChatContext, generationId: string, previousSessionId: string, nextSessionId: string, nextGenerationStatus: string): boolean {
+    if (!this.hasUnresolvedGap(context, generationId)) return false;
+    if (nextSessionId && nextSessionId !== previousSessionId) return true;
+    return nextGenerationStatus !== "starting" && context.segments.get(generationId)?.gap?.code === "session_starting";
   }
 
   private reloadGapContext(context: ResourceChatContext): void {
@@ -526,8 +533,9 @@ export class ChatSessionController {
       context.status = status;
       context.generationId = nextGeneration;
       const nextSessionId = String(status.session?.id || "");
+      const nextGenerationStatus = String(status.generation?.status || "");
       if (context.stream && (!isStreamable(status) || (previousSessionId && previousSessionId !== nextSessionId))) this.closeStream(context);
-      if (context.loaded && !context.loading && nextSessionId && nextSessionId !== previousSessionId && this.hasUnresolvedGap(context, nextGeneration)) this.reloadGapContext(context);
+      if (context.loaded && !context.loading && this.shouldReloadUnresolvedGap(context, nextGeneration, previousSessionId, nextSessionId, nextGenerationStatus)) this.reloadGapContext(context);
       else if (!context.loaded && !context.loading) void this.loadInitial(context);
       else if (!context.stream) this.connect(context);
       // A terminal Turn whose compact materialization exhausted its retry

@@ -284,6 +284,10 @@ func resourceMessagePreview(value string) string {
 func historyGapFor(record generationRecord, err error) *resourceHistoryGap {
 	gap := &resourceHistoryGap{Code: "session_unreadable", Message: err.Error(), Retryable: true}
 	if strings.TrimSpace(record.AgentHubSessionID) == "" {
+		if record.Status == "starting" {
+			gap.Code, gap.Message, gap.Retryable = "session_starting", "generation is waiting for its AgentHub Session to start", true
+			return gap
+		}
 		gap.Code, gap.Message, gap.Retryable = "session_missing", "generation has no AgentHub Session reference", false
 		return gap
 	}

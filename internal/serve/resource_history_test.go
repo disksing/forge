@@ -2,6 +2,7 @@ package serve
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -109,6 +110,33 @@ func historyTestTurn(id string, first int64, closed bool) agentHubTurn {
 			Type: "message", Role: "user", Text: "prompt " + id,
 			StartEventID: first, EndEventID: first, StartedAt: "2026-08-13T00:00:00Z", EndedAt: "2026-08-13T00:00:00Z", Count: 1,
 		}},
+	}
+}
+
+func TestHistoryGapForDistinguishesStartingSessionFromMissingHistory(t *testing.T) {
+	tests := []struct {
+		name      string
+		status    string
+		code      string
+		message   string
+		retryable bool
+	}{
+		{
+			name: "starting generation", status: "starting", code: "session_starting",
+			message: "generation is waiting for its AgentHub Session to start", retryable: true,
+		},
+		{
+			name: "unbound generation outside startup", status: "recovering", code: "session_missing",
+			message: "generation has no AgentHub Session reference", retryable: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gap := historyGapFor(generationRecord{Status: test.status}, errors.New("unbound session"))
+			if gap.Code != test.code || gap.Message != test.message || gap.Retryable != test.retryable {
+				t.Fatalf("history gap = %#v", gap)
+			}
+		})
 	}
 }
 

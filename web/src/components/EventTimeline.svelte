@@ -370,7 +370,11 @@
         </div>
       {/if}
       {#if block.kind === "gap"}
-        <div class="conversation-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History unavailable</strong><small>{block.gap?.message || "This generation could not be read."}</small></span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
+        {#if block.gap?.code === "session_starting"}
+          <div class="conversation-session-starting" role="status" aria-live="polite" data-timeline-key={block.key}><Icon name="loader-circle" /><span><strong>Starting agent…</strong><small>Preparing the session. This can take a few seconds.</small></span></div>
+        {:else}
+          <div class="conversation-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History unavailable</strong><small>{block.gap?.message || "This generation could not be read."}</small></span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
+        {/if}
       {:else}
         <section class="conversation-turn" class:conversation-turn-loading={block.loading} data-timeline-key={block.key} use:observeTurn={autoExpandReference(block)}>
           {#if block.turn && !block.items && !block.events}

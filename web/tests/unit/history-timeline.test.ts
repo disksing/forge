@@ -25,6 +25,36 @@ function installMarkdownVendors(): void {
 }
 
 describe("HistoryTimeline", () => {
+  it("shows a starting session as progress rather than a history gap", async () => {
+    const generation = {
+      generation: 1, generationId: "gen-starting", title: "Starting", status: "starting",
+      createdAt: "2026-08-15T01:00:00Z", updatedAt: "2026-08-15T01:00:00Z", agentName: "fake-agent",
+      provider: "Fake", model: "fake-model",
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      resourceId: "project-starting",
+      segments: [{ generation, turns: [], gap: {
+        code: "session_starting", message: "generation is waiting for its AgentHub Session to start", retryable: true,
+      } }],
+      page: { limit: 20, hasMore: false },
+    }), { headers: { "content-type": "application/json" } })));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(HistoryTimeline, { target, props: {
+      workspaceId: "workspace-starting", resourceId: "project-starting", artifacts: [],
+      resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
+      onOpenLegacy: () => undefined,
+    } });
+    cleanups.push(() => unmount(component));
+
+    const progress = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLElement>(".history-session-starting");
+      expect(value?.textContent).toContain("Starting agent…");
+      return value!;
+    });
+    expect(progress.getAttribute("role")).toBe("status");
+    expect(target.querySelector(".history-gap")).toBeNull();
+  });
+
   it("forwards workspace file links from expanded assistant messages", async () => {
     installMarkdownVendors();
     const generation = {

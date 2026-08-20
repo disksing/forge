@@ -287,6 +287,27 @@
   color: var(--accent);
 }
 
+[data-component-owner="history-timeline"] .history-session-starting {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 9px;
+  margin: 10px 0;
+  padding: 10px 12px;
+}
+
+[data-component-owner="history-timeline"] .history-session-starting > span {
+  flex: 1;
+}
+
+[data-component-owner="history-timeline"] .history-session-starting strong {
+  color: var(--text);
+}
+
 [data-component-owner="history-timeline"] .history-legacy {
   border: 1px solid var(--line);
   border-radius: 8px;

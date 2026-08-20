@@ -223,7 +223,11 @@
       <div class="history-track">
         {#each group.blocks as block (block.key)}
           {#if block.kind === "gap"}
-            <div class="history-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History gap</strong> — {block.gap?.message || "This generation could not be read."}</span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
+            {#if block.gap?.code === "session_starting"}
+              <div class="history-session-starting" role="status" data-timeline-key={block.key}><Icon name="loader-circle" className="spin" /><span><strong>Starting agent…</strong> Preparing the session. This can take a few seconds.</span><button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button></div>
+            {:else}
+              <div class="history-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History gap</strong> — {block.gap?.message || "This generation could not be read."}</span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
+            {/if}
           {:else if block.turn}
             <section class="history-turn" class:history-turn-loading={block.loading} data-timeline-key={turnKey(block)}>
               <span class="history-turn-dot" data-tone={statusTone(block.turn.status)}></span>

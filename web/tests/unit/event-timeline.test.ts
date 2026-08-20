@@ -142,6 +142,34 @@ function historyGeneration(resourceId: string, generation: number, generationId:
 }
 
 describe("EventTimeline", () => {
+  it("renders an unbound starting session as progress instead of a history error", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const starting = status("task-a", "gen-task-a", 1, "working", "starting", "starting");
+    delete starting.session;
+    const generation = { generation: 1, generationId: "gen-task-a", title: "task-a", status: "starting", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
+    const page = {
+      resourceId: "task-a",
+      segments: [{ generation, turns: [], gap: { code: "session_starting", message: "generation is waiting for its AgentHub Session to start", retryable: true } }],
+      page: { limit: 5, hasMore: false },
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(page), { status: 200, headers: { "content-type": "application/json" } })));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "chat-timeline";
+    const component = mount(EventTimeline, { target, props: { channel: createModelChannel(model("task-a", starting)) } });
+    cleanups.push(() => unmount(component));
+
+    const progress = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLElement>(".conversation-session-starting");
+      expect(value?.textContent).toContain("Starting agent…");
+      return value!;
+    });
+    expect(progress.getAttribute("role")).toBe("status");
+    expect(progress.querySelector("[data-lucide='loader-circle']")).not.toBeNull();
+    expect(target.querySelector(".conversation-gap")).toBeNull();
+    expect(target.textContent).not.toContain("History unavailable");
+  });
+
   it("opens a workspace file link from an assistant message in a read-only preview", async () => {
     installMarkdownVendors();
     FakeEventSource.instances = [];
