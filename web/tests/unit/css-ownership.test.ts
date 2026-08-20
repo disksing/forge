@@ -380,6 +380,24 @@ describe("CSS ownership", () => {
     expect(narrowDelete).toContain("width: auto;");
   });
 
+  it("keeps Workspace Agent binding selectors at a 44px mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const selector = ':where([data-component-owner="resource-settings-panel"]) .resource-settings-agent-bindings .agent-binding-button';
+    const start = css.indexOf(selector);
+    expect(start, selector).toBeGreaterThanOrEqual(0);
+    const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    expect(rule).toContain("min-height: 44px;");
+
+    // The shared selector keeps its width constraints so the taller mobile
+    // hit target cannot introduce horizontal overflow in the settings card.
+    const selectorCss = read("src/components/AgentBindingSelector.css");
+    const buttonSelector = ':where([data-component-owner="agent-binding-selector"]) .agent-binding-button';
+    const buttonStart = selectorCss.indexOf(buttonSelector);
+    expect(buttonStart, buttonSelector).toBeGreaterThanOrEqual(0);
+    const buttonRule = selectorCss.slice(selectorCss.indexOf("{", buttonStart), selectorCss.indexOf("}", buttonStart) + 1);
+    expect(buttonRule).toContain("max-width: 100%;");
+  });
+
   it("keeps the create dialog close control at a mobile touch size without changing the header footprint", () => {
     const css = read("src/components/CreateDialog.css");
     const body = (selector: string) => {

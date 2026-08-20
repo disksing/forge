@@ -918,6 +918,32 @@ test("keeps the project binding menu from covering the next selector", async ({ 
   expect(harness.bindingBodies).toHaveLength(0);
 });
 
+test("keeps Workspace Agent binding selectors at a mobile touch size without overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page, "workspace");
+  await page.goto("/w/ws-test");
+
+  await page.getByRole("tab", { name: "Settings", exact: true }).click();
+  const details = page.locator("#detailsPanel");
+  const labels = ["Workspace Agent binding", "New Project default binding", "New Task default binding"];
+  for (const label of labels) {
+    const trigger = details.getByRole("button", { name: label, exact: true });
+    await expect(trigger).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    const box = await trigger.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(440);
+  }
+
+  const horizontalOverflow = await page.locator("#detailsContent").evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(documentOverflow).toBeLessThanOrEqual(1);
+});
+
 test("navigates to a newly created project", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");

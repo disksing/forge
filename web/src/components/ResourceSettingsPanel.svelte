@@ -195,7 +195,7 @@
         </div>
       </div>
     </section>
-    <section class="resource-settings-section">
+    <section class="resource-settings-section resource-settings-agent-bindings">
       <div class="resource-settings-section-head">
         <strong>Agent Bindings</strong>
         <span>Which agent profile runs this Workspace and resources created under it.</span>

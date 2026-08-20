@@ -233,6 +233,12 @@
 }
 
 @media (max-width: 980px) {
+  /* Keep the three Workspace binding selectors easy to tap without changing
+     the selector's intrinsic width or its surrounding row layout. */
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-agent-bindings .agent-binding-button {
+    min-height: 44px;
+  }
+
   :where([data-component-owner="resource-settings-panel"]) .resource-settings-name-row .secondary-button,
   :where([data-component-owner="resource-settings-panel"]) .resource-settings-desc-row .secondary-button {
     min-height: 44px;
