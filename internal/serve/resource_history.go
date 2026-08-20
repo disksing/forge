@@ -514,11 +514,37 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 	if err != nil {
 		return resourceHistoryTurnDetail{}, err
 	}
+	return m.resourceHistoryTurnForRecord(ctx, workspace, resourceID, instanceID, record, reference.TurnID)
+}
+
+// resourceHistoryTurnByID resolves a Turn named by the live event identity
+// instead of requiring the caller to already have its opaque History
+// reference. Terminal events can outlive the small History head page in the
+// web client, so recovery must not depend on the Turn still being among the
+// latest summaries.
+func (m *agentManager) resourceHistoryTurnByID(ctx context.Context, workspace serveWorkspace, resourceID, generationID, turnID string) (resourceHistoryTurnDetail, error) {
+	resourceID = normalizedResourceID(resourceID)
+	generationID, turnID = strings.TrimSpace(generationID), strings.TrimSpace(turnID)
+	if generationID == "" || turnID == "" {
+		return resourceHistoryTurnDetail{}, &resourceAPIError{Code: "invalid_request", Message: "generationId and turnId are required"}
+	}
+	record, err := resourceHistoryGenerationByID(workspace, resourceID, generationID)
+	if err != nil {
+		return resourceHistoryTurnDetail{}, err
+	}
+	instanceID, err := resourceHistoryInstanceID(workspace)
+	if err != nil {
+		return resourceHistoryTurnDetail{}, err
+	}
+	return m.resourceHistoryTurnForRecord(ctx, workspace, resourceID, instanceID, record, turnID)
+}
+
+func (m *agentManager) resourceHistoryTurnForRecord(ctx context.Context, workspace serveWorkspace, resourceID, instanceID string, record generationRecord, turnID string) (resourceHistoryTurnDetail, error) {
 	_, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		return resourceHistoryTurnDetail{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
-	turn, latestEventID, err := client.SessionTurn(ctx, record.AgentHubSessionID, reference.TurnID)
+	turn, latestEventID, err := client.SessionTurn(ctx, record.AgentHubSessionID, turnID)
 	if err != nil {
 		var upstream *agentHubAPIError
 		if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
@@ -533,6 +559,9 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 	summary, err := historyTurnSummary(instanceID, resourceID, record, turn, mailbox)
 	if err != nil {
 		return resourceHistoryTurnDetail{}, err
+	}
+	if summary.TurnID != turnID {
+		return resourceHistoryTurnDetail{}, &resourceAPIError{Code: "history_corrupt", Message: "AgentHub Turn identity does not match the requested Turn"}
 	}
 	detail := resourceHistoryTurnDetail{
 		Turn: summary, Items: []resourceHistoryTurnItem{}, Deliveries: historyDeliveries(mailbox, record.GenerationID, summary.TurnID),
@@ -630,6 +659,15 @@ func (m *agentManager) handleResourceHistory(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if len(parts) == 2 && parts[0] == "turns" {
+		if parts[1] == "by-id" {
+			detail, historyErr := m.resourceHistoryTurnByID(r.Context(), workspace, resourceID, r.URL.Query().Get("generationId"), r.URL.Query().Get("turnId"))
+			if historyErr != nil {
+				writeError(w, historyErr, resourceErrorStatus(historyErr))
+				return
+			}
+			writeJSON(w, detail)
+			return
+		}
 		detail, historyErr := m.resourceHistoryTurn(r.Context(), workspace, resourceID, parts[1])
 		if historyErr != nil {
 			writeError(w, historyErr, resourceErrorStatus(historyErr))

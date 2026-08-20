@@ -175,6 +175,68 @@ func TestResourceHistoryPreservesCancelledTurnStatus(t *testing.T) {
 	}
 }
 
+func TestResourceHistoryTurnByIDDoesNotDependOnHeadPage(t *testing.T) {
+	fake := newHistoryFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	now := time.Now().Format(time.RFC3339Nano)
+	if err := saveGenerationRecord(workspace.Path, generationRecord{
+		ID: "gen-targeted-history", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-targeted-history", AgentHubSessionID: "ses-targeted-history",
+		Status: "idle", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	fake.turns["ses-targeted-history"] = []agentHubTurn{
+		historyTestTurn("turn-old", 1, true),
+		historyTestTurn("turn-middle", 3, true),
+		historyTestTurn("turn-new", 5, true),
+	}
+	fake.mu.Unlock()
+
+	head := httptest.NewRecorder()
+	manager.server.handleWorkspace(head, httptest.NewRequest(http.MethodGet,
+		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/history/turns?limit=1", nil))
+	var page resourceHistoryPage
+	if head.Code != http.StatusOK || json.Unmarshal(head.Body.Bytes(), &page) != nil ||
+		len(page.Segments) != 1 || len(page.Segments[0].Turns) != 1 || page.Segments[0].Turns[0].TurnID != "turn-new" {
+		t.Fatalf("history head = %d %#v %s", head.Code, page, head.Body.String())
+	}
+
+	targeted := httptest.NewRecorder()
+	manager.server.handleWorkspace(targeted, httptest.NewRequest(http.MethodGet,
+		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/history/turns/by-id?generationId=gen-targeted-history&turnId=turn-old", nil))
+	var detail resourceHistoryTurnDetail
+	if targeted.Code != http.StatusOK || json.Unmarshal(targeted.Body.Bytes(), &detail) != nil ||
+		detail.Turn.TurnID != "turn-old" || detail.Turn.Reference == "" || len(detail.Items) != 1 {
+		t.Fatalf("targeted Turn = %d %#v %s", targeted.Code, detail, targeted.Body.String())
+	}
+
+	tests := []struct {
+		name string
+		path string
+		code int
+		want string
+	}{
+		{name: "missing identity", path: "?generationId=gen-targeted-history", code: http.StatusBadRequest, want: "invalid_request"},
+		{name: "unknown generation", path: "?generationId=gen-missing&turnId=turn-old", code: http.StatusConflict, want: "generation_changed"},
+		{name: "unknown turn", path: "?generationId=gen-targeted-history&turnId=turn-missing", code: http.StatusNotFound, want: "history_turn_not_found"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			manager.server.handleWorkspace(recorder, httptest.NewRequest(http.MethodGet,
+				"/api/workspaces/"+workspace.ID+"/resources/project1.task1/history/turns/by-id"+test.path, nil))
+			if recorder.Code != test.code || !strings.Contains(recorder.Body.String(), test.want) {
+				t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestResourceHistoryPaginatesAcrossGenerationsWithGap(t *testing.T) {
 	fake := newHistoryFakeAgentHub()
 	hub := httptest.NewServer(fake)

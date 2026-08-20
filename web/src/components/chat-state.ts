@@ -1,4 +1,4 @@
-import { ApiClient, StaleResponseError } from "../api/client";
+import { ApiClient, ApiError, StaleResponseError } from "../api/client";
 import type {
   AgentEvent, AgentNotice, AgentTurnItem, ChatContextSnapshot, ConversationBlock,
   ResourceHistoryGeneration, ResourceHistoryPage, ResourceHistorySegment,
@@ -18,8 +18,8 @@ const STATUS_SYNC_INTERVAL_MS = 2000;
 // letting a stale notice occupy the conversation until the page is refreshed.
 const NOTICE_TIMEOUT_MS = 10000;
 // Terminal materialization retries bridge the gap between a streamed terminal
-// frame and the canonical Turn projection serving it. The backoff covers slow
-// history head reads; when the budget is exhausted the Turn stays pending and
+// frame and the canonical Turn detail serving it. The backoff covers slow
+// projection reads; when the budget is exhausted the Turn stays pending and
 // later status/head syncs keep retrying instead of leaving a stuck error.
 const TERMINAL_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000];
 const HIDDEN_EVENT_TYPES = new Set(["session.created", "session.provider", "session.launch-environment"]);
@@ -396,6 +396,26 @@ export class ChatSessionController {
     context.hasMoreBefore = Boolean(page.page?.hasMore && context.nextCursor);
   }
 
+  private mergeTurnSummary(context: ResourceChatContext, turn: ResourceHistoryTurnSummary): void {
+    const id = turn.generation.generationId;
+    const segment = context.segments.get(id);
+    if (!segment) {
+      context.segments.set(id, { generation: turn.generation, turns: [turn] });
+    } else {
+      const turns = new Map(segment.turns.map((candidate) => [candidate.reference, candidate]));
+      turns.set(turn.reference, turn);
+      segment.turns = [...turns.values()].sort((left, right) => left.startEventId - right.startEventId);
+      segment.generation = turn.generation;
+      // A successful targeted Turn read proves this generation is readable.
+      // Do not let a stale gap classification override the canonical detail.
+      segment.gap = undefined;
+    }
+    const orphan = context.orphanEvents.get(turn.turnId);
+    if (!orphan) return;
+    context.liveEvents.set(turn.reference, compactTimelineEvents(mergeCanonicalEvents([...(context.liveEvents.get(turn.reference) || []), ...orphan])));
+    context.orphanEvents.delete(turn.turnId);
+  }
+
   private blocks(context: ResourceChatContext): ConversationBlock[] {
     const blocks: ConversationBlock[] = [];
     const segments = [...context.segments.values()].sort((left, right) => left.generation.generation - right.generation.generation);
@@ -595,36 +615,37 @@ export class ChatSessionController {
       for (let attempt = 0; attempt <= this.terminalRetryDelaysMs.length; attempt++) {
         if (!this.isCurrent(context, generation)) return;
         try {
-          let summary = this.findTurnById(context, generationId, turnId);
-          if (!summary?.closed) {
-            const page = await this.api.latest<ResourceHistoryPage>(historyPath(context), { scope: requestScope(context, `terminal-head:${materializationKey}`) });
-            if (!this.isCurrent(context, generation)) return;
-            this.mergePage(context, page);
-            summary = this.findTurnById(context, generationId, turnId);
+          const detail = await this.api.latest<ResourceHistoryTurnDetail>(turnByIDPath(context, generationId, turnId), { scope: requestScope(context, `terminal:${materializationKey}`) });
+          if (!this.isCurrent(context, generation)) return;
+          if (detail.turn.generation.generationId !== generationId || detail.turn.turnId !== turnId) {
+            throw new Error("Targeted Turn history returned a mismatched identity.");
           }
-          if (!summary?.closed) {
-            failure = terminalFailureMessage(context, generationId, summary);
+          this.mergeTurnSummary(context, detail.turn);
+          if (!detail.turn.closed) {
+            failure = terminalFailureMessage(context, generationId, detail.turn);
             throw new Error(failure);
           }
-          const detail = await this.api.latest<ResourceHistoryTurnDetail>(turnPath(context, summary.reference), { scope: requestScope(context, `terminal:${materializationKey}`) });
-          if (!this.isCurrent(context, generation)) return;
           // A repeated terminal frame may arrive while the history requests are
           // in flight. Fold it before replacing the raw live view with the
           // canonical compact detail so a later batch flush cannot regress it.
           this.flushEvents(context, false);
-          context.details.set(summary.reference, detail);
-          context.liveEvents.delete(summary.reference);
+          context.details.set(detail.turn.reference, detail);
+          context.liveEvents.delete(detail.turn.reference);
           this.clearTerminalErrorIfHealed(context);
           this.emit();
           return;
         } catch (error) {
           if (error instanceof StaleResponseError || !this.isCurrent(context, generation)) return;
-          failure = errorMessage(error);
+          failure = error instanceof ApiError && error.code === "history_turn_not_found"
+            ? terminalFailureMessage(context, generationId, undefined)
+            : context.segments.get(generationId)?.gap
+              ? terminalFailureMessage(context, generationId, undefined)
+              : errorMessage(error);
           if (attempt < this.terminalRetryDelaysMs.length) await delay(this.terminalRetryDelaysMs[attempt]);
         }
       }
       // The projection stayed unconfirmed past the retry budget (a slow or
-      // unavailable history head). Keep the raw live view, remember the Turn
+      // unavailable canonical detail). Keep the raw live view, remember the Turn
       // as pending, and let later status/head syncs retry instead of leaving
       // the raw block and a stale error on screen forever.
       context.terminalPending.add(turnId);
@@ -916,6 +937,11 @@ function turnPath(context: ResourceChatContext, reference: string): string {
   return `${resourceBase(context)}/history/turns/${encodeURIComponent(reference)}`;
 }
 
+function turnByIDPath(context: ResourceChatContext, generationId: string, turnId: string): string {
+  const query = new URLSearchParams({ generationId, turnId });
+  return `${resourceBase(context)}/history/turns/by-id?${query}`;
+}
+
 function currentGenerationHead(context: ResourceChatContext): number {
   const summaries = [...context.segments.values()].filter((segment) => segment.generation.generationId === context.generationId).flatMap((segment) => segment.turns || []);
   const raw = [...context.liveEvents.values()].flat();
@@ -958,13 +984,13 @@ function isTurnTerminal(event: AgentEvent): boolean {
 }
 
 // terminalFailureMessage classifies why the canonical Turn is not confirmed
-// after a terminal frame: an upstream gap means the history head itself is
-// degraded, a missing summary means the head page no longer shows the Turn,
-// and an open summary means the projection has not folded the terminal yet.
+// after a terminal frame: an upstream gap means History itself is degraded, a
+// missing summary means the targeted projection is not available yet, and an
+// open summary means the projection has not folded the terminal yet.
 // All three are transient, so every message says the retry continues.
 function terminalFailureMessage(context: ResourceChatContext, generationId: string, summary: ResourceHistoryTurnSummary | undefined): string {
   if (context.segments.get(generationId)?.gap) return "Turn history is temporarily unavailable; the timeline will keep retrying in the background.";
-  if (!summary) return "The completed Turn is missing from the history head; the timeline will keep retrying in the background.";
+  if (!summary) return "The completed Turn is not available in canonical History yet; the timeline will keep retrying in the background.";
   return "Turn projection is not closed yet; the timeline will keep retrying in the background.";
 }
 
