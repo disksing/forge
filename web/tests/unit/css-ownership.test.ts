@@ -281,6 +281,23 @@ describe("CSS ownership", () => {
     expect(rule).toContain("min-height: 44px;");
   });
 
+  it("keeps WorkspaceSwitcher controls at a 44px mobile touch size without growing its header", () => {
+    const css = read("src/components/WorkspaceSwitcher.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    const mobileCss = css.slice(mobileStart);
+
+    expect(mobileCss).toContain(
+      ':where([data-component-owner="workspace-switcher"]) .workspace-switcher-head {\n    padding: 1px 6px;\n  }',
+    );
+    expect(mobileCss).toContain(
+      ':where([data-component-owner="workspace-switcher"]) .workspace-open,\n  :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {\n    min-height: 44px;\n  }',
+    );
+    expect(mobileCss).toContain(
+      ':where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {\n    height: 44px;\n  }',
+    );
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {

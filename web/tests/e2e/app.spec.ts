@@ -1775,6 +1775,56 @@ test("closes the 440px navigation drawer without changing the selected resource"
   await expect(page.locator("#projectTree .tree-item.active")).toContainText("Infrastructure task");
 });
 
+test("keeps the 440px workspace drawer controls at a 44px touch size", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-b");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+
+  const head = page.locator(".workspace-switcher-head");
+  const openWorkspace = page.locator("#workspaceOpen");
+  const switchWorkspace = page.locator("#workspaceSwitcher");
+  await expect(openWorkspace).toBeVisible();
+  await expect(switchWorkspace).toBeVisible();
+  await expect.poll(async () => (await head.boundingBox())?.x ?? -1).toBeGreaterThanOrEqual(0);
+  await expect(openWorkspace).toHaveAttribute("title", "Open workspace");
+  await expect(openWorkspace).toHaveAttribute("aria-label", "Open workspace");
+  await expect(switchWorkspace).toHaveAttribute("title", "Switch workspace");
+  await expect(switchWorkspace).toHaveAttribute("aria-haspopup", "listbox");
+
+  const headBox = (await head.boundingBox())!;
+  const openBox = (await openWorkspace.boundingBox())!;
+  const switchBox = (await switchWorkspace.boundingBox())!;
+  expect(headBox.height).toBe(46);
+  expect(openBox.height).toBeGreaterThanOrEqual(44);
+  expect(switchBox.height).toBeGreaterThanOrEqual(44);
+  expect(switchBox.width).toBe(32);
+  expect(openBox.x).toBeGreaterThanOrEqual(headBox.x);
+  expect(openBox.x + openBox.width).toBeLessThanOrEqual(headBox.x + headBox.width);
+  expect(switchBox.x).toBeGreaterThanOrEqual(headBox.x);
+  expect(switchBox.x + switchBox.width).toBeLessThanOrEqual(headBox.x + headBox.width);
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await switchWorkspace.click();
+  await expect(page.locator("#workspaceMenu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#workspaceMenu")).toBeHidden();
+  await page.getByRole("button", { name: "Close navigation" }).click();
+  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
+  await expect(page).toHaveURL(/\/w\/ws-b$/);
+});
+
 test("merges details and chat into one tabbed column in the two-column layout", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 800 });
   await installShellMockApi(page);

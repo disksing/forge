@@ -258,3 +258,20 @@
   width: 14px;
   height: 14px;
 }
+
+@media (max-width: 980px) {
+  /* Keep the 46px workspace header footprint while expanding both controls
+     to a reliable mobile touch target. */
+  :where([data-component-owner="workspace-switcher"]) .workspace-switcher-head {
+    padding: 1px 6px;
+  }
+
+  :where([data-component-owner="workspace-switcher"]) .workspace-open,
+  :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {
+    min-height: 44px;
+  }
+
+  :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {
+    height: 44px;
+  }
+}
