@@ -243,6 +243,21 @@
   align-items: center;
 }
 
+/* The shared selector keeps a compact 28px control for settings panels. Give
+   the composer binding trigger the same 44px touch target as its sibling
+   actions while keeping the bar's 32px layout footprint. Keep the selector
+   root at the trigger's actual size so the fixed menu remains anchored to the
+   visible button instead of its negative margins. */
+:where([data-component-owner="chat-composer"]) .chat-agent-binding .agent-binding {
+  height: 44px;
+  margin: -6px 0;
+}
+
+:where([data-component-owner="chat-composer"]) .chat-agent-binding .agent-binding-button {
+  height: 44px;
+  min-height: 44px;
+}
+
 /* Keep the composer bar's 32px layout footprint while giving every bottom
    action the 44px minimum touch target used by the mobile controls. */
 :where([data-component-owner="chat-composer"]) .chat-send-button,
