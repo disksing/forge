@@ -2081,6 +2081,59 @@ test("keeps the 440px Projects actions at a 44px touch size", async ({ page }) =
   await expect(page.getByRole("dialog", { name: "Create project" })).toHaveCount(0);
 });
 
+test("keeps 440px Projects resource rows at a 44px touch size without changing tree semantics", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+
+  const projectRow = page.locator("#projectTree > .tree-item").first();
+  const taskRows = page.locator("#projectTree .task-item");
+  await expect.poll(async () => (await projectRow.boundingBox())?.x ?? -1).toBeGreaterThanOrEqual(0);
+  await expect(projectRow).toHaveAttribute("type", "button");
+  await expect(projectRow).toHaveAttribute("aria-label", /Open tasks: 2 tasks; 0 working/);
+  await expect(taskRows).toHaveCount(2);
+  await expect(taskRows.first()).toHaveAttribute("type", "button");
+  await expect(taskRows.first()).toHaveAttribute("aria-label", /Infrastructure task.*Not started/);
+  await expect(taskRows.nth(1)).toHaveAttribute("aria-label", /Follow-up task.*Not started/);
+
+  const projectBox = await projectRow.boundingBox();
+  expect(projectBox).not.toBeNull();
+  for (const row of [projectRow, taskRows.first(), taskRows.nth(1)]) {
+    const box = await row.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(440);
+    await expect(row.locator('[role="checkbox"]')).toHaveAttribute("aria-checked", "false");
+  }
+
+  const taskBox = await taskRows.first().boundingBox();
+  expect(taskBox).not.toBeNull();
+  expect(taskBox!.x).toBeGreaterThan(projectBox!.x);
+  await expect(taskRows.first().locator(".task-state-icon")).toHaveCount(1);
+
+  const treeSection = page.locator("#mobileSidebar .tree-section");
+  await expect(treeSection).toBeVisible();
+  expect(await treeSection.evaluate((node) => getComputedStyle(node).overflowY)).toBe("auto");
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await taskRows.nth(1).click();
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task2$/);
+  await expect(page.locator("#projectTree .tree-item.active")).toContainText("Follow-up task");
+});
+
 test("keeps Workspace Wiki file rows at a 44px touch size without overflow", async ({ page }) => {
   await page.setViewportSize({ width: 440, height: 844 });
   await installShellMockApi(page);

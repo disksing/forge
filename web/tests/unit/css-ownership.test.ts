@@ -341,6 +341,15 @@ describe("CSS ownership", () => {
     );
   });
 
+  it("keeps mobile ProjectTree resource rows at a 44px touch size", () => {
+    const css = read("src/components/ProjectTree.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    expect(css.slice(mobileStart)).toContain(
+      ':where([data-component-owner="project-tree"]) .tree-item {\n    min-height: 44px;\n  }',
+    );
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {
