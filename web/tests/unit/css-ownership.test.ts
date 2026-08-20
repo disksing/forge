@@ -298,6 +298,15 @@ describe("CSS ownership", () => {
     );
   });
 
+  it("keeps mobile file-browser rows at a 44px touch size", () => {
+    const css = read("src/components/FileBrowser.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    expect(css.slice(mobileStart)).toContain(
+      ':where([data-component-owner="file-browser"]) .artifact-row {\n    min-height: 44px;\n  }',
+    );
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {

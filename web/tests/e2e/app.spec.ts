@@ -567,7 +567,13 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     "ws-b": {
       root: "/tmp/ws-b",
       projects: [{ id: "project2", type: "project", title: "Second workspace project", path: "project2", archived: false, children: [{ id: "project2.task1", type: "task", title: "Second workspace task", path: "project2/task1", archived: false }] }],
-      wiki: { exists: false, entries: [] },
+      wiki: {
+        exists: true,
+        entries: [
+          { name: "index.md", path: "wiki/index.md", type: "file", size: 147 },
+          { name: "link-preview.md", path: "wiki/link-preview.md", type: "file", size: 102 },
+        ],
+      },
     },
   };
   await page.route("**/api/**", async (route) => {
@@ -622,7 +628,13 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
         artifacts: [], repos: [], templates: [],
       });
     }
-    if (/^\/api\/workspaces\/ws-[ab]\/files$/.test(path)) return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
+    if (/^\/api\/workspaces\/ws-[ab]\/files$/.test(path)) {
+      const filePath = url.searchParams.get("path") || "";
+      if (filePath.startsWith("wiki/")) {
+        return json(route, { path: filePath, name: filePath.split("/").pop(), content: "# Workspace Wiki\n\nStable wiki content.", contentHash: "wiki-v1" });
+      }
+      return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
+    }
     return json(route, { error: `Unhandled shell request: ${method} ${path}` }, 500);
   });
   return { uiStateBodies, failNextUIStateSave: () => { failNextSave = true; } };
@@ -1898,6 +1910,61 @@ test("keeps the 440px workspace drawer controls at a 44px touch size", async ({ 
   await page.getByRole("button", { name: "Close navigation" }).click();
   await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
   await expect(page).toHaveURL(/\/w\/ws-b$/);
+});
+
+test("keeps Workspace Wiki file rows at a 44px touch size without overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-b");
+
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("tab", { name: "Wiki", exact: true }).click();
+  const browser = panel.locator('[data-component-owner="file-browser"]');
+  const rows = browser.locator("button.artifact-row.file");
+  await expect(rows).toHaveCount(2);
+
+  for (const name of ["index.md", "link-preview.md"]) {
+    const row = rows.filter({ hasText: name });
+    await expect(row).toHaveCount(1);
+    await expect(row).toHaveAttribute("type", "button");
+    await expect(row).toHaveAccessibleName(new RegExp(`${name} \\d+ B`));
+    const box = await row.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(440);
+
+    const download = row.locator("a.artifact-download");
+    await expect(download).toHaveAttribute("download", name);
+    await expect(download).toHaveAttribute("aria-label", `Download ${name}`);
+    await expect(download).toHaveAttribute("href", new RegExp(`path=wiki%2F${name}&download=1$`));
+  }
+
+  const previewRow = rows.filter({ hasText: "link-preview.md" });
+  await previewRow.click();
+  await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");
+  await expect(previewRow).toHaveClass(/active/);
+  const activeBox = await previewRow.boundingBox();
+  expect(activeBox).not.toBeNull();
+  expect(activeBox!.height).toBeGreaterThanOrEqual(44);
+
+  const detailsSize = await page.locator("#detailsContent").evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  expect(detailsSize.scrollWidth).toBeLessThanOrEqual(detailsSize.clientWidth);
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await page.getByRole("dialog", { name: "File preview" }).getByRole("button", { name: "Close" }).click();
 });
 
 test("merges details and chat into one tabbed column in the two-column layout", async ({ page }) => {
