@@ -233,6 +233,33 @@ describe("CSS ownership", () => {
     expect(trigger).toContain("height: 44px;");
   });
 
+  it("keeps the mobile navigation drawer brand actions at a 44px touch size", () => {
+    const css = read("src/components/AppShell.css");
+    const body = (selector: string) => {
+      const start = css.lastIndexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const mobileStart = css.indexOf("@media (max-width:980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    for (const selector of [
+      ':where([data-component-owner="app-shell"]) .brand-settings {',
+      ':where([data-component-owner="app-shell"]) .brand-doctor {',
+    ]) {
+      expect(css.lastIndexOf(selector), selector).toBeGreaterThan(mobileStart);
+    }
+
+    const settings = body(':where([data-component-owner="app-shell"]) .brand-settings {');
+    expect(settings).toContain("flex: 0 0 44px;");
+    expect(settings).toContain("width: 44px;");
+    expect(settings).toContain("height: 44px;");
+
+    const doctor = body(':where([data-component-owner="app-shell"]) .brand-doctor {');
+    expect(doctor).toContain("min-width: 44px;");
+    expect(doctor).toContain("height: 44px;");
+  });
+
   it("keeps resource detail tabs at a mobile touch target size", () => {
     const css = read("src/components/DetailPanel.css");
     const selector = ':where([data-component-owner="detail-panel"]) .details-tab';

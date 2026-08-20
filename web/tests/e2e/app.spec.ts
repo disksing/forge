@@ -716,6 +716,25 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
   await page.goto("/w/ws-test/r/project1.task1");
   await expect(page.locator("#doctorButton")).toHaveAttribute("aria-label", "12 errors and 0 warnings");
   await page.locator("#mobileMenuButton").click();
+
+  const brandBand = page.locator("#mobileSidebar .brand-band");
+  const brandBandBox = (await brandBand.boundingBox())!;
+  expect(brandBandBox.height).toBe(56);
+  const doctorButton = page.locator("#doctorButton");
+  const settingsButton = page.locator("#systemSettingsButton");
+  await expect(doctorButton).toHaveAttribute("title", "Workspace problems");
+  await expect(doctorButton).toHaveAttribute("type", "button");
+  await expect(settingsButton).toHaveAttribute("aria-label", "Settings");
+  await expect(settingsButton).toHaveAttribute("title", "Settings");
+  await expect(settingsButton).toHaveAttribute("type", "button");
+  for (const button of [doctorButton, settingsButton]) {
+    const box = (await button.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(brandBandBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(brandBandBox.x + brandBandBox.width + 1);
+  }
+
   await page.locator("#doctorButton").click();
   const dialog = page.getByRole("dialog", { name: "Workspace problems" });
   await expect(dialog).toContainText("PUA managed AGENTS.md section has been modified");
@@ -731,6 +750,12 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
   await expect.poll(() => content.evaluate((node) => node.scrollTop > 0)).toBe(true);
   await dialog.getByRole("button", { name: "Refresh workspace checks" }).click();
   await expect.poll(() => refreshRequests).toBe(1);
+
+  await close.click();
+  await page.locator("#mobileMenuButton").click();
+  await settingsButton.click();
+  await expect(page.getByRole("dialog", { name: "System Settings" })).toBeVisible();
+  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
 });
 
 test("edits Markdown source through the dialog and saves with a content hash", async ({ page }) => {
