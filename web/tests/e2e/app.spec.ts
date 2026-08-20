@@ -1675,9 +1675,13 @@ test("closes the 440px navigation drawer without changing the selected resource"
   }
 
   const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
   }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
   expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
 
   await menuButton.click();
