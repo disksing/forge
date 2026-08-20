@@ -233,6 +233,18 @@ describe("CSS ownership", () => {
     expect(trigger).toContain("height: 44px;");
   });
 
+  it("keeps resource detail tabs at a mobile touch target size", () => {
+    const css = read("src/components/DetailPanel.css");
+    const selector = ':where([data-component-owner="detail-panel"]) .details-tab';
+    const start = css.indexOf(`${selector} {`);
+    expect(start, selector).toBeGreaterThanOrEqual(0);
+    const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+
+    // The four Project detail tabs must remain easy to tap at the narrowest
+    // supported viewport without changing their horizontal layout.
+    expect(rule).toContain("min-height: 44px;");
+  });
+
   it("truncates overlong workspace names instead of overflowing the settings row", () => {
     const css = read("src/components/WorkspaceSettingsPanel.css");
     const body = (selector: string) => {

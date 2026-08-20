@@ -1824,6 +1824,42 @@ test("keeps every task details tab reachable without horizontal scrolling in a 3
   await expect(settingsTab).toHaveAttribute("aria-selected", "true");
 });
 
+test("keeps Project detail tabs at a 44px touch target in a 440px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+
+  const panel = page.locator("#detailsPanel");
+  const tabs = panel.locator(".details-tabs");
+  await expect(tabs).toBeVisible();
+  await expect(tabs.locator('[role="tab"]')).toHaveText(["Project", "History", "Artifacts", "Settings"]);
+
+  const tabStrip = await tabs.evaluate((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }));
+  expect(tabStrip.scroll).toBeLessThanOrEqual(tabStrip.client);
+
+  for (const tab of await tabs.locator('[role="tab"]').all()) {
+    const box = await tab.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(440);
+  }
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  const settingsTab = tabs.getByRole("tab", { name: "Settings" });
+  await settingsTab.click();
+  await expect(settingsTab).toHaveAttribute("aria-selected", "true");
+});
+
 test("keeps every System Settings tab reachable without horizontal scrolling in a 390px mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installMockApi(page, "project1");
