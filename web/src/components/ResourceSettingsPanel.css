@@ -238,6 +238,10 @@
     min-height: 44px;
   }
 
+  :where([data-component-owner="resource-settings-panel"]) .resource-settings-policy-controls .secondary-button {
+    min-height: 44px;
+  }
+
   /* The global mobile rule forces .secondary-button to width:100%. Inside the
      user card header that percentage resolves against the shrink-to-fit
      actions group, so the Delete button grows to the full group width while

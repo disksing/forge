@@ -65,6 +65,37 @@ function model(overrides: Partial<DetailPanelModel> = {}): DetailPanelModel {
 }
 
 describe("ResourceSettingsPanel", () => {
+  it("keeps the Workspace Generation Save disabled until the policy changes", async () => {
+    const onSaveGenerationPolicy = vi.fn(async () => undefined);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ResourceSettingsPanel, {
+      target,
+      props: {
+        model: model({
+          identity: "ws-test:workspace:workspace",
+          resourceId: "workspace",
+          resourceType: "workspace",
+          resourceTitle: "Test workspace",
+          detail: null,
+          onSaveGenerationPolicy,
+        }),
+      },
+    });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const save = target.querySelector<HTMLButtonElement>(".resource-settings-policy-controls .secondary-button")!;
+    expect(save.textContent).toContain("Save");
+    expect(save.disabled).toBe(true);
+    expect(save.hasAttribute("disabled")).toBe(true);
+
+    const maxTurns = target.querySelector<HTMLInputElement>('[aria-label="Maximum Turns per Generation"]')!;
+    maxTurns.value = "25";
+    maxTurns.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    expect(save.disabled).toBe(false);
+  });
+
   it("shows range feedback and disables Save for an invalid Scheduler interval", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

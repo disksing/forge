@@ -395,6 +395,18 @@ describe("CSS ownership", () => {
     }
   });
 
+  it("keeps the Workspace Generation lifecycle Save action at a mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const selector = ':where([data-component-owner="resource-settings-panel"]) .resource-settings-policy-controls .secondary-button';
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    const start = css.indexOf(selector);
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    expect(start, selector).toBeGreaterThan(mobileStart);
+
+    const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    expect(rule).toContain("min-height: 44px;");
+  });
+
   it("wraps overlong chat message tokens without stranding trailing characters", () => {
     // overflow-wrap:anywhere breaks a token at the exact overflow point and
     // can leave a single trailing character on its own line; break-word only

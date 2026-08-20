@@ -1901,6 +1901,29 @@ test("keeps Project detail tabs at a 44px touch target in a 440px viewport", asy
   await expect(settingsTab).toHaveAttribute("aria-selected", "true");
 });
 
+test("keeps the Workspace Generation lifecycle Save target at 44px in a 440px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-b");
+
+  const panel = page.locator("#detailsPanel");
+  const settingsTab = panel.getByRole("tab", { name: "Settings", exact: true });
+  await expect(settingsTab).toBeVisible();
+  await settingsTab.click();
+
+  const save = panel.locator(".resource-settings-policy-controls").getByRole("button", { name: "Save", exact: true });
+  await expect(save).toBeDisabled();
+  const saveBox = (await save.boundingBox())!;
+  expect(saveBox.height).toBeGreaterThanOrEqual(44);
+
+  const content = panel.locator("#detailsContent");
+  const contentBox = (await content.boundingBox())!;
+  expect(saveBox.x).toBeGreaterThanOrEqual(contentBox.x);
+  expect(saveBox.x + saveBox.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+  const overflow = await content.evaluate((node) => node.scrollWidth - node.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test("keeps every System Settings tab reachable without horizontal scrolling in a 390px mobile viewport", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installMockApi(page, "project1");
