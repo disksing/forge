@@ -324,6 +324,23 @@ describe("CSS ownership", () => {
     expect(adjacentRule).toContain("margin-left: 6px;");
   });
 
+  it("keeps the composer binding trigger at a mobile touch size and menu anchor", () => {
+    const css = read("src/components/ChatComposer.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const root = body(':where([data-component-owner="chat-composer"]) .chat-agent-binding .agent-binding');
+    expect(root).toContain("height: 44px;");
+    expect(root).toContain("margin: -6px 0;");
+
+    const button = body(':where([data-component-owner="chat-composer"]) .chat-agent-binding .agent-binding-button');
+    expect(button).toContain("height: 44px;");
+    expect(button).toContain("min-height: 44px;");
+  });
+
   it("keeps Project detail actions at a 44px touch size without narrow-layout overflow", () => {
     const detailCss = read("src/components/DetailPanel.css");
     const detailStart = detailCss.indexOf(':where([data-component-owner="detail-panel"]) .details-actions button {');
