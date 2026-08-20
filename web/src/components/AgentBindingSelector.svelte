@@ -61,6 +61,7 @@
   let menu: HTMLDivElement | undefined = $state();
   let button: HTMLButtonElement | undefined = $state();
   let activeKey = $state("");
+  let placementUp = $state(true);
 
   $effect(() => {
     if (!open || !menu) return;
@@ -77,7 +78,7 @@
 
   onMount(() => {
     const outside = (event: MouseEvent) => {
-      if (open && event.target instanceof Node && !root?.contains(event.target)) open = false;
+      if (open && event.target instanceof Node && !root?.contains(event.target)) closeMenu();
     };
     const onResize = () => {
       if (open) fitMenuToViewport();
@@ -108,12 +109,12 @@
   // distance to the top, downward menus (settings panel) measure the
   // distance to the bottom, minus a small margin. Grow the menu up to that
   // space instead of a fixed cap so long agent lists stay visible instead of
-  // being clipped into a small scroll area.
+  // being clipped into a small scroll area. If the preferred direction would
+  // cover another binding trigger, use the other side so a visible selector
+  // remains the topmost click target.
   function fitMenuToViewport(): void {
     if (!root || !menu) return;
     const rect = root.getBoundingClientRect();
-    const available = openUp ? rect.top - 14 : window.innerHeight - rect.bottom - 14;
-    menu.style.maxHeight = `${Math.max(120, Math.floor(available))}px`;
     // Keep the menu's right edge aligned with the button, at least 12px from
     // the viewport edge; max-width in CSS keeps the left edge on screen. Pin
     // the minimum width to the button so narrow content never collapses the
@@ -121,13 +122,46 @@
     // works now that the containing block is the viewport).
     menu.style.right = `${Math.max(12, Math.floor(window.innerWidth - rect.right))}px`;
     menu.style.minWidth = `${Math.ceil(rect.width)}px`;
-    if (openUp) {
+
+    const directions = [placementUp, !placementUp];
+    for (const opensUp of directions) {
+      const available = opensUp ? rect.top - 14 : window.innerHeight - rect.bottom - 14;
+      menu.style.maxHeight = `${Math.max(120, Math.floor(available))}px`;
+      if (opensUp) {
+        menu.style.top = "auto";
+        menu.style.bottom = `${Math.floor(window.innerHeight - rect.top) + 6}px`;
+      } else {
+        menu.style.bottom = "auto";
+        menu.style.top = `${Math.floor(rect.bottom) + 6}px`;
+      }
+
+      if (!overlapsBindingTrigger(menu.getBoundingClientRect())) {
+        placementUp = opensUp;
+        return;
+      }
+    }
+
+    // If both sides are crowded, keep the requested/current side and let the
+    // menu scroll within its measured viewport space. Pointer routing below
+    // still prevents a covered selector from committing this menu's option.
+    const available = placementUp ? rect.top - 14 : window.innerHeight - rect.bottom - 14;
+    menu.style.maxHeight = `${Math.max(120, Math.floor(available))}px`;
+    if (placementUp) {
       menu.style.top = "auto";
       menu.style.bottom = `${Math.floor(window.innerHeight - rect.top) + 6}px`;
     } else {
       menu.style.bottom = "auto";
       menu.style.top = `${Math.floor(rect.bottom) + 6}px`;
     }
+  }
+
+  function overlapsBindingTrigger(menuRect: DOMRect): boolean {
+    const buttons = document.querySelectorAll<HTMLElement>('[data-component-owner="agent-binding-selector"] .agent-binding-button');
+    return Array.from(buttons).some((candidate) => {
+      if (candidate === button) return false;
+      const rect = candidate.getBoundingClientRect();
+      return menuRect.left < rect.right && menuRect.right > rect.left && menuRect.top < rect.bottom && menuRect.bottom > rect.top;
+    });
   }
 
   // Size the menu as a two-column table: every primary label shares the width
@@ -207,11 +241,49 @@
     return options;
   }
 
-  function choose(option: BindingOption): void {
+  function closeMenu(): void {
     open = false;
+    button?.focus();
+  }
+
+  function choose(option: BindingOption): void {
+    closeMenu();
     const optionKey = allowInherit && !option.value.name ? "inherit" : serialize(option.value);
     if (optionKey === selectedValue) return;
     onSelect(option.value);
+  }
+
+  // A fixed menu can still be painted over another selector when both sides
+  // are crowded. Inspect the element below a pointer click after temporarily
+  // making the menu hit-transparent; forward that click to the covered
+  // binding trigger instead of committing whichever option happened to be on
+  // top. Other controls remain owned by the open menu while it is visible.
+  function underlyingInteractiveTarget(event: MouseEvent): HTMLElement | null {
+    if (event.detail === 0 || !menu || typeof document.elementFromPoint !== "function") return null;
+    const previousPointerEvents = menu.style.pointerEvents;
+    menu.style.pointerEvents = "none";
+    let element: Element | null = null;
+    try {
+      element = document.elementFromPoint(event.clientX, event.clientY);
+    } finally {
+      menu.style.pointerEvents = previousPointerEvents;
+    }
+    if (!(element instanceof Element) || root?.contains(element)) return null;
+    const target = element.closest('[data-component-owner="agent-binding-selector"] .agent-binding-button');
+    return target instanceof HTMLElement && target !== button ? target : null;
+  }
+
+  function selectOption(event: MouseEvent, option: BindingOption): void {
+    const target = underlyingInteractiveTarget(event);
+    if (target) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+      target.click();
+      target.focus();
+      return;
+    }
+    choose(option);
   }
 
   function optionElements(): HTMLButtonElement[] {
@@ -258,8 +330,7 @@
       case "Escape":
         event.preventDefault();
         event.stopPropagation();
-        open = false;
-        button?.focus();
+        closeMenu();
         return;
       default:
         return;
@@ -273,8 +344,8 @@
   }
 </script>
 
-<span class="agent-binding" data-component-owner="agent-binding-selector" data-placement={openUp ? "up" : "down"} bind:this={root}>
-  <button type="button" class="agent-binding-button" bind:this={button} {disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onclick={() => { open = !open; if (open) activeKey = selectedValue; }}>
+<span class="agent-binding" data-component-owner="agent-binding-selector" data-placement={placementUp ? "up" : "down"} bind:this={root}>
+  <button type="button" class="agent-binding-button" bind:this={button} {disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onclick={() => { if (open) closeMenu(); else { placementUp = openUp; open = true; activeKey = selectedValue; } }}>
     <span class="agent-binding-label">{selectedLabel}</span>
     <Icon name="chevrons-up-down" className="agent-binding-icon" />
   </button>
@@ -282,7 +353,7 @@
     <div class="agent-binding-menu" role="listbox" aria-label={ariaLabel} tabindex="-1" bind:this={menu} onkeydown={keydown}>
       {#if allowInherit}
         <div class="agent-binding-group" role="group" aria-label="Inherit">
-          <button type="button" class="agent-binding-option" role="option" aria-selected={activeKey === "inherit"} tabindex={activeKey === "inherit" ? 0 : -1} data-binding="inherit" onclick={() => choose({ value: { kind: "profile", name: "" }, label: inheritLabel, primary: inheritLabel, secondary: "" })}>
+          <button type="button" class="agent-binding-option" role="option" aria-selected={activeKey === "inherit"} tabindex={activeKey === "inherit" ? 0 : -1} data-binding="inherit" onclick={(event) => selectOption(event, { value: { kind: "profile", name: "" }, label: inheritLabel, primary: inheritLabel, secondary: "" })}>
             <span class="agent-binding-option-primary">{inheritLabel}</span>
             <span class="agent-binding-option-secondary"></span>
             <Icon name="check" className={activeKey === "inherit" ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
@@ -294,7 +365,7 @@
         <div class="agent-binding-group" role="group" aria-label="Profiles">
           <div class="agent-binding-group-title">Profiles</div>
           {#each profileOptions as option (serialize(option.value))}
-            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === activeKey} tabindex={serialize(option.value) === activeKey ? 0 : -1} data-binding={serialize(option.value)} onclick={() => choose(option)}>
+            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === activeKey} tabindex={serialize(option.value) === activeKey ? 0 : -1} data-binding={serialize(option.value)} onclick={(event) => selectOption(event, option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
               <span class="agent-binding-option-secondary">{option.secondary}</span>
               <Icon name="check" className={serialize(option.value) === activeKey ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
@@ -307,7 +378,7 @@
         <div class="agent-binding-group" role="group" aria-label="Agents">
           <div class="agent-binding-group-title">Agents</div>
           {#each agentOptions as option (serialize(option.value))}
-            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === activeKey} tabindex={serialize(option.value) === activeKey ? 0 : -1} data-binding={serialize(option.value)} onclick={() => choose(option)}>
+            <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === activeKey} tabindex={serialize(option.value) === activeKey ? 0 : -1} data-binding={serialize(option.value)} onclick={(event) => selectOption(event, option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
               <span class="agent-binding-option-secondary">{option.secondary}</span>
               <Icon name="check" className={serialize(option.value) === activeKey ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />

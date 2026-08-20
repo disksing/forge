@@ -887,6 +887,37 @@ test("shows the full binding menu from the settings panel", async ({ page }) => 
   expect(harness.bindingBodies[0]).toMatchObject({ kind: "agent", name: "deepseek-v4-pro" });
 });
 
+test("keeps the project binding menu from covering the next selector", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  const harness = await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+
+  await page.getByRole("tab", { name: "Settings" }).click();
+  const projectBinding = page.getByRole("button", { name: "Project Agent binding", exact: true });
+  const taskBinding = page.getByRole("button", { name: "New Task default binding", exact: true });
+  await expect(projectBinding).toBeVisible();
+  await expect(taskBinding).toBeVisible();
+
+  await projectBinding.click();
+  const projectMenu = page.getByRole("listbox", { name: "Project Agent binding" });
+  await expect(projectMenu).toBeVisible();
+
+  const menuBox = (await projectMenu.boundingBox())!;
+  const taskBox = (await taskBinding.boundingBox())!;
+  const overlaps = menuBox.x < taskBox.x + taskBox.width
+    && menuBox.x + menuBox.width > taskBox.x
+    && menuBox.y < taskBox.y + taskBox.height
+    && menuBox.y + menuBox.height > taskBox.y;
+  expect(overlaps).toBe(false);
+
+  // The next selector must receive the click and open its own menu. No
+  // option from the Project Agent menu may be committed on this route.
+  await taskBinding.click();
+  await expect(projectMenu).toHaveCount(0);
+  await expect(page.getByRole("listbox", { name: "New Task default binding" })).toBeVisible();
+  expect(harness.bindingBodies).toHaveLength(0);
+});
+
 test("navigates to a newly created project", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");

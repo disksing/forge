@@ -132,6 +132,31 @@ describe("AgentBindingSelector listbox keyboard navigation", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("forwards a pointer click from an overlapped option to another selector", async () => {
+    const onSelect = vi.fn();
+    const first = mountSelector(onSelect, { ariaLabel: "Project Agent binding" });
+    const second = mountSelector(vi.fn(), { ariaLabel: "New Task default binding" });
+    await tick();
+
+    const firstButton = first.target.querySelector<HTMLButtonElement>(".agent-binding-button")!;
+    const secondButton = second.target.querySelector<HTMLButtonElement>(".agent-binding-button")!;
+    const originalElementFromPoint = document.elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: vi.fn(() => secondButton) });
+    try {
+      firstButton.click();
+      await tick();
+      const option = first.target.querySelector<HTMLButtonElement>('[data-binding="profile:fast"]')!;
+      option.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1, clientX: 20, clientY: 20 }));
+      await tick();
+
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(first.target.querySelector(".agent-binding-menu")).toBeNull();
+      expect(second.target.querySelector(".agent-binding-menu")).not.toBeNull();
+    } finally {
+      Object.defineProperty(document, "elementFromPoint", { configurable: true, value: originalElementFromPoint });
+    }
+  });
+
   it("includes the inherit pseudo option in keyboard navigation", async () => {
     const onSelect = vi.fn();
     const { target } = mountSelector(onSelect, { allowInherit: true, value: { kind: "profile", name: "default" } });
