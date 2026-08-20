@@ -274,6 +274,26 @@ describe("CSS ownership", () => {
     expect(doctor).toContain("height: 44px;");
   });
 
+  it("keeps mobile Projects title actions at a 44px touch size", () => {
+    const css = read("src/components/ProjectTree.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+
+    const body = (selector: string) => {
+      const start = css.lastIndexOf(selector);
+      expect(start, selector).toBeGreaterThan(mobileStart);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const title = body(':where([data-component-owner="project-tree"]) .section-title {');
+    expect(title).toContain("min-height: 44px;");
+
+    const actions = body(':where([data-component-owner="project-tree"]) .section-title button {');
+    expect(actions).toContain("flex: 0 0 44px;");
+    expect(actions).toContain("width: 44px;");
+    expect(actions).toContain("height: 44px;");
+  });
+
   it("keeps resource detail tabs at a mobile touch target size", () => {
     const css = read("src/components/DetailPanel.css");
     const selector = ':where([data-component-owner="detail-panel"]) .details-tab';

@@ -2024,6 +2024,63 @@ test("keeps the Scheduler navigation drawer entry at a 44px touch size", async (
   await expect(page).toHaveURL(/\/w\/ws-test\/r\/scheduler$/);
 });
 
+test("keeps the 440px Projects actions at a 44px touch size", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-b");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+
+  const tree = page.locator('[data-component-owner="project-tree"]');
+  const title = tree.locator(".section-title");
+  const label = title.locator(".section-label");
+  const edit = tree.locator("#treeEditButton");
+  const create = tree.locator("#newProjectButton");
+  await expect.poll(async () => (await tree.boundingBox())?.x ?? -1).toBeGreaterThanOrEqual(0);
+  await expect(label).toHaveText("Projects");
+  await expect(edit).toHaveAttribute("type", "button");
+  await expect(edit).toHaveAttribute("title", "Edit projects");
+  await expect(edit).toHaveAttribute("aria-pressed", "false");
+  await expect(create).toHaveAttribute("type", "button");
+  await expect(create).toHaveAttribute("title", "New project");
+
+  const titleBox = (await title.boundingBox())!;
+  const firstProject = tree.locator("#projectTree > .tree-item").first();
+  const firstProjectBox = (await firstProject.boundingBox())!;
+  expect(titleBox.height).toBeGreaterThanOrEqual(44);
+  for (const button of [edit, create]) {
+    const box = (await button.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(titleBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(titleBox.x + titleBox.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(firstProjectBox.y);
+  }
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await edit.click();
+  await expect(edit).toHaveAttribute("title", "Done editing");
+  await expect(edit).toHaveAttribute("aria-pressed", "true");
+  await expect(tree).toHaveClass(/editing/);
+  await edit.click();
+  await expect(edit).toHaveAttribute("title", "Edit projects");
+
+  await create.click();
+  await expect(page.getByRole("dialog", { name: "Create project" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Create project" }).getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog", { name: "Create project" })).toHaveCount(0);
+});
+
 test("keeps Workspace Wiki file rows at a 44px touch size without overflow", async ({ page }) => {
   await page.setViewportSize({ width: 440, height: 844 });
   await installShellMockApi(page);
