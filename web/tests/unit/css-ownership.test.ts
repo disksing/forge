@@ -440,6 +440,16 @@ describe("CSS ownership", () => {
 
     const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
     expect(rule).toContain("min-height: 44px;");
+
+    for (const fieldSelector of [
+      ':where([data-component-owner="resource-settings-panel"]) .resource-settings-policy-controls label',
+      ':where([data-component-owner="resource-settings-panel"]) .resource-settings-policy-controls input[type="number"]',
+    ]) {
+      const fieldStart = css.indexOf(fieldSelector);
+      expect(fieldStart, fieldSelector).toBeGreaterThan(mobileStart);
+      const fieldRule = css.slice(css.indexOf("{", fieldStart), css.indexOf("}", fieldStart) + 1);
+      expect(fieldRule).toContain("min-height: 44px;");
+    }
   });
 
   it("wraps overlong chat message tokens without stranding trailing characters", () => {

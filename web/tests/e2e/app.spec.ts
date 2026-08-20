@@ -1942,12 +1942,43 @@ test("keeps the Workspace Generation lifecycle Save target at 44px in a 440px vi
   const saveBox = (await save.boundingBox())!;
   expect(saveBox.height).toBeGreaterThanOrEqual(44);
 
-  const content = panel.locator("#detailsContent");
-  const contentBox = (await content.boundingBox())!;
+  const budgets = [
+    "Maximum Turns per Generation",
+    "Maximum accumulated Turn minutes per Generation",
+  ];
+  const contentBox = (await panel.locator("#detailsContent").boundingBox())!;
+  for (const ariaLabel of budgets) {
+    const input = panel.locator(`input[aria-label="${ariaLabel}"]`);
+    await expect(input).toHaveAttribute("type", "number");
+    await expect(input).toHaveAttribute("aria-label", ariaLabel);
+    const geometry = await input.evaluate((element) => {
+      const inputBox = element.getBoundingClientRect();
+      const labelBox = element.closest("label")?.getBoundingClientRect();
+      return {
+        input: { x: inputBox.x, right: inputBox.right, height: inputBox.height },
+        label: labelBox ? { x: labelBox.x, right: labelBox.right, height: labelBox.height } : null,
+      };
+    });
+    expect(geometry.label).not.toBeNull();
+    expect(geometry.input.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.label!.height).toBeGreaterThanOrEqual(44);
+    for (const box of [geometry.input, geometry.label!]) {
+      expect(box.x).toBeGreaterThanOrEqual(contentBox.x);
+      expect(box.right).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+    }
+  }
+
+  // Changing a valid budget still enables the existing Save action; the
+  // control remains a normal number input with the same labels and handler.
+  await panel.locator('input[aria-label="Maximum Turns per Generation"]').fill("25");
+  await expect(save).toBeEnabled();
+
   expect(saveBox.x).toBeGreaterThanOrEqual(contentBox.x);
   expect(saveBox.x + saveBox.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
-  const overflow = await content.evaluate((node) => node.scrollWidth - node.clientWidth);
+  const overflow = await panel.locator("#detailsContent").evaluate((node) => node.scrollWidth - node.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+  const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(documentOverflow).toBeLessThanOrEqual(1);
 });
 
 test("keeps every System Settings tab reachable without horizontal scrolling in a 390px mobile viewport", async ({ page }) => {
