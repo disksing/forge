@@ -251,10 +251,16 @@ describe("timeline rendering components", () => {
     await vi.waitFor(() => expect(onToast).toHaveBeenCalledWith("denied"));
   });
 
-  it("renders lifecycle, provider error, PUA notice, and unknown-event fallbacks directly", () => {
+  it("renders lifecycle, provider error, dismissible PUA notice, and unknown-event fallbacks directly", () => {
+    const onDismiss = vi.fn();
     expect(mounted(LifecycleNotice, { item: { kind: "lifecycle", tone: "ok", text: "Completed" } }).querySelector(".agent-lifecycle-ok")?.textContent).toContain("Completed");
     expect(mounted(TimelineNotice, { title: "Provider error", text: "failed", error: true, alert: true }).querySelector('[role="alert"]')?.textContent).toContain("Provider error failed");
-    expect(mounted(TimelineNotice, { title: "PUA", text: "Coordinator failed", error: true }).querySelector(".timeline-notice-error")?.textContent).toContain("PUA Coordinator failed");
+    const pua = mounted(TimelineNotice, { title: "PUA", text: "Coordinator failed", error: true, onDismiss });
+    expect(pua.querySelector(".timeline-notice-error")?.textContent).toContain("PUA Coordinator failed");
+    const dismiss = pua.querySelector<HTMLButtonElement>('[aria-label="Dismiss PUA notice"]')!;
+    expect(dismiss.classList.contains("timeline-notice-dismiss")).toBe(true);
+    dismiss.click();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
     expect(mounted(UnknownEvent, { item: { kind: "mystery", type: "provider.mystery", preview: "raw payload" } }).textContent).toContain("Unhandled event: provider.mysteryraw payload");
   });
 });
