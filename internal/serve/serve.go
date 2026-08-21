@@ -194,6 +194,7 @@ const (
 )
 
 const serveUsage = `usage: pua serve [--addr=<address>] [--workspace=<path>]
+                 [--no-default-workspace]
                  [--agenthub-mode=embedded|external]
                  [--agenthub-endpoint=<url>] [--version]
 
@@ -205,6 +206,7 @@ Workspace path; it does not invoke the pua CLI as a child process.
 Options:
   --addr <address>       local address to listen on (default 127.0.0.1:4936)
   --workspace <path>     AgentWorkspace path to add before starting
+  --no-default-workspace do not add the current directory to an empty config
   --agenthub-mode <mode> AgentHub mode: embedded (default) or external
   --agenthub-endpoint    external AgentHub base URL ending in /agenthub;
                          required when --agenthub-mode=external
@@ -243,11 +245,13 @@ func Main(args []string) error {
 	flags.SetOutput(io.Discard)
 	var addr string
 	var initialWorkspace string
+	var noDefaultWorkspace bool
 	var agentHubMode string
 	var agentHubEndpoint string
 	var showVersion bool
 	flags.StringVar(&addr, "addr", "127.0.0.1:4936", "local address to listen on")
 	flags.StringVar(&initialWorkspace, "workspace", "", "AgentWorkspace path to add before starting")
+	flags.BoolVar(&noDefaultWorkspace, "no-default-workspace", false, "do not add the current directory to an empty config")
 	flags.StringVar(&agentHubMode, "agenthub-mode", agentHubModeEmbedded, "AgentHub mode: embedded or external")
 	flags.StringVar(&agentHubEndpoint, "agenthub-endpoint", "", "external AgentHub base URL ending in /agenthub")
 	flags.BoolVar(&showVersion, "version", false, "print build-time branch and sha")
@@ -316,7 +320,7 @@ func Main(args []string) error {
 		if _, err := s.addWorkspace(signalContext, initialWorkspace); err != nil {
 			return fmt.Errorf("add initial workspace: %w", err)
 		}
-	} else {
+	} else if !noDefaultWorkspace {
 		s.addCurrentDirectoryIfEmpty(signalContext)
 	}
 	// Every configured Workspace must be owned before AgentHub recovery or any

@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+out_dir=${1:-bin}
+
+if [ "$(uname -s)" != "Darwin" ]; then
+	printf '%s\n' "build-desktop requires macOS" >&2
+	exit 1
+fi
+
+case "$out_dir" in
+/*) out_path=$out_dir ;;
+*) out_path=$root/$out_dir ;;
+esac
+
+mkdir -p "$out_path"
+stage=$(mktemp -d "$out_path/.pua-desktop.XXXXXX")
+cleanup() {
+	rm -rf -- "$stage"
+}
+trap cleanup EXIT HUP INT TERM
+
+"$root/scripts/build" "$stage/backend"
+mkdir -p "$stage/PUA.app/Contents/MacOS" "$stage/PUA.app/Contents/Resources"
+cp "$root/desktop/macos/Info.plist" "$stage/PUA.app/Contents/Info.plist"
+cp "$stage/backend/pua" "$stage/PUA.app/Contents/Resources/pua"
+
+cd "$root"
+MACOSX_DEPLOYMENT_TARGET=11.0 go build -tags production -o "$stage/PUA.app/Contents/MacOS/PUA" ./desktop/cmd/pua-desktop
+codesign --force --deep --sign - "$stage/PUA.app"
+
+app_path=$out_path/PUA.app
+old_path=$out_path/.PUA.app.previous
+if [ -e "$old_path" ]; then
+	rm -rf -- "$old_path"
+fi
+if [ -e "$app_path" ]; then
+	mv "$app_path" "$old_path"
+fi
+if ! mv "$stage/PUA.app" "$app_path"; then
+	if [ -e "$old_path" ]; then
+		mv "$old_path" "$app_path"
+	fi
+	exit 1
+fi
+if [ -e "$old_path" ]; then
+	rm -rf -- "$old_path"
+fi
+
+printf '%s\n' "built $app_path"
