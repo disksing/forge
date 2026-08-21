@@ -17,10 +17,10 @@
   gap: 2px;
   margin-bottom: 8px;
   padding: 2px;
-  background: var(--ink-deep);
-  border: 1px solid var(--ink-hover);
+  background: var(--sidebar-bg-deep);
+  border: 1px solid var(--sidebar-hover);
   border-radius: 8px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="attention-list"]) .activity-tabs button {
@@ -34,7 +34,7 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(12px * var(--sidebar-font-scale, 1));
   font-weight: 600;
   white-space: nowrap;
@@ -44,7 +44,7 @@
 
 :where([data-component-owner="attention-list"]) .activity-tabs button:hover,
 :where([data-component-owner="attention-list"]) .activity-tabs button.active {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
   color: var(--panel);
 }
 
@@ -104,17 +104,17 @@
 }
 
 :where([data-component-owner="attention-list"]) .activity-row:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
 }
 
 :where([data-component-owner="attention-list"]) .activity-row.selected {
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
 }
 
 /* The currently open resource keeps its selected background while hovered
    instead of shifting to the generic hover tint. */
 :where([data-component-owner="attention-list"]) .activity-row.selected:hover {
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
 }
 
 :where([data-component-owner="attention-list"]) .activity-status {
@@ -148,7 +148,7 @@
   width: 16px;
   height: 16px;
   margin-top: 1px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="attention-list"]) .activity-title {
@@ -164,14 +164,14 @@
 }
 
 :where([data-component-owner="attention-list"]) .activity-title strong {
-  color: var(--text-on-dark);
+  color: var(--sidebar-text);
   font-size: calc(13px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
 
 :where([data-component-owner="attention-list"]) .activity-meta {
   margin-top: 1px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
@@ -189,7 +189,7 @@
   display: grid;
   place-items: center;
   border-radius: 4px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   cursor: pointer;
   opacity: 0;
 }
@@ -203,7 +203,7 @@
 
 :where([data-component-owner="attention-list"]) .favorite-star:hover,
 :where([data-component-owner="attention-list"]) .favorite-star:focus-visible {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
   color: var(--panel);
 }
 
@@ -225,7 +225,7 @@
   width: 16px;
   height: 16px;
   margin-top: 1px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="attention-list"]) .empty-attention strong,
@@ -239,7 +239,7 @@
 }
 
 :where([data-component-owner="attention-list"]) .empty-attention span {
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
 }
 
@@ -265,7 +265,7 @@
 }
 
 :where([data-component-owner="attention-list"]) .inbox-row:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
 }
 
 :where([data-component-owner="attention-list"]) .inbox-row-head {
@@ -308,7 +308,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11.5px * var(--sidebar-font-scale, 1));
 }
 
@@ -316,8 +316,8 @@
   flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: 999px;
-  background: var(--ink-hover);
-  color: var(--faint-on-dark);
+  background: var(--sidebar-hover);
+  color: var(--sidebar-muted);
   font-size: calc(10px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
@@ -341,7 +341,7 @@
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border: 1px solid var(--ink-active);
+  border: 1px solid var(--sidebar-active);
   border-radius: 6px;
   background: transparent;
   color: var(--line-strong);
@@ -350,7 +350,7 @@
 }
 
 :where([data-component-owner="attention-list"]) .inbox-action:hover:not(:disabled) {
-  background: var(--ink-hover);
+  background: var(--sidebar-hover);
   color: var(--panel);
 }
 
@@ -385,9 +385,9 @@
   width: 100%;
   min-height: 44px;
   padding: 6px 8px;
-  border: 1px solid var(--ink-active);
+  border: 1px solid var(--sidebar-active);
   border-radius: 6px;
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
   color: var(--line-soft);
   font-size: calc(13px * var(--sidebar-font-scale, 1));
   font-family: inherit;

@@ -16,10 +16,17 @@
       Each ramp provides: base, `-deep` (hover/emphasis), `-pressed`,
       `-soft` (tinted fill), `-line` (border on tinted fill), `-bright`
       (legible on dark surfaces), `-ink` (text on tinted fill).
-   3. Dark chrome (`--ink*` and `*-on-dark`) — the sidebar and other dark
-      blocks; kept separate so a theme can restyle dark surfaces without
-      touching light ones. Text or lines painted on dark chrome must use
-      the `*-on-dark` tokens, never the neutral light-surface tokens.
+   3. Dark chrome (`--ink*` and `*-on-dark`) — dark accent elements on
+      light surfaces; kept separate so a theme can restyle dark surfaces
+      without touching light ones. Text or lines painted on dark chrome
+      must use the `*-on-dark` tokens, never the neutral light-surface
+      tokens.
+   3b. Regions (`--sidebar-*`) — per-module color roles. Components in a
+      region reference region tokens, so a theme decides per module whether
+      it is dark chrome or another light surface. Layout metrics below may
+      also be overridden per theme; a theme stylesheet may additionally
+      scope structural overrides (borders, spacing, even grid templates)
+      under `body[data-theme="<id>"]` as long as functionality is unchanged.
    4. Effects (`--backdrop*`, `--accent-ring`, shadows) — overlays, focus
       rings and the rare shadow. */
 
@@ -95,6 +102,22 @@
   --red-soft-on-dark: rgba(239, 68, 68, 0.17);
   --red-line-on-dark: rgb(255 120 120 / 45%);
   --line-strong-on-dark: rgb(220 228 239 / 50%);
+
+  /* ---- region: sidebar ----
+     The left navigation column is a *region*: a theme decides whether it is
+     dark chrome or another light surface by redefining these aliases, while
+     components only reference the region tokens. --ink* remains available
+     for genuinely dark accent elements on light surfaces (toasts, strong
+     headings). */
+  --sidebar-bg: var(--ink);
+  --sidebar-bg-deep: var(--ink-deep);
+  --sidebar-row: var(--ink-row);
+  --sidebar-hover: var(--ink-hover);
+  --sidebar-active: var(--ink-active);
+  --sidebar-line: var(--ink-line);
+  --sidebar-line-strong: var(--ink-line-strong);
+  --sidebar-text: var(--text-on-dark);
+  --sidebar-muted: var(--faint-on-dark);
 
   /* ---- 4. effects ---- */
   --backdrop: rgba(34, 49, 63, 0.48);

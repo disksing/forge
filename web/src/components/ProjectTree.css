@@ -7,7 +7,7 @@
 }
 
 :where([data-component-owner="project-tree"]) .section-title {
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -16,8 +16,8 @@
 
 :where([data-component-owner="project-tree"]) .section-title button {
   border-radius: 6px;
-  background: var(--ink-row);
-  color: var(--text-on-dark);
+  background: var(--sidebar-row);
+  color: var(--sidebar-text);
   font-weight: 700;
 }
 
@@ -56,23 +56,23 @@
   padding: 6px 8px;
   border-radius: 6px;
   background: transparent;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   text-align: left;
 }
 
 :where([data-component-owner="project-tree"]) .tree-item:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.active {
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
   color: var(--panel);
   font-weight: 700;
 }
 
 :where([data-component-owner="project-tree"]) .tree-item .chevron {
   width: 14px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="project-tree"]) .tree-item .name {
@@ -115,7 +115,7 @@
   align-items: baseline;
   gap: 4px;
   overflow: hidden;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 600;
   letter-spacing: normal;
@@ -131,22 +131,22 @@
 
 :where([data-component-owner="project-tree"]) .project-task-summary-separator {
   flex: 0 0 auto;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.active .project-task-summary {
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="project-tree"]) .resource-ref {
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-weight: 400;
   white-space: nowrap;
 }
 
 :where([data-component-owner="project-tree"]) .tree-item .resource-ref {
   flex-shrink: 0;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(12px * var(--sidebar-font-scale, 1));
 }
 
@@ -161,11 +161,11 @@
   justify-content: center;
   border-radius: 4px;
   background: transparent;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="project-tree"]) .section-title button:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
   color: var(--panel);
 }
 
@@ -184,7 +184,7 @@
 }
 
 :where([data-component-owner="project-tree"]) #treeEditButton.active {
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
   color: var(--blue-line);
 }
 
@@ -196,7 +196,7 @@
   height: 22px;
   margin-bottom: 6px;
   padding: 0 8px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -210,7 +210,7 @@
   align-items: center;
   padding: 6px 8px;
   border-radius: 6px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(14px * var(--sidebar-font-scale, 1));
   font-weight: 500;
 }
@@ -228,11 +228,11 @@
 }
 
 :where([data-component-owner="project-tree"]) .tree-item:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.active {
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
   color: var(--panel);
   font-weight: 700;
 }
@@ -241,7 +241,7 @@
   width: 16px;
   display: grid;
   place-items: center;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="project-tree"]) .tree-item .chevron svg {
@@ -253,7 +253,7 @@
 }
 
 :where([data-component-owner="project-tree"]) .tree-icon {
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.active .tree-icon,
@@ -272,7 +272,7 @@
   gap: 2px;
   margin-left: 15px;
   padding-left: 7px;
-  border-left: 1px solid var(--ink-row);
+  border-left: 1px solid var(--sidebar-row);
 }
 
 :where([data-component-owner="project-tree"]) .task-group .task-item {
@@ -285,7 +285,7 @@
   height: 16px;
   place-items: center;
   border-radius: 4px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   cursor: grab;
 }
 
@@ -297,7 +297,7 @@
   width: 14px;
   height: 14px;
   margin-top: 0;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="project-tree"]) .folder-item {
@@ -308,7 +308,7 @@
 
 :where([data-component-owner="project-tree"]) .folder-item .folder-count {
   flex: 0 0 auto;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
@@ -319,7 +319,7 @@
 
 :where([data-component-owner="project-tree"]) .folder-empty {
   padding: 4px 8px 6px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-style: italic;
 }
@@ -339,13 +339,13 @@
   display: grid;
   place-items: center;
   border-radius: 4px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   cursor: pointer;
 }
 
 :where([data-component-owner="project-tree"]) .row-action-button:hover,
 :where([data-component-owner="project-tree"]) .row-action-button:focus-visible {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
   color: var(--panel);
 }
 
@@ -375,7 +375,7 @@
   display: grid;
   place-items: center;
   border-radius: 4px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   cursor: pointer;
   opacity: 0;
 }
@@ -390,7 +390,7 @@
 
 :where([data-component-owner="project-tree"]) .favorite-star:hover,
 :where([data-component-owner="project-tree"]) .favorite-star:focus-visible {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
   color: var(--panel);
 }
 

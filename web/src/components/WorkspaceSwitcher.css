@@ -20,9 +20,9 @@
 }
 
 :where([data-component-owner="workspace-switcher"]).workspace-switcher select {
-  border-color: var(--ink-row);
-  background: var(--ink-deep);
-  color: var(--text-on-dark);
+  border-color: var(--sidebar-row);
+  background: var(--sidebar-bg-deep);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="workspace-switcher"]).workspace-switcher select {
@@ -56,21 +56,21 @@
   padding: 5px 6px;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-on-dark);
+  color: var(--sidebar-text);
   font-size: calc(14px * var(--sidebar-font-scale, 1));
   font-weight: 600;
   text-align: left;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-open:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-open-icon {
   flex: 0 0 auto;
   width: 13px;
   height: 13px;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   opacity: 0.5;
 }
 
@@ -87,11 +87,11 @@
   place-items: center;
   border-radius: 6px;
   background: transparent;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
   color: var(--panel);
 }
 

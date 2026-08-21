@@ -26,15 +26,15 @@
   top: -8px;
   bottom: 50%;
   width: 9px;
-  border-left: 1.5px solid var(--ink-active);
-  border-bottom: 1.5px solid var(--ink-active);
+  border-left: 1.5px solid var(--sidebar-active);
+  border-bottom: 1.5px solid var(--sidebar-active);
   border-bottom-left-radius: 5px;
 }
 
 [data-component-owner="scheduler-nav"] > button:hover,
 [data-component-owner="scheduler-nav"] > button.active {
-  background: var(--ink-hover);
-  border-color: var(--ink-hover);
+  background: var(--sidebar-hover);
+  border-color: var(--sidebar-hover);
 }
 
 [data-component-owner="scheduler-nav"] > button > span:not(.task-status-slot) {
@@ -45,7 +45,7 @@
 }
 
 [data-component-owner="scheduler-nav"] strong { font-size: calc(12.5px * var(--sidebar-font-scale, 1)); }
-[data-component-owner="scheduler-nav"] small { color: var(--line-strong-on-dark); font-size: calc(10px * var(--sidebar-font-scale, 1)); }
+[data-component-owner="scheduler-nav"] small { color: var(--sidebar-line-strong); font-size: calc(10px * var(--sidebar-font-scale, 1)); }
 [data-component-owner="scheduler-nav"] .scheduler-nav-icon { color: var(--blue-bright); width: 14px; height: 14px; }
 [data-component-owner="scheduler-nav"] .scheduler-nav-chevron { opacity: .45; width: 13px; height: 13px; }
 

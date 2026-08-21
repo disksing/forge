@@ -640,6 +640,6 @@ describe("CSS ownership", () => {
     // Hovering the open resource must not wash out its selected state.
     expect(backgroundOf('.activity-row.selected:hover')).toBe(backgroundOf('.activity-row.selected'));
     // Non-selected rows keep the dedicated hover tint.
-    expect(backgroundOf('.activity-row:hover')).toBe("var(--ink-row)");
+    expect(backgroundOf('.activity-row:hover')).toBe("var(--sidebar-row)");
   });
 });

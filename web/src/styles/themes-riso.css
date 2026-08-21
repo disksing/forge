@@ -71,6 +71,18 @@ body[data-theme="riso"] {
 
   --backdrop: rgba(26, 26, 26, 0.45);
   --backdrop-soft: rgba(26, 26, 26, 0.3);
+
+  /* region: the sidebar is a light paper pass in this theme (heavy black
+     rules separate it), while --ink stays black for dark accent elements */
+  --sidebar-bg: #efe8d9;
+  --sidebar-bg-deep: #e7dec9;
+  --sidebar-row: #e6dcc6;
+  --sidebar-hover: rgba(26, 26, 26, 0.06);
+  --sidebar-active: rgba(26, 26, 26, 0.1);
+  --sidebar-line: rgba(26, 26, 26, 0.25);
+  --sidebar-line-strong: #1a1a1a;
+  --sidebar-text: #1a1a1a;
+  --sidebar-muted: #5a5344;
 }
 
 /* fine irregular grain: soy ink pushed through the stencil mesh */
@@ -137,4 +149,15 @@ body[data-theme="riso"] :is(.create-dialog, .upload-dialog, .file-modal, .settin
   border: 2px solid #1a1a1a;
   border-radius: 2px;
   box-shadow: 5px 4px 0 rgba(26, 26, 26, 0.25);
+}
+
+/* region layout: heavy black rules frame the sidebar like a printed page;
+   themes may scope structural overrides like this under their data-theme */
+body[data-theme="riso"] [data-component-owner="app-shell"] .sidebar {
+  border-right: 2.5px solid #1a1a1a;
+}
+
+body[data-theme="riso"] [data-component-owner="project-tree"] .section-title button {
+  border: 2px solid #1a1a1a;
+  border-radius: 2px;
 }

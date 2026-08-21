@@ -19,20 +19,20 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--ink);
+  background: var(--sidebar-bg);
   color: var(--line-strong);
 }
 :where([data-component-owner="app-shell"]) .sidebar,
 :where([data-component-owner="app-shell"]) .sidebar * {
-  scrollbar-color: var(--ink-line) transparent;
+  scrollbar-color: var(--sidebar-line) transparent;
 }
 
 :where([data-component-owner="app-shell"]) .sidebar ::-webkit-scrollbar-thumb {
-  background: var(--ink-line);
+  background: var(--sidebar-line);
 }
 
 :where([data-component-owner="app-shell"]) .sidebar ::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-line-strong);
+  background: var(--sidebar-line-strong);
 }
 
 :where([data-component-owner="app-shell"]) .brand-band {
@@ -41,7 +41,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 10px 0 16px;
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
 }
 
 :where([data-component-owner="app-shell"]) .brand-mark {
@@ -70,7 +70,7 @@
 }
 
 :where([data-component-owner="app-shell"]) .brand-copy span {
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
   font-size: calc(10px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   text-transform: uppercase;
@@ -83,7 +83,7 @@
   place-items: center;
   border-radius: 6px;
   background: transparent;
-  color: var(--faint-on-dark);
+  color: var(--sidebar-muted);
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor {
@@ -105,7 +105,7 @@
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor:hover {
-  background: var(--ink-hover);
+  background: var(--sidebar-hover);
   color: var(--panel);
 }
 
@@ -120,7 +120,7 @@
 }
 
 :where([data-component-owner="app-shell"]) .brand-settings:hover {
-  background: var(--ink-row);
+  background: var(--sidebar-row);
   color: var(--panel);
 }
 
@@ -131,9 +131,9 @@
 
 :where([data-component-owner="app-shell"]) .workspace-card {
   margin: 10px 12px 12px;
-  border: 1px solid var(--ink-hover);
+  border: 1px solid var(--sidebar-hover);
   border-radius: 10px;
-  background: var(--ink-deep);
+  background: var(--sidebar-bg-deep);
 }
 
 :where([data-component-owner="app-shell"]) .workspace-panel {
@@ -290,7 +290,7 @@ body[data-layout="split"] :where([data-component-owner="app-shell"]) .sidebar {
   pointer-events: none;
   transform: translateX(-100%);
   transition: transform 180ms ease, visibility 0s linear 180ms;
-  border-right: 1px solid var(--ink-deep);
+  border-right: 1px solid var(--sidebar-bg-deep);
 }
 body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="app-shell"]) .sidebar {
   visibility: visible;
@@ -373,7 +373,7 @@ body[data-layout="split"] :where([data-component-owner="app-shell"]) .agent-pane
     pointer-events: none;
     transform: translateX(-100%);
     transition: transform 180ms ease, visibility 0s linear 180ms;
-    border-right: 1px solid var(--ink-deep);
+    border-right: 1px solid var(--sidebar-bg-deep);
   }
   :where(body).mobile-sidebar-open :where([data-component-owner="app-shell"]) .sidebar {
     visibility: visible;
