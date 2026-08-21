@@ -23,7 +23,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     workspaceIcons: [{ id: "", label: "PUA default", src: "/favicon.svg" }],
     workspaceIconSavingId: "",
     userName: "User",
-    appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
+    appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 }, theme: "default", themeOptions: [{ id: "default", label: "Default", description: "The standard PUA appearance" }] },
     agentHub: {
       configuredEndpoint: "http://127.0.0.1:4646",
       connected: true,
@@ -47,6 +47,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onLayoutPreference: vi.fn(),
     onFontScale: vi.fn(),
     onResetFontScales: vi.fn(),
+    onThemePreference: vi.fn(),
     onSaveAgentHub: vi.fn(async () => undefined),
     onBrowserNotifications: vi.fn(),
     onCompletionSound: vi.fn(),

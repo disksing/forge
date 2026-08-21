@@ -27,7 +27,7 @@
 {:else if panel === "user"}
   <UserSettingsPanel userName={draft.userName} onUserNameInput={(value) => draft.userName = value} bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
 {:else if panel === "appearance"}
-  <AppearanceSettingsPanel appearance={model.appearance} onLayoutPreference={model.onLayoutPreference} onFontScale={model.onFontScale} onResetFontScales={model.onResetFontScales} />
+  <AppearanceSettingsPanel appearance={model.appearance} onLayoutPreference={model.onLayoutPreference} onFontScale={model.onFontScale} onResetFontScales={model.onResetFontScales} onThemePreference={model.onThemePreference} />
 {:else if panel === "agenthub"}
   <AgentHubSettingsPanel agentHub={model.agentHub} bind:draft bind:pending onDirty={markDirty} onSaveAgentHub={model.onSaveAgentHub} onToast={model.onToast} />
 {:else if panel === "profiles"}

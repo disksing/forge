@@ -8,11 +8,12 @@
   type LayoutPreference = Appearance["layout"];
   type FontScaleColumn = keyof Appearance["fontScales"];
 
-  let { appearance, onLayoutPreference, onFontScale, onResetFontScales }: {
+  let { appearance, onLayoutPreference, onFontScale, onResetFontScales, onThemePreference }: {
     appearance: Appearance;
     onLayoutPreference: SettingsModel["onLayoutPreference"];
     onFontScale: SettingsModel["onFontScale"];
     onResetFontScales: SettingsModel["onResetFontScales"];
+    onThemePreference: SettingsModel["onThemePreference"];
   } = $props();
 
   const layoutOptions: Array<{ id: LayoutPreference; label: string; description: string }> = [
@@ -33,7 +34,18 @@
 </script>
 
 <div class="settings-panel" data-component-owner="appearance-settings-panel" data-settings-panel>
-  <div class="settings-panel-header"><h2>Appearance</h2><p>Choose the workspace layout and the text size of each column. Everything applies immediately and is stored only in this browser.</p></div>
+  <div class="settings-panel-header"><h2>Appearance</h2><p>Choose the theme, the workspace layout and the text size of each column. Everything applies immediately and is stored only in this browser.</p></div>
+
+  <section class="appearance-section" aria-label="Theme">
+    <div class="settings-section-heading"><h3>Theme</h3></div>
+    <div class="layout-options" role="radiogroup" aria-label="Theme">
+      {#each appearance.themeOptions as option (option.id)}
+        <button type="button" class="layout-option theme-option" class:active={appearance.theme === option.id} role="radio" aria-checked={appearance.theme === option.id} onclick={() => onThemePreference(option.id)}>
+          <span class="layout-option-text"><strong>{option.label}</strong><small>{option.description}</small></span>
+        </button>
+      {/each}
+    </div>
+  </section>
 
   <section class="appearance-section" aria-label="Layout">
     <div class="settings-section-heading"><h3>Layout</h3></div>

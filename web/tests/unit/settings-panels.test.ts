@@ -26,7 +26,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     ],
     workspaceIconSavingId: "",
     userName: "User",
-    appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
+    appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 }, theme: "default", themeOptions: [{ id: "default", label: "Default", description: "The standard PUA appearance" }] },
     agentHub: {
       configuredEndpoint: "http://127.0.0.1:4646",
       connected: true,
@@ -53,6 +53,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onLayoutPreference: vi.fn(),
     onFontScale: vi.fn(),
     onResetFontScales: vi.fn(),
+    onThemePreference: vi.fn(),
     onSaveAgentHub: vi.fn(async () => undefined),
     onBrowserNotifications: vi.fn(),
     onCompletionSound: vi.fn(),
@@ -234,14 +235,14 @@ describe("settings domain panels", () => {
   });
 
   it("routes appearance layout and font scale changes through the settings model", async () => {
-    const current = model({ appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1.1, chat: 1 } } });
+    const current = model({ appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1.1, chat: 1 }, theme: "default", themeOptions: [{ id: "default", label: "Default", description: "The standard PUA appearance" }] } });
     const draft = createSettingsDraft(current);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(SettingsPanelHarness, { target, props: { panel: "appearance", model: current, initialDraft: draft } });
     cleanups.push(() => unmount(component));
     await tick();
 
-    const options = [...target.querySelectorAll<HTMLButtonElement>(".layout-option")];
+    const options = [...target.querySelectorAll<HTMLButtonElement>('[aria-label="Layout"] .layout-option')];
     expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["true", "false", "false", "false"]);
     expect(options[0].classList.contains("active")).toBe(true);
     expect(target.querySelectorAll(".layout-diagram svg")).toHaveLength(4);
@@ -264,6 +265,27 @@ describe("settings domain panels", () => {
     expect(reset.disabled).toBe(false);
     reset.click();
     expect(current.onResetFontScales).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes theme selection through the settings model", async () => {
+    const themeOptions = [
+      { id: "default", label: "Default", description: "The standard PUA appearance" },
+      { id: "riso", label: "Riso", description: "Risograph print" }
+    ];
+    const current = model({ appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 }, theme: "default", themeOptions } });
+    const draft = createSettingsDraft(current);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "appearance", model: current, initialDraft: draft } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const options = [...target.querySelectorAll<HTMLButtonElement>('[aria-label="Theme"] .theme-option')];
+    expect(options).toHaveLength(2);
+    expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["true", "false"]);
+    expect(options[0].classList.contains("active")).toBe(true);
+
+    options[1].click();
+    expect(current.onThemePreference).toHaveBeenCalledWith("riso");
   });
 
   it("disables the appearance reset while every column uses the default text size", async () => {

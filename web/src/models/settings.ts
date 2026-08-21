@@ -27,9 +27,17 @@ export interface AgentHubSettings {
   agents: Array<{ name: string; providerId?: string; available?: boolean; unavailableReason?: string }>;
 }
 
+export interface ThemeOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
 export interface AppearanceSettings {
   layout: "auto" | "three" | "two" | "split";
   fontScales: { sidebar: number; details: number; chat: number };
+  theme: string;
+  themeOptions: ThemeOption[];
 }
 
 export interface SettingsDraft {
@@ -67,6 +75,7 @@ export interface SettingsModel {
   onLayoutPreference: (preference: AppearanceSettings["layout"]) => void;
   onFontScale: (column: keyof AppearanceSettings["fontScales"], value: number) => void;
   onResetFontScales: () => void;
+  onThemePreference: (theme: string) => void;
   onSaveAgentHub: (draft: SettingsDraft) => Promise<void>;
   onBrowserNotifications: (enabled: boolean) => void;
   onCompletionSound: (enabled: boolean) => void;

@@ -1,5 +1,13 @@
 /* tokens styles. Keep selectors within the documented ownership boundary. */
 
+/* Theming contract: the default theme is the bare `:root` block below. An
+   alternate theme is a `body[data-theme="<id>"]` block (in this file for
+   token overrides, or in a dedicated stylesheet for stronger restyling) that
+   redefines tokens and, where needed, adds scoped cosmetic rules. The active
+   theme id is applied to `document.body.dataset.theme` by the inline
+   bootstrap in static/index.html and by controllers/theme-controller.ts,
+   and persisted under the `pua.web.themePreference` localStorage key. */
+
 :root {
   color-scheme: light;
   /* Flat design palette: solid fills, 1px borders, no shadows/gradients. */

@@ -13,6 +13,7 @@ import { createCreateDialogController } from "./controllers/create-dialog-contro
 import { doctorSnapshotForWorkspace } from "./controllers/doctor-projection";
 import { createNotificationController, type NotificationSource } from "./controllers/notification-controller";
 import { createPaneLayoutController } from "./controllers/pane-layout-controller";
+import { createThemeController } from "./controllers/theme-controller";
 import { createResourceDetailController } from "./controllers/resource-detail-controller";
 import { createRouteController } from "./controllers/route-controller";
 import { createSettingsController, type AgentHubData } from "./controllers/settings-controller";
@@ -205,6 +206,7 @@ const agentOperations = createAgentOperationController(() => {
 	renderChatPanel();
 });
 const paneLayoutController = createPaneLayoutController(() => renderAppShell());
+const themeController = createThemeController(() => renderAppShell());
 const routeController = createRouteController(() => renderAppShell());
 const resourceDetailController = createResourceDetailController({
 	details: controllerState.details,
@@ -384,11 +386,17 @@ const settingsController = createSettingsController({
 	},
 	appearance: () => {
 		const snapshot = paneLayoutController.snapshot();
-		return { layout: snapshot.layout.preference, fontScales: snapshot.fontScales };
+		return {
+			layout: snapshot.layout.preference,
+			fontScales: snapshot.fontScales,
+			theme: themeController.theme(),
+			themeOptions: themeController.options()
+		};
 	},
 	setLayoutPreference: (preference) => paneLayoutController.setLayoutPreference(preference),
 	setFontScale: (column, value) => paneLayoutController.setFontScale(column, value),
 	resetFontScales: () => paneLayoutController.resetFontScales(),
+	setThemePreference: (theme) => themeController.setTheme(theme),
 	notificationPreferences: () => notificationController?.preferences() || { browser: false, sound: false, permission: "unsupported", permissionError: "", soundError: "" },
 	setBrowserNotifications: (enabled) => notificationController?.setBrowserEnabled(enabled),
 	setCompletionSound: (enabled) => notificationController?.setSoundEnabled(enabled),
@@ -2124,6 +2132,7 @@ function optionalAssetLoaded(asset: string): void {
 window.puaAssetLoaded = optionalAssetLoaded;
 function initPaneResize(): void {
 	paneLayoutController.initialize();
+	themeController.initialize();
 }
 function setPaneSize(name: keyof AppShellModel["paneSizes"], value: number): void {
 	paneLayoutController.previewPane(name, value);

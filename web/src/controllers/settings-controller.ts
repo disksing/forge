@@ -49,6 +49,7 @@ export interface SettingsControllerDependencies {
 	setLayoutPreference(preference: AppearanceSettings["layout"]): void;
 	setFontScale(column: keyof AppearanceSettings["fontScales"], value: number): void;
 	resetFontScales(): void;
+	setThemePreference(theme: string): void;
 	notificationPreferences(): NotificationPreferences;
 	setBrowserNotifications(enabled: boolean): void;
 	setCompletionSound(enabled: boolean): void;
@@ -176,6 +177,10 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			},
 			onResetFontScales: () => {
 				dependencies.resetFontScales();
+				render();
+			},
+			onThemePreference: (theme) => {
+				dependencies.setThemePreference(theme);
 				render();
 			},
 			onSaveAgentHub: async (draft) => { syncDraft(draft); await saveAgentSettings(); },
