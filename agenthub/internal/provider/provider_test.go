@@ -67,10 +67,10 @@ func TestCodexClassifiesItemLifecycleNotifications(t *testing.T) {
 		{method: "item/started", params: `{"item":{"id":"user-1","type":"userMessage"}}`, want: "provider.event"},
 		{method: "item/completed", params: `{"item":{"id":"agent-1","type":"agentMessage"}}`, want: "provider.event"},
 		{method: "item/updated", params: `{"item":{"id":"reasoning-1","type":"reasoning"}}`, want: "provider.event"},
-		{method: "item/started", params: `{"item":{"id":"search-1","type":"webSearch"}}`, want: "tool.event"},
-		{method: "item/completed", params: `{"item":{"id":"command-1","type":"commandExecution"}}`, want: "tool.event"},
-		{method: "item/commandExecution/outputDelta", params: `{"itemId":"command-1","delta":"ok"}`, want: "tool.event"},
-		{method: "command/exec/outputDelta", params: `{"callId":"command-2","delta":"ok"}`, want: "tool.event"},
+		{method: "item/started", params: `{"item":{"id":"search-1","type":"webSearch"}}`, want: "tool.call"},
+		{method: "item/completed", params: `{"item":{"id":"command-1","type":"commandExecution"}}`, want: "tool.call"},
+		{method: "item/commandExecution/outputDelta", params: `{"itemId":"command-1","delta":"ok"}`, want: "tool.call"},
+		{method: "command/exec/outputDelta", params: `{"callId":"command-2","delta":"ok"}`, want: "tool.call"},
 	}
 
 	for _, test := range tests {
@@ -430,7 +430,7 @@ func TestPiDropsRedundantToolCallAssemblyDeltas(t *testing.T) {
 
 	value.event("tool_execution_start", json.RawMessage(`{"type":"tool_execution_start","toolCallId":"call_1","toolName":"read","args":{"path":"README.md"}}`))
 	value.event("tool_execution_end", json.RawMessage(`{"type":"tool_execution_end","toolCallId":"call_1","toolName":"read","result":{"content":[{"type":"text","text":"contents"}]}}`))
-	if len(events) != 4 || events[2].Type != "tool.event" || events[3].Type != "tool.event" {
+	if len(events) != 4 || events[2].Type != "tool.call" || events[3].Type != "tool.call" {
 		t.Fatalf("tool execution visibility changed after dropping assembly deltas: %+v", events)
 	}
 }

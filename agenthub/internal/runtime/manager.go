@@ -10,6 +10,7 @@ import (
 
 	"github.com/disksing/pua/agenthub/internal/config"
 	"github.com/disksing/pua/agenthub/internal/provider"
+	"github.com/disksing/pua/agenthub/internal/semantic"
 	"github.com/disksing/pua/agenthub/internal/session"
 )
 
@@ -551,9 +552,7 @@ func (m *Manager) ensure(id string) (*active, error) {
 			Event: func(event provider.Event) { m.providerEvent(id, run, event) },
 			Approval: func(approvalID, method string, params json.RawMessage) {
 				run.withEvent(func(turnID string) {
-					_, _ = m.store.Append(id, "approval.requested", turnID, marshal(map[string]any{
-						"approvalId": approvalID, "method": method, "params": params,
-					}))
+					_, _ = m.store.Append(id, "approval.requested", turnID, marshal(semantic.ApprovalRequestData(approvalID, method, params)))
 				})
 			},
 			ProcessStart: func(info provider.ProcessInfo) error {

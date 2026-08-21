@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { buildTimeline as buildAgentHubTimeline } from "../../vendor/agenthub-event-timeline";
+import { buildTimeline } from "../../src/components/timeline-projector";
 import type { AgentEvent, TimelineItem } from "../../src/components/models";
 import { compactTimelineEvents, groupTimelineActivities, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, projectConversationEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
-    id, type: "tool.event", data: {
-      method: "session/update",
-      raw: { update: { sessionUpdate: "tool_call_update", toolCallId: callId, content: [{ type: "text", text }] } },
+    id, type: "tool.call", data: {
+      schemaVersion: 1, callId, operation: "update", status: "running",
+      output: { mode: "replace", text },
     },
   };
 }
@@ -47,7 +47,7 @@ describe("timeline event algorithms", () => {
     expect(mergeCanonicalEventBatch(events, [])).toBe(events);
   });
 
-  it("compacts cumulative ACP updates per call without crossing event boundaries", () => {
+  it("keeps provider-neutral tool updates without inspecting provider payloads", () => {
     const compacted = compactTimelineEvents([
       toolUpdate(1, "call-a", "a1"),
       toolUpdate(2, "call-b", "b1"),
@@ -57,9 +57,40 @@ describe("timeline event algorithms", () => {
       toolUpdate(6, "call-a", "a4"),
     ]);
 
-    expect(compacted.map((event) => event.id)).toEqual([2, 3, 4, 6]);
-    expect(compacted[1].data?.raw).toMatchObject({ update: { toolCallId: "call-a", content: [{ text: "a2" }] } });
-    expect(compacted[3].data?.raw).toMatchObject({ update: { toolCallId: "call-a", content: [{ text: "a4" }] } });
+    expect(compacted.map((event) => event.id)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(compacted[2].data).toMatchObject({ callId: "call-a", output: { text: "a2" } });
+    expect(compacted[5].data).toMatchObject({ callId: "call-a", output: { text: "a4" } });
+  });
+
+  it("renders retryable provider errors as informational lifecycle events", () => {
+    const [item] = buildTimeline([{
+      id: 7, semanticId: "sem_7_0", semanticIndex: 0, type: "provider.error",
+      data: { message: "Connection interrupted", retryable: true },
+    }]) as TimelineItem[];
+
+    expect(item).toMatchObject({ kind: "lifecycle", tone: "info", key: "sem_7_0", text: "Connection interrupted" });
+  });
+
+  it("preserves omitted tool fields across semantic updates", () => {
+    const [activity] = buildTimeline([
+      { id: 8, type: "tool.call", turnId: "turn-1", data: { callId: "call-1", operation: "start", toolKind: "command", name: "Command", summary: "go test ./...", status: "running" } },
+      { id: 9, type: "tool.call", turnId: "turn-1", data: { callId: "call-1", operation: "finish", status: "completed", output: { mode: "replace", text: "ok" } } },
+    ]) as TimelineItem[];
+
+    expect(activity.items?.[0].calls?.[0]).toMatchObject({ name: "Command", summary: "go test ./...", status: "completed", output: "ok" });
+  });
+
+  it("keeps multiple semantic facts from one source cursor independently addressable", () => {
+    const events: AgentEvent[] = [
+      { id: 9, semanticId: "sem_9_0", semanticIndex: 0, type: "turn.started", turnId: "turn-1" },
+      { id: 9, semanticId: "sem_9_1", semanticIndex: 1, type: "message.input", turnId: "turn-1", data: { text: "same frame" } },
+    ];
+    const merged = mergeCanonicalEvents(events);
+    const items = projectConversationEvents(merged);
+
+    expect(merged).toHaveLength(2);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ key: "sem_9_1", kind: "message", text: "same frame" });
   });
 
   it("hides routine session and turn boundaries without breaking terminal tool settlement", () => {
@@ -68,12 +99,12 @@ describe("timeline event algorithms", () => {
       { id: 2, type: "session.provider", data: { agentName: "gpt-5.6-sol", provider: "codex" } },
       { id: 3, type: "message.input", turnId: "turn-1", data: { text: "hello" } },
       { id: 4, type: "turn.started", turnId: "turn-1" },
-      { id: 5, type: "tool.event", turnId: "turn-1", data: { method: "item/started", raw: { item: { id: "call-1", type: "commandExecution", command: ["make"], status: "inProgress" } } } },
+      { id: 5, type: "tool.call", turnId: "turn-1", data: { schemaVersion: 1, callId: "call-1", operation: "start", toolKind: "command", name: "Command", summary: "make", status: "running" } },
       { id: 6, type: "turn.completed", turnId: "turn-1" },
       { id: 7, type: "session.state", data: { state: "stopped", reason: "completed" } },
     ];
 
-    const items = visibleConversationTimelineItems(events, buildAgentHubTimeline(events) as TimelineItem[]);
+    const items = visibleConversationTimelineItems(events, buildTimeline(events) as TimelineItem[]);
 
     expect(items.map((item) => item.text)).not.toContain("Session created");
     expect(items.map((item) => item.text)).not.toContain("Agent connected · gpt-5.6-sol · via codex");

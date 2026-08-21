@@ -284,10 +284,11 @@ POST   /v1/sessions/{id}/interrupt
 POST   /v1/sessions/{id}/stop
 POST   /v1/sessions/{id}/approvals/{approvalId}
 GET    /v1/sessions/{id}/events
+GET    /v1/sessions/{id}/event/{sourceEventId}
 GET    /v1/sessions/{id}/turns
 ```
 
-The events endpoint returns paginated JSON with an exclusive `after` cursor, `nextAfter`, `hasMore`, and the latest durable cursor. With `Accept: text/event-stream` or `?stream=true` it returns SSE and uses the same exclusive cursor through `Last-Event-ID`. The daemon subscribes before capturing a high-water mark, replays the entire durable backlog in pages, and then switches to live delivery; overflow closes the stream so reconnecting from the last contiguous id can recover from `events.jsonl`, including after a daemon restart. SSE frames use the default message channel (no per-type `event:` field), so unknown event envelopes are preserved.
+The events endpoint returns provider-neutral `agenthub.semantic-events.v1` frames in paginated JSON with an exclusive `after` cursor, `nextAfter`, `hasMore`, and the latest durable cursor. With `Accept: text/event-stream` or `?stream=true` it returns the same frames over SSE and uses the exclusive cursor through `Last-Event-ID`. The daemon subscribes before capturing a high-water mark, replays the entire durable backlog in pages, and then switches to live delivery; overflow closes the stream so reconnecting from the last contiguous id can recover from `events.jsonl`, including after a daemon restart. The singular event endpoint is the only public route that returns an exact raw source Event for diagnostics.
 
 Clients may attach optional caller-defined correlation metadata when creating a session:
 
@@ -334,21 +335,16 @@ Examples:
 {"text":"Legacy input","role":"agent","sender":{"name":"Old Client"}}
 ```
 
-### Reusable Event Timeline
+### Semantic Events
 
-[`packages/event-timeline`](packages/event-timeline/README.md) is the
-dependency-free reference projection for API v1 canonical events. AgentHub
-Web imports its ESM artifact directly; non-bundled browser clients can vendor
-the IIFE and call `AgentHubEventTimeline.buildTimeline(events)`. The package
-contains sanitized conformance fixtures and exact snapshots for provider
-noise, cross-turn deltas, reasoning, Codex/ACP/Pi tools, approvals, terminal
-fallbacks, failures, cancellation, unknown events, and paginated replay.
-
-Run `npm run build` and `npm test` in the package directory to reproduce and
-verify both artifacts. `dist/manifest.json` records version `1.0.0`, contract
-`agenthub.api.v1`, BSD-3-Clause licensing, the deterministic build command,
-and SHA-256 hashes for source inputs and generated artifacts. Consumers
-should pin the AgentHub Git commit containing the manifest.
+`GET /v1/sessions/{id}/events` exposes the provider-neutral
+`agenthub.semantic-events.v1` protocol to every client. AgentHub Web keeps its
+presentation projector locally and depends only on that public protocol; it
+does not publish or require a shared timeline package. Existing Provider raw
+events are normalized when read, while new tool activity is persisted as
+canonical `tool.call` source events. Use the singular
+`GET /v1/sessions/{id}/event/{sourceEventId}` endpoint only for exact raw
+diagnostics.
 
 ### Archiving Sessions
 

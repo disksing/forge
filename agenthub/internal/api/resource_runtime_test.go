@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/disksing/pua/agenthub/internal/semantic"
 	"github.com/disksing/pua/agenthub/internal/session"
 )
 
@@ -119,7 +120,7 @@ func TestTurnsAPIReadsArchivedSession(t *testing.T) {
 	}
 	defer ranged.Body.Close()
 	var firstRange struct {
-		Events []session.Event `json:"events"`
+		Frames []semantic.Frame `json:"frames"`
 		Page   struct {
 			NextAfter int64 `json:"nextAfter"`
 			HasMore   bool  `json:"hasMore"`
@@ -128,7 +129,7 @@ func TestTurnsAPIReadsArchivedSession(t *testing.T) {
 	if err := json.NewDecoder(ranged.Body).Decode(&firstRange); err != nil {
 		t.Fatal(err)
 	}
-	if len(firstRange.Events) != 2 || firstRange.Events[0].ID != 2 || firstRange.Events[1].ID != 3 || !firstRange.Page.HasMore {
+	if len(firstRange.Frames) != 2 || firstRange.Frames[0].Cursor != 2 || firstRange.Frames[1].Cursor != 3 || !firstRange.Page.HasMore {
 		t.Fatalf("first range = %+v", firstRange)
 	}
 	secondRange, err := http.Get(server.URL + "/v1/sessions/" + created.ID + "/events?start=2&end=4&after=3&limit=2")
@@ -137,7 +138,7 @@ func TestTurnsAPIReadsArchivedSession(t *testing.T) {
 	}
 	defer secondRange.Body.Close()
 	var secondResult struct {
-		Events []session.Event `json:"events"`
+		Frames []semantic.Frame `json:"frames"`
 		Page   struct {
 			HasMore bool `json:"hasMore"`
 		} `json:"page"`
@@ -145,7 +146,7 @@ func TestTurnsAPIReadsArchivedSession(t *testing.T) {
 	if err := json.NewDecoder(secondRange.Body).Decode(&secondResult); err != nil {
 		t.Fatal(err)
 	}
-	if len(secondResult.Events) != 1 || secondResult.Events[0].ID != 4 || secondResult.Page.HasMore {
+	if len(secondResult.Frames) != 1 || secondResult.Frames[0].Cursor != 4 || secondResult.Page.HasMore {
 		t.Fatalf("second range = %+v", secondResult)
 	}
 }

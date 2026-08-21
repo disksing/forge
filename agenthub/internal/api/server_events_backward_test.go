@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/disksing/pua/agenthub/internal/session"
+	"github.com/disksing/pua/agenthub/internal/semantic"
 )
 
 type backwardPage struct {
-	Events []session.Event `json:"events"`
+	Frames []semantic.Frame `json:"frames"`
 	Page   struct {
 		After         int64 `json:"after"`
 		Limit         int   `json:"limit"`
@@ -42,9 +42,9 @@ func getBackwardPage(t *testing.T, base, id, query string) backwardPage {
 }
 
 func pageIDs(page backwardPage) []int64 {
-	ids := make([]int64, 0, len(page.Events))
-	for _, event := range page.Events {
-		ids = append(ids, event.ID)
+	ids := make([]int64, 0, len(page.Frames))
+	for _, frame := range page.Frames {
+		ids = append(ids, frame.Cursor)
 	}
 	return ids
 }
@@ -100,7 +100,7 @@ func TestEventsBackwardPagination(t *testing.T) {
 
 	// before=1 is a valid empty page, not an error.
 	empty := getBackwardPage(t, server.URL, created.ID, "before=1&limit=10")
-	if len(empty.Events) != 0 || empty.Page.HasMoreBefore || empty.Page.Before != 1 {
+	if len(empty.Frames) != 0 || empty.Page.HasMoreBefore || empty.Page.Before != 1 {
 		t.Fatalf("before=1 page = %+v", empty)
 	}
 }

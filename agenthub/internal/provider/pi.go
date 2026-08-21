@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/disksing/pua/agenthub/internal/semantic"
 )
 
 type piSession struct {
@@ -328,7 +330,8 @@ func (p *piSession) event(kind string, raw json.RawMessage) {
 			return
 		}
 	case "tool_execution_start", "tool_execution_end":
-		event.Type = "tool.event"
+		event.Type = "tool.call"
+		event.Data = semantic.ToolCallData(kind, raw)
 	case "agent_settled":
 		clear(p.messageStreams)
 		event.Type, event.TurnDone = "provider.turn.completed", true

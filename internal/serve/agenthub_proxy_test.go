@@ -134,7 +134,7 @@ func (f *proxyFakeAgentHub) eventsQuery(t *testing.T, index int) url.Values {
 }
 
 func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
-	fake := &proxyFakeAgentHub{eventsBody: `{"events":[{"id":7,"type":"provider.event"}],"page":{"before":8,"nextBefore":1,"hasMoreBefore":true}}`}
+	fake := &proxyFakeAgentHub{eventsBody: `{"schema":"agenthub.semantic-events.v1","frames":[{"schema":"agenthub.semantic-events.v1","cursor":7,"mode":"replace","source":{"eventId":7,"type":"provider.event","sessionId":"ses_one"},"events":[]}],"page":{"before":8,"nextBefore":1,"hasMoreBefore":true}}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
@@ -174,7 +174,7 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 }
 
 func TestAgentHubProxyBoundedEvents(t *testing.T) {
-	fake := &proxyFakeAgentHub{eventsBody: `{"events":[]}`}
+	fake := &proxyFakeAgentHub{eventsBody: `{"schema":"agenthub.semantic-events.v1","frames":[]}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
@@ -192,7 +192,7 @@ func TestAgentHubProxyBoundedEvents(t *testing.T) {
 }
 
 func TestAgentHubProxyEventsSingleUpstreamRequestPerClientPage(t *testing.T) {
-	fake := &proxyFakeAgentHub{eventsBody: `{"events":[],"page":{"hasMoreBefore":true}}`}
+	fake := &proxyFakeAgentHub{eventsBody: `{"schema":"agenthub.semantic-events.v1","frames":[],"page":{"hasMoreBefore":true}}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
@@ -215,7 +215,7 @@ func TestAgentHubProxyEventsSingleUpstreamRequestPerClientPage(t *testing.T) {
 }
 
 func TestAgentHubProxyEventsWithoutRuntimeLoadsGenerationFromDisk(t *testing.T) {
-	fake := &proxyFakeAgentHub{eventsBody: `{"events":[],"page":{"after":3,"nextAfter":3,"hasMore":false},"latestCursor":3}`}
+	fake := &proxyFakeAgentHub{eventsBody: `{"schema":"agenthub.semantic-events.v1","frames":[],"page":{"after":3,"nextAfter":3,"hasMore":false},"latestCursor":3}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
@@ -244,7 +244,7 @@ func TestAgentHubProxyEventsWithoutRuntimeLoadsGenerationFromDisk(t *testing.T) 
 }
 
 func TestAgentHubProxyEventsGenerationLookupFailures(t *testing.T) {
-	fake := &proxyFakeAgentHub{eventsBody: `{"events":[]}`}
+	fake := &proxyFakeAgentHub{eventsBody: `{"schema":"agenthub.semantic-events.v1","frames":[]}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)

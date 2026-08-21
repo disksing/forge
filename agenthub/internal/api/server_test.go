@@ -20,6 +20,7 @@ import (
 
 	"github.com/disksing/pua/agenthub/internal/config"
 	"github.com/disksing/pua/agenthub/internal/runtime"
+	"github.com/disksing/pua/agenthub/internal/semantic"
 	"github.com/disksing/pua/agenthub/internal/session"
 )
 
@@ -218,16 +219,93 @@ func TestSessionAPIUsesEventLog(t *testing.T) {
 	}
 	defer response.Body.Close()
 	var history struct {
-		Events []session.Event `json:"events"`
+		Frames []semantic.Frame `json:"frames"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&history); err != nil {
 		t.Fatal(err)
 	}
-	if len(history.Events) != 1 || history.Events[0].Type != "session.created" {
-		t.Fatalf("unexpected history: %+v", history.Events)
+	if len(history.Frames) != 1 || len(history.Frames[0].Events) != 1 || history.Frames[0].Events[0].Type != "session.created" {
+		t.Fatalf("unexpected history: %+v", history.Frames)
 	}
-	if !bytes.Contains(history.Events[0].Data, []byte(`"launchEnvironment":{"SESSION_CONTEXT_ID":"context-api"}`)) {
-		t.Fatalf("session.created did not persist launchEnvironment: %s", history.Events[0].Data)
+	historyData, _ := json.Marshal(history.Frames[0].Events[0].Data)
+	if !bytes.Contains(historyData, []byte(`"launchEnvironment":{"SESSION_CONTEXT_ID":"context-api"}`)) {
+		t.Fatalf("session.created did not preserve launchEnvironment: %s", historyData)
+	}
+}
+
+func TestSemanticEventsHideRawAndSingleEventReturnsExactDiagnostic(t *testing.T) {
+	store, err := session.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(session.CreateInput{Title: "Raw diagnostic", Cwd: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, err := store.Append(created.ID, "tool.event", "turn_1", mustMarshal(t, map[string]any{
+		"method": "item/started",
+		"raw": map[string]any{"secret": "provider-private", "item": map[string]any{
+			"id": "call_1", "type": "commandExecution", "command": []string{"true"}, "status": "inProgress",
+		}},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(store, "test", time.Now()).Handler())
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/v1/sessions/" + created.ID + "/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicBody, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || bytes.Contains(publicBody, []byte("provider-private")) || bytes.Contains(publicBody, []byte(`"raw"`)) {
+		t.Fatalf("public events leaked raw: status=%d body=%s", response.StatusCode, publicBody)
+	}
+	var public struct {
+		Schema string           `json:"schema"`
+		Frames []semantic.Frame `json:"frames"`
+	}
+	if err := json.Unmarshal(publicBody, &public); err != nil {
+		t.Fatal(err)
+	}
+	if public.Schema != semantic.EventsSchema || len(public.Frames) != 2 || len(public.Frames[1].Events) != 1 || public.Frames[1].Events[0].Type != "tool.call" {
+		t.Fatalf("public events = %+v", public)
+	}
+
+	response, err = http.Get(server.URL + "/v1/sessions/" + created.ID + "/event/" + strconv.FormatInt(tool.ID, 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail semantic.Detail
+	if err := json.NewDecoder(response.Body).Decode(&detail); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || detail.Schema != semantic.EventDetailSchema || detail.SourceEvent.ID != tool.ID || !bytes.Contains(detail.SourceEvent.Data, []byte("provider-private")) {
+		t.Fatalf("detail = status=%d %+v", response.StatusCode, detail)
+	}
+	frameData, _ := json.Marshal(detail.Frame)
+	if bytes.Contains(frameData, []byte("provider-private")) || bytes.Contains(frameData, []byte(`"raw"`)) {
+		t.Fatalf("detail frame leaked raw: %s", frameData)
+	}
+
+	for path, wantStatus := range map[string]int{
+		"/event/0":         http.StatusBadRequest,
+		"/event/not-id":    http.StatusBadRequest,
+		"/event/999":       http.StatusNotFound,
+		"/event/1?raw=yes": http.StatusBadRequest,
+	} {
+		response, err := http.Get(server.URL + "/v1/sessions/" + created.ID + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != wantStatus {
+			t.Errorf("%s status=%d, want %d", path, response.StatusCode, wantStatus)
+		}
 	}
 }
 
@@ -712,7 +790,7 @@ func TestRESTEventPaginationReportsDurableHead(t *testing.T) {
 	defer server.Close()
 
 	var first struct {
-		Events []session.Event `json:"events"`
+		Frames []semantic.Frame `json:"frames"`
 		Page   struct {
 			After     int64 `json:"after"`
 			Limit     int   `json:"limit"`
@@ -729,14 +807,14 @@ func TestRESTEventPaginationReportsDurableHead(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&first); err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Events) != 1000 || first.Page.After != 0 || first.Page.Limit != 1000 ||
+	if len(first.Frames) != 1000 || first.Page.After != 0 || first.Page.Limit != 1000 ||
 		first.Page.NextAfter != 1000 || !first.Page.HasMore || first.LatestCursor != 1001 {
-		t.Fatalf("unexpected first page: events=%d page=%+v latest=%d", len(first.Events), first.Page, first.LatestCursor)
+		t.Fatalf("unexpected first page: frames=%d page=%+v latest=%d", len(first.Frames), first.Page, first.LatestCursor)
 	}
 
 	var second struct {
-		Events       []session.Event `json:"events"`
-		LatestCursor int64           `json:"latestCursor"`
+		Frames       []semantic.Frame `json:"frames"`
+		LatestCursor int64            `json:"latestCursor"`
 		Page         struct {
 			NextAfter int64 `json:"nextAfter"`
 			HasMore   bool  `json:"hasMore"`
@@ -750,7 +828,7 @@ func TestRESTEventPaginationReportsDurableHead(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&second); err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Events) != 1 || second.Events[0].ID != 1001 ||
+	if len(second.Frames) != 1 || second.Frames[0].Cursor != 1001 ||
 		second.Page.NextAfter != 1001 || second.Page.HasMore || second.LatestCursor != 1001 {
 		t.Fatalf("unexpected second page: %+v", second)
 	}
@@ -980,12 +1058,12 @@ func TestSSEStreamsUnknownEventTypes(t *testing.T) {
 	if len(frames) != 2 || frames[0] != "id: 1" || !strings.HasPrefix(frames[1], "data: ") {
 		t.Fatalf("unexpected SSE frame: %q", frames)
 	}
-	var event session.Event
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &event); err != nil {
+	var frame semantic.Frame
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &frame); err != nil {
 		t.Fatal(err)
 	}
-	if event.Type != "session.created" {
-		t.Fatalf("first replayed event type = %q, want session.created", event.Type)
+	if len(frame.Events) != 1 || frame.Events[0].Type != "session.created" {
+		t.Fatalf("first replayed frame = %+v, want session.created", frame)
 	}
 
 	// The custom event must also be framed without an `event:` name field.
@@ -1003,11 +1081,11 @@ func TestSSEStreamsUnknownEventTypes(t *testing.T) {
 	if len(frames) != 2 || frames[0] != "id: 2" || !strings.HasPrefix(frames[1], "data: ") {
 		t.Fatalf("unknown event frame must use the default message channel: %q", frames)
 	}
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &event); err != nil {
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(frames[1], "data: ")), &frame); err != nil {
 		t.Fatal(err)
 	}
-	if event.Type != "provider.some.future.event" {
-		t.Fatalf("second event type = %q, want provider.some.future.event", event.Type)
+	if len(frame.Events) != 1 || frame.Events[0].Type != "unknown" {
+		t.Fatalf("second frame = %+v, want sanitized unknown", frame)
 	}
 	cancel()
 }
@@ -1055,20 +1133,17 @@ func TestSSEForwardsDeltaMergePatches(t *testing.T) {
 		}
 	}
 	appendDelta("Hello")
-	id, event := readSSEFrame(t, reader)
-	if id != 3 || deltaEventText(t, event) != "Hello" {
-		t.Fatalf("first delta frame = %d %+v", id, event)
+	id, frame := readSSEFrame(t, reader)
+	if id != 3 || deltaFrameText(t, frame) != "Hello" {
+		t.Fatalf("first delta frame = %d %+v", id, frame)
 	}
 	appendDelta("!")
-	id, event = readSSEFrame(t, reader)
+	id, frame = readSSEFrame(t, reader)
 	if id != 3 {
 		t.Fatalf("patch frame id = %d, want 3", id)
 	}
-	var patchData map[string]any
-	if err := json.Unmarshal(event.Data, &patchData); err != nil {
-		t.Fatal(err)
-	}
-	if patchData["append"] != true || patchData["text"] != "!" {
+	patchData := frame.Events[0].Data.(map[string]any)
+	if frame.Mode != "append" || patchData["text"] != "!" {
 		t.Fatalf("live frame = %+v, want append patch with only the new fragment", patchData)
 	}
 	if _, err := store.Append(created.ID, "turn.completed", "turn_1", nil); err != nil {
@@ -1088,23 +1163,19 @@ func TestSSEForwardsDeltaMergePatches(t *testing.T) {
 	}
 	defer reconnectResponse.Body.Close()
 	reconnectReader := bufio.NewReader(reconnectResponse.Body)
-	id, event = readSSEFrame(t, reconnectReader)
-	if id != 3 || deltaEventText(t, event) != "Hello!" {
-		t.Fatalf("reconnect first frame = %d %q, want the full merged event 3", id, deltaEventText(t, event))
+	id, frame = readSSEFrame(t, reconnectReader)
+	if id != 3 || deltaFrameText(t, frame) != "Hello!" {
+		t.Fatalf("reconnect first frame = %d %q, want the full merged event 3", id, deltaFrameText(t, frame))
 	}
-	var resent map[string]any
-	if err := json.Unmarshal(event.Data, &resent); err != nil {
-		t.Fatal(err)
-	}
-	if _, hasAppend := resent["append"]; hasAppend {
-		t.Fatalf("replayed events must not carry the append flag: %+v", resent)
+	if frame.Mode != "replace" {
+		t.Fatalf("replayed frame mode = %q, want replace", frame.Mode)
 	}
 	if id, _ := readSSEFrame(t, reconnectReader); id != 4 {
 		t.Fatalf("reconnect second frame id = %d, want 4", id)
 	}
 }
 
-func readSSEFrame(t *testing.T, reader *bufio.Reader) (int64, session.Event) {
+func readSSEFrame(t *testing.T, reader *bufio.Reader) (int64, semantic.Frame) {
 	t.Helper()
 	var idLine, dataLine string
 	for dataLine == "" {
@@ -1124,19 +1195,19 @@ func readSSEFrame(t *testing.T, reader *bufio.Reader) (int64, session.Event) {
 	if err != nil {
 		t.Fatalf("invalid SSE id line %q: %v", idLine, err)
 	}
-	var event session.Event
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(dataLine, "data: ")), &event); err != nil {
+	var frame semantic.Frame
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(dataLine, "data: ")), &frame); err != nil {
 		t.Fatal(err)
 	}
-	return id, event
+	return id, frame
 }
 
-func deltaEventText(t *testing.T, event session.Event) string {
+func deltaFrameText(t *testing.T, frame semantic.Frame) string {
 	t.Helper()
-	var data map[string]any
-	if err := json.Unmarshal(event.Data, &data); err != nil {
-		t.Fatal(err)
+	if len(frame.Events) != 1 {
+		t.Fatalf("delta frame events = %d, want 1", len(frame.Events))
 	}
+	data, _ := frame.Events[0].Data.(map[string]any)
 	text, _ := data["text"].(string)
 	return text
 }
@@ -1445,13 +1516,14 @@ func TestArchiveEndpointMovesAndHidesSession(t *testing.T) {
 	}
 	defer response.Body.Close()
 	var history struct {
-		Events []session.Event `json:"events"`
+		Frames []semantic.Frame `json:"frames"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&history); err != nil {
 		t.Fatal(err)
 	}
-	if history.Events[len(history.Events)-1].Type != "session.archived" {
-		t.Fatalf("last event = %q, want session.archived", history.Events[len(history.Events)-1].Type)
+	last := history.Frames[len(history.Frames)-1].Events
+	if len(last) != 1 || last[0].Type != "session.archived" {
+		t.Fatalf("last frame = %+v, want session.archived", last)
 	}
 
 	// Repeating the archive is idempotent.
@@ -1976,15 +2048,18 @@ func TestPutConfigRenameMigratesSessionReferences(t *testing.T) {
 	}
 	defer response.Body.Close()
 	var eventsBody struct {
-		Events []session.Event `json:"events"`
+		Frames []semantic.Frame `json:"frames"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&eventsBody); err != nil {
 		t.Fatal(err)
 	}
 	found := false
-	for _, event := range eventsBody.Events {
-		if event.Type == "session.agent" && strings.Contains(string(event.Data), "Pi Agent X") {
-			found = true
+	for _, frame := range eventsBody.Frames {
+		for _, event := range frame.Events {
+			data, _ := json.Marshal(event.Data)
+			if event.Type == "session.agent" && strings.Contains(string(data), "Pi Agent X") {
+				found = true
+			}
 		}
 	}
 	if !found {
@@ -2134,6 +2209,8 @@ func TestStatusCapabilitiesAreBackedByHTTPBehavior(t *testing.T) {
 		CapabilityEventsLosslessReplay,
 		CapabilityEventsDeltaMerge,
 		CapabilityEventsBackwardPagination,
+		CapabilityEventsSemanticV1,
+		CapabilityEventRawV1,
 		CapabilityActivityGlobalSSE,
 		CapabilitySessionSource,
 		CapabilitySessionSourceMetadata,
@@ -2181,8 +2258,8 @@ func TestStatusCapabilitiesAreBackedByHTTPBehavior(t *testing.T) {
 	}
 	defer response.Body.Close()
 	var firstPage struct {
-		Events       []session.Event `json:"events"`
-		LatestCursor int64           `json:"latestCursor"`
+		Frames       []semantic.Frame `json:"frames"`
+		LatestCursor int64            `json:"latestCursor"`
 		Page         struct {
 			NextAfter int64 `json:"nextAfter"`
 			HasMore   bool  `json:"hasMore"`
@@ -2191,7 +2268,7 @@ func TestStatusCapabilitiesAreBackedByHTTPBehavior(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&firstPage); err != nil {
 		t.Fatal(err)
 	}
-	if len(firstPage.Events) != 2 || !firstPage.Page.HasMore || firstPage.LatestCursor <= firstPage.Page.NextAfter {
+	if len(firstPage.Frames) != 2 || !firstPage.Page.HasMore || firstPage.LatestCursor <= firstPage.Page.NextAfter {
 		t.Fatalf("lossless first page = %+v", firstPage)
 	}
 	allEvents, err := store.EventsAfter(created.ID, 0, 100)
@@ -2225,6 +2302,7 @@ func TestStatusOmitsUnavailableRuntimeCapabilities(t *testing.T) {
 	}
 	want := []string{
 		CapabilityEventsLosslessReplay, CapabilityEventsDeltaMerge, CapabilityEventsBackwardPagination,
+		CapabilityEventsSemanticV1, CapabilityEventRawV1,
 		CapabilityActivityGlobalSSE, CapabilitySessionSource, CapabilitySessionSourceMetadata,
 		CapabilitySessionIdempotentCreate, CapabilitySessionInputCapabilities,
 		CapabilityMessageIdempotency, CapabilityMessageAtLeastOnce, CapabilityMessageOpaquePayloadV2, CapabilityTurnsStableIndex, CapabilityTurnsMaterialized,

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "../../src/api/client";
 import { ChatSessionController } from "../../src/components/chat-state";
-import type { AgentEvent, AgentNotice, ChatContextSnapshot, ResourceHistoryGeneration, ResourceHistoryTurnSummary, ResourceMessageStatus } from "../../src/components/models";
+import type { AgentEvent, AgentNotice, AgentSemanticFrame, ChatContextSnapshot, ResourceHistoryGeneration, ResourceHistoryTurnSummary, ResourceMessageStatus } from "../../src/components/models";
 
 const controllers: ChatSessionController[] = [];
 afterEach(() => controllers.splice(0).forEach((controller) => controller.dispose()));
@@ -33,6 +33,25 @@ function detail(summary: ResourceHistoryTurnSummary) {
   return { turn: summary, latestEventId: summary.lastEventId, items: [{ type: "message", role: "user", text: `detail ${summary.turnId}`, startEventId: summary.startEventId, endEventId: summary.startEventId, startedAt: summary.startedAt, endedAt: summary.startedAt }] };
 }
 
+function semanticFrame(event: AgentEvent, mode: AgentSemanticFrame["mode"] = "replace"): AgentSemanticFrame {
+  const sessionId = event.sessionId || "session-test";
+  return {
+    schema: "agenthub.semantic-events.v1",
+    cursor: event.id,
+    mode,
+    source: { eventId: event.id, type: event.type, sessionId, turnId: event.turnId, time: event.time },
+    events: [{
+      id: `sem_${event.id}_0`, sourceEventId: event.id, index: 0, type: event.type,
+      time: event.time, sessionId, turnId: event.turnId, data: event.data,
+    }],
+  };
+}
+
+function semanticPage(events: AgentEvent[]) {
+  const latest = events.reduce((value, event) => Math.max(value, event.id), 0);
+  return { schema: "agenthub.semantic-events.v1", frames: events.map((event) => semanticFrame(event)), page: { hasMore: false, nextAfter: latest }, latestCursor: latest };
+}
+
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
   readonly url: string;
@@ -44,7 +63,7 @@ class FakeEventSource {
   constructor(url: string) { this.url = url; FakeEventSource.instances.push(this); }
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void { this.listeners.set(type, listener as (event: MessageEvent) => void); }
   close(): void { this.closed = true; this.readyState = 2; }
-  emit(event: AgentEvent): void { this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(event) })); }
+  emit(event: AgentEvent): void { this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(semanticFrame(event)) })); }
   emitNotice(notice: AgentNotice): void { this.listeners.get("pua.notice")?.(new MessageEvent("pua.notice", { data: JSON.stringify(notice) })); }
   failPermanently(): void { this.readyState = 2; this.onerror?.(new Event("error")); }
 }
@@ -200,12 +219,12 @@ describe("resource conversation controller", () => {
     expect(latest.blocks.map((block) => block.key)).toEqual(["gap:gen-3"]);
   });
 
-  it("uses resource-scoped raw events and SSE only for the current open turn", async () => {
+  it("uses resource-scoped semantic events and SSE only for the current open turn", async () => {
     const open = turn(3, "open", 5, 7, false);
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);
       if (path.includes("/history/turns/ref-")) return response({ ...detail(open), latestEventId: 8 });
-      if (path.includes("/events?")) return response({ events: [{ id: 5, type: "turn.started", turnId: "open", sessionId: "session-3" }, { id: 6, type: "message.input", turnId: "open", sessionId: "session-3", data: { text: "raw" } }, { id: 8, type: "message.assistant.delta", turnId: "open", sessionId: "session-3", data: { text: "reply" } }], page: { hasMore: false, nextAfter: 8 } });
+      if (path.includes("/events?")) return response(semanticPage([{ id: 5, type: "turn.started", turnId: "open", sessionId: "session-3" }, { id: 6, type: "message.input", turnId: "open", sessionId: "session-3", data: { text: "raw" } }, { id: 8, type: "message.assistant.delta", turnId: "open", sessionId: "session-3", data: { text: "reply" } }]));
       return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl);
@@ -234,12 +253,12 @@ describe("resource conversation controller", () => {
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);
       if (path.includes("/history/turns/ref-")) return response(compact);
-      if (path.includes("/events?")) return response({ events: [
+      if (path.includes("/events?")) return response(semanticPage([
         { id: 5, type: "message.input", turnId: "closed", sessionId: "session-3", data: { text: "run it", role: "user" } },
-        { id: 6, type: "tool.event", turnId: "closed", sessionId: "session-3", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"] } } } },
-        { id: 7, type: "tool.event", turnId: "closed", sessionId: "session-3", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"], status: "completed" } } } },
+        { id: 6, type: "tool.call", turnId: "closed", sessionId: "session-3", data: { schemaVersion: 1, callId: "call-1", operation: "start", toolKind: "command", name: "Command", summary: "true", status: "running" } },
+        { id: 7, type: "tool.call", turnId: "closed", sessionId: "session-3", data: { schemaVersion: 1, callId: "call-1", operation: "finish", toolKind: "command", name: "Command", summary: "true", status: "completed" } },
         { id: 8, type: "message.assistant.delta", turnId: "closed", sessionId: "session-3", data: { text: "done" } },
-      ], page: { hasMore: false, nextAfter: 8 } });
+      ]));
       return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [closed] }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl);
@@ -270,10 +289,10 @@ describe("resource conversation controller", () => {
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);
       if (path.includes("/history/turns/ref-")) return response(compact);
-      if (path.includes("/events?")) return response({ events: [
-        { id: 6, type: "tool.event", turnId: "closed", sessionId: "session-2", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"] } } } },
-        { id: 7, type: "tool.event", turnId: "closed", sessionId: "session-2", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"], status: "completed" } } } },
-      ], page: { hasMore: false, nextAfter: 7 } });
+      if (path.includes("/events?")) return response(semanticPage([
+        { id: 6, type: "tool.call", turnId: "closed", sessionId: "session-2", data: { schemaVersion: 1, callId: "call-1", operation: "start", toolKind: "command", name: "Command", summary: "true", status: "running" } },
+        { id: 7, type: "tool.call", turnId: "closed", sessionId: "session-2", data: { schemaVersion: 1, callId: "call-1", operation: "finish", toolKind: "command", name: "Command", summary: "true", status: "completed" } },
+      ]));
       return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [] }, { generation: generation(2), turns: [closed] }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl);
@@ -663,8 +682,8 @@ describe("resource conversation controller", () => {
     const stream = FakeEventSource.instances[0];
     // The open summary still ends at event 7; both streamed events are newer
     // than the fetched head but clearly belong to the open turn.
-    stream.emit({ id: 8, type: "tool.event", turnId: "turn-a", sessionId: "session-3", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["ls"] } } } });
-    stream.emit({ id: 9, type: "tool.event", turnId: "turn-a", sessionId: "session-3", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["ls"], status: "completed" } } } });
+    stream.emit({ id: 8, type: "tool.call", turnId: "turn-a", sessionId: "session-3", data: { schemaVersion: 1, callId: "call-1", operation: "start", toolKind: "command", name: "Command", summary: "ls", status: "running" } });
+    stream.emit({ id: 9, type: "tool.call", turnId: "turn-a", sessionId: "session-3", data: { schemaVersion: 1, callId: "call-1", operation: "finish", toolKind: "command", name: "Command", summary: "ls", status: "completed" } });
     await vi.waitFor(() => expect(latest.blocks[0].events?.map((event) => event.id)).toEqual([8, 9]));
     expect(latest.blocks).toHaveLength(1);
     expect(latest.blocks[0].key).toBe("gen-3:turn-a");
@@ -685,7 +704,7 @@ describe("resource conversation controller", () => {
     value.subscribe((snapshot) => { latest = snapshot; });
     value.activate("workspace-a", "task-a", status());
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    FakeEventSource.instances[0].emit({ id: 8, type: "tool.event", turnId: "turn-b", sessionId: "session-3", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["ls"] } } } });
+    FakeEventSource.instances[0].emit({ id: 8, type: "tool.call", turnId: "turn-b", sessionId: "session-3", data: { schemaVersion: 1, callId: "call-1", operation: "start", toolKind: "command", name: "Command", summary: "ls", status: "running" } });
     await vi.waitFor(() => expect(latest.blocks).toHaveLength(2));
     expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a", "gen-3:turn-b:8"]);
     await vi.waitFor(() => expect(historyCalls).toBe(2));

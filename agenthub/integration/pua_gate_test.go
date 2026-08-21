@@ -107,9 +107,18 @@ type sourceValue struct {
 }
 
 type eventValue struct {
-	ID   int64           `json:"id"`
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+	ID            string          `json:"id"`
+	SourceEventID int64           `json:"sourceEventId"`
+	Type          string          `json:"type"`
+	Data          json.RawMessage `json:"data"`
+}
+
+type frameValue struct {
+	Cursor int64 `json:"cursor"`
+	Source struct {
+		Type string `json:"type"`
+	} `json:"source"`
+	Events []eventValue `json:"events"`
 }
 
 func newGate(t *testing.T) *daemon {
@@ -366,16 +375,28 @@ func (d *daemon) waitSessionFor(id string, timeout time.Duration, predicate func
 	return value
 }
 
-func (d *daemon) events(id string) []eventValue {
+func (d *daemon) frames(id string) []frameValue {
 	d.t.Helper()
 	status, body := d.request(http.MethodGet, "/v1/sessions/"+id+"/events?limit=1000", nil)
 	if status != http.StatusOK {
 		d.t.Fatalf("events: status=%d body=%v", status, body)
 	}
-	data, _ := json.Marshal(body["events"])
-	var events []eventValue
-	if err := json.Unmarshal(data, &events); err != nil {
+	if body["schema"] != "agenthub.semantic-events.v1" {
+		d.t.Fatalf("events schema=%v", body["schema"])
+	}
+	data, _ := json.Marshal(body["frames"])
+	var frames []frameValue
+	if err := json.Unmarshal(data, &frames); err != nil {
 		d.t.Fatal(err)
+	}
+	return frames
+}
+
+func (d *daemon) events(id string) []eventValue {
+	d.t.Helper()
+	var events []eventValue
+	for _, frame := range d.frames(id) {
+		events = append(events, frame.Events...)
 	}
 	return events
 }
@@ -703,15 +724,17 @@ func TestPUAGateDaemonKillRecoveryClosesOpenWork(t *testing.T) {
 		return current.State == "waiting_approval" && current.CurrentTurnID != "" && len(current.PendingApprovalIDs) == 1
 	})
 	var providerPID int
-	for _, event := range gate.events(value.ID) {
-		if event.Type != "provider.process.started" {
+	for _, frame := range gate.frames(value.ID) {
+		if frame.Source.Type != "provider.process.started" {
 			continue
 		}
-		var process struct {
-			PID int `json:"pid"`
+		status, detail := gate.request(http.MethodGet, fmt.Sprintf("/v1/sessions/%s/event/%d", value.ID, frame.Cursor), nil)
+		if status != http.StatusOK {
+			t.Fatalf("event detail: status=%d body=%v", status, detail)
 		}
-		_ = json.Unmarshal(event.Data, &process)
-		providerPID = process.PID
+		source := detail["sourceEvent"].(map[string]any)
+		data := source["data"].(map[string]any)
+		providerPID = int(data["pid"].(float64))
 	}
 	if providerPID <= 1 {
 		t.Fatal("provider process identity was not persisted")
@@ -813,7 +836,7 @@ func TestPUAGateLosslessReplayBacklogDisconnectOverflowAndCatchup(t *testing.T) 
 		}
 		after := value.LastEventID - 25
 		status, catchup := gate.request(http.MethodGet, fmt.Sprintf("/v1/sessions/%s/events?after=%d&limit=100", value.ID, after), nil)
-		if status != http.StatusOK || len(catchup["events"].([]any)) != 25 {
+		if status != http.StatusOK || len(catchup["frames"].([]any)) != 25 {
 			t.Fatalf("overflow REST recovery: status=%d body=%v", status, catchup)
 		}
 	})

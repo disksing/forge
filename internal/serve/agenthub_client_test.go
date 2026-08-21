@@ -205,6 +205,15 @@ func TestAgentHubStatusValidation(t *testing.T) {
 	if err := validateAgentHubStatus(valid); err == nil || !strings.Contains(err.Error(), "recovery.closed-turns") {
 		t.Fatalf("expected capability error, got %v", err)
 	}
+	valid.Capabilities = make([]string, 0, len(requiredAgentHubCapabilities)-1)
+	for _, capability := range requiredAgentHubCapabilities {
+		if capability != "events.semantic-v1" {
+			valid.Capabilities = append(valid.Capabilities, capability)
+		}
+	}
+	if err := validateAgentHubStatus(valid); err == nil || !strings.Contains(err.Error(), "events.semantic-v1") {
+		t.Fatalf("expected semantic events capability error, got %v", err)
+	}
 }
 
 func TestNormalizeAgentHubEndpoint(t *testing.T) {

@@ -9,91 +9,95 @@ export class EventCursorGapError extends Error {
   }
 }
 
-// catchUpEvents pages only to the durable head reported by the first request.
-// Events appended during the catch-up are left for SSE, which removes an
-// otherwise unbounded chase of a busy session.
-export async function catchUpEvents(sessionId, after = 0, request = api) {
+export async function catchUpFrames(sessionId, after = 0, request = api) {
   let cursor = after;
   let target = null;
-  const events = [];
+  const frames = [];
   do {
     const body = await request(`/v1/sessions/${sessionId}/events?after=${cursor}&limit=1000`);
+    if (body.schema !== "agenthub.semantic-events.v1") throw new Error(`Unsupported events schema: ${body.schema || "missing"}.`);
     if (target === null) target = body.latestCursor;
-    const page = body.events || [];
-    for (const event of page) {
-      if (event.id > target) break;
-      if (event.id !== cursor + 1) throw new EventCursorGapError(cursor + 1, event.id);
-      events.push(event);
-      cursor = event.id;
+    const page = body.frames || [];
+    for (const frame of page) {
+      if (frame.cursor > target) break;
+      if (frame.cursor !== cursor + 1) throw new EventCursorGapError(cursor + 1, frame.cursor);
+      frames.push(frame);
+      cursor = frame.cursor;
     }
-    if (cursor < target && page.length === 0) {
-      throw new EventCursorGapError(cursor + 1, 0);
-    }
+    if (cursor < target && page.length === 0) throw new EventCursorGapError(cursor + 1, 0);
   } while (cursor < target);
-  return { events, cursor, latestCursor: target };
+  return { frames, cursor, latestCursor: target };
 }
 
-// A live gap is never projected directly. The caller pauses the live source,
-// catches up from the last contiguous cursor through REST, and only then
-// resumes projection.
-//
-// The store folds consecutive text deltas into the tail event and republishes
-// frames under the id the client already has: append patches carrying only the
-// new fragment live, and the full accumulated event when a stream reconnect
-// replays the cursor. Both are projected again so the host converges on the
-// merged content; the cursor only advances on new ids.
-export async function projectLiveEvent({
-  sessionId,
-  cursor,
-  event,
-  request = api,
-  project,
-}) {
-  if (event.id <= cursor) {
-    project([event]);
+export async function projectLiveFrame({ sessionId, cursor, frame, request = api, project }) {
+  if (frame.cursor <= cursor) {
+    project([frame]);
     return cursor;
   }
-  if (event.id === cursor + 1) {
-    project([event]);
-    return event.id;
+  if (frame.cursor === cursor + 1) {
+    project([frame]);
+    return frame.cursor;
   }
-  const caughtUp = await catchUpEvents(sessionId, cursor, request);
-  project(caughtUp.events);
+  const caughtUp = await catchUpFrames(sessionId, cursor, request);
+  project(caughtUp.frames);
   return caughtUp.cursor;
 }
 
-// mergeIncomingEvents folds incoming frames into the stored contiguous event
-// list. New ids append in arrival order. A repeated id is either a full
-// replacement (history replays and reconnect cursor re-sends) or an append
-// patch (data.append === true) whose text fragment extends the stored event;
-// patches also move the stored event time to the newest fragment while
-// retaining the persisted first-fragment time for folded reasoning.
-export function mergeIncomingEvents(current, incoming) {
+export function mergeIncomingFrames(current, incoming) {
   const next = [...current];
-  const indexById = new Map(next.map((event, index) => [event.id, index]));
-  for (const event of incoming) {
-    const index = indexById.get(event.id);
+  const indexByCursor = new Map(next.map((frame, index) => [frame.cursor, index]));
+  for (const frame of incoming) {
+    const index = indexByCursor.get(frame.cursor);
     if (index === undefined) {
-      indexById.set(event.id, next.length);
-      next.push(event);
-    } else if (event.data?.append === true) {
-      next[index] = appendEventFragment(next[index], event);
+      indexByCursor.set(frame.cursor, next.length);
+      next.push(frame);
+    } else if (frame.mode === "append") {
+      next[index] = appendFrame(next[index], frame);
     } else {
-      const startTime = event.startTime || next[index].startTime || "";
-      next[index] = startTime ? { ...event, startTime } : event;
+      next[index] = frame;
     }
   }
-  return next;
+  return next.sort((left, right) => left.cursor - right.cursor);
 }
 
-function appendEventFragment(existing, patch) {
-  const current = typeof existing.data?.text === "string" ? existing.data.text : "";
-  const fragment = typeof patch.data?.text === "string" ? patch.data.text : "";
-  const startTime = patch.startTime || existing.startTime || "";
-  return {
-    ...existing,
-    time: patch.time || existing.time,
-    ...(startTime ? { startTime } : {}),
-    data: { ...existing.data, text: current + fragment },
-  };
+export function flattenFrames(frames) {
+  return (frames || []).flatMap((frame) => frame.events || []);
+}
+
+function appendFrame(existing, patch) {
+  const currentEvents = [...(existing.events || [])];
+  const byID = new Map(currentEvents.map((event, index) => [event.id, index]));
+  for (const event of patch.events || []) {
+    const index = byID.get(event.id);
+    if (index === undefined) {
+      byID.set(event.id, currentEvents.length);
+      currentEvents.push(event);
+      continue;
+    }
+    currentEvents[index] = appendSemanticEvent(currentEvents[index], event);
+  }
+  return { ...existing, source: { ...existing.source, ...patch.source }, events: currentEvents, mode: "replace" };
+}
+
+function appendSemanticEvent(existing, patch) {
+  if (patch.type === "message.assistant.delta" || patch.type === "message.reasoning.delta") {
+    return {
+      ...existing,
+      time: patch.time || existing.time,
+      data: { ...existing.data, text: `${existing.data?.text || ""}${patch.data?.text || ""}` },
+    };
+  }
+  if (patch.type === "tool.call" && patch.data?.output?.mode === "append") {
+    const previous = existing.data?.output?.text || "";
+    return {
+      ...existing,
+      time: patch.time || existing.time,
+      data: {
+        ...existing.data,
+        ...patch.data,
+        output: { ...patch.data.output, mode: "replace", text: previous + (patch.data.output.text || "") },
+      },
+    };
+  }
+  return { ...existing, ...patch, data: { ...existing.data, ...patch.data } };
 }

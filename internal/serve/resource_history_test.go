@@ -279,7 +279,7 @@ func TestResourceHistoryPaginatesAcrossGenerationsWithGap(t *testing.T) {
 		t.Fatalf("Event detail failed: %d %s", eventRecorder.Code, eventRecorder.Body.String())
 	}
 	var event resourceHistoryEventDetail
-	if err := json.Unmarshal(eventRecorder.Body.Bytes(), &event); err != nil || event.Event.ID != 1 || event.Generation.GenerationID != "gen-3" {
+	if err := json.Unmarshal(eventRecorder.Body.Bytes(), &event); err != nil || event.SourceEvent.ID != 1 || event.Frame.Cursor != 1 || event.Generation.GenerationID != "gen-3" {
 		t.Fatalf("Event detail mismatch: event=%#v err=%v", event, err)
 	}
 }
@@ -331,7 +331,7 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 	events := httptest.NewRecorder()
 	manager.server.handleWorkspace(events, httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/events?generationId=gen-current&after=0&limit=10", nil))
-	if events.Code != http.StatusOK || events.Header().Get("X-PUA-Generation-ID") != "gen-current" || !strings.Contains(events.Body.String(), `"id":1`) {
+	if events.Code != http.StatusOK || events.Header().Get("X-PUA-Generation-ID") != "gen-current" || !strings.Contains(events.Body.String(), `"cursor":1`) {
 		t.Fatalf("resource events response = %d headers=%v body=%s", events.Code, events.Header(), events.Body.String())
 	}
 
@@ -356,7 +356,7 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 	historical := httptest.NewRecorder()
 	manager.server.handleWorkspace(historical, httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/events?generationId=gen-old&after=0&limit=10", nil))
-	if historical.Code != http.StatusOK || historical.Header().Get("X-PUA-Generation-ID") != "gen-old" || !strings.Contains(historical.Body.String(), `"id":2`) {
+	if historical.Code != http.StatusOK || historical.Header().Get("X-PUA-Generation-ID") != "gen-old" || !strings.Contains(historical.Body.String(), `"cursor":2`) {
 		t.Fatalf("historical generation events response = %d headers=%v body=%s", historical.Code, historical.Header(), historical.Body.String())
 	}
 

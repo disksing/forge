@@ -258,32 +258,36 @@ func printUntilTurnEnds(apiClient *client.Client, id string, cursor int64) error
 
 func printTurn(apiClient *client.Client, id string, cursor int64) (int64, error) {
 	for {
-		events, err := apiClient.EventsAfter(id, cursor)
+		frames, err := apiClient.EventsAfter(id, cursor)
 		if err != nil {
 			return cursor, err
 		}
-		for _, event := range events {
-			cursor = event.ID
-			switch event.Type {
-			case "message.assistant.delta":
-				var data struct {
-					Text string `json:"text"`
+		for _, frame := range frames {
+			cursor = frame.Cursor
+			for _, event := range frame.Events {
+				switch event.Type {
+				case "message.assistant.delta":
+					var data struct {
+						Text string `json:"text"`
+					}
+					encoded, _ := json.Marshal(event.Data)
+					_ = json.Unmarshal(encoded, &data)
+					fmt.Print(data.Text)
+				case "approval.requested":
+					fmt.Fprintln(os.Stderr, "\napproval required; use the Web UI or approval API")
+				case "provider.error":
+					var data map[string]any
+					encoded, _ := json.Marshal(event.Data)
+					_ = json.Unmarshal(encoded, &data)
+					if message, _ := data["message"].(string); message != "" {
+						fmt.Fprintln(os.Stderr, "\nprovider:", message)
+					}
+				case "turn.completed":
+					fmt.Println()
+					return cursor, nil
+				case "turn.failed", "turn.cancelled":
+					return cursor, fmt.Errorf("turn ended with %s", event.Type)
 				}
-				_ = json.Unmarshal(event.Data, &data)
-				fmt.Print(data.Text)
-			case "approval.requested":
-				fmt.Fprintln(os.Stderr, "\napproval required; use the Web UI or approval API")
-			case "provider.error":
-				var data map[string]any
-				_ = json.Unmarshal(event.Data, &data)
-				if message, _ := data["message"].(string); message != "" {
-					fmt.Fprintln(os.Stderr, "\nprovider:", message)
-				}
-			case "turn.completed":
-				fmt.Println()
-				return cursor, nil
-			case "turn.failed", "turn.cancelled":
-				return cursor, fmt.Errorf("turn ended with %s", event.Type)
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -328,11 +332,11 @@ func runSession(args []string) error {
 		if err != nil {
 			return err
 		}
-		events, err := apiClient.EventsAfter(args[1], 0)
+		frames, err := apiClient.EventsAfter(args[1], 0)
 		if err != nil {
 			return err
 		}
-		return printJSON(map[string]any{"events": events})
+		return printJSON(map[string]any{"schema": "agenthub.semantic-events.v1", "frames": frames})
 	case "approve":
 		return runSessionApprove(args[1:])
 	case "archive":

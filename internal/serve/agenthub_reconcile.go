@@ -34,7 +34,7 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 	sawStopped := false
 	history := make([]agentHubEvent, 0)
 	for {
-		events, latestCursor, err := client.SessionEvents(ctx, sessionID, cursor, 500)
+		frames, latestCursor, err := client.SessionFrames(ctx, sessionID, cursor, 500)
 		if err != nil {
 			var apiErr *agentHubAPIError
 			if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
@@ -43,31 +43,34 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 			return false, nil, cursor, err
 		}
 		progressed := false
-		for _, event := range events {
-			if event.ID <= cursor {
+		for _, frame := range frames {
+			if frame.Cursor <= cursor {
 				continue
 			}
-			if event.ID != cursor+1 {
+			if frame.Cursor != cursor+1 {
 				return false, nil, cursor, &permanentArchivedProofError{
-					fmt.Errorf("cursor gap: expected event %d, got %d", cursor+1, event.ID),
+					fmt.Errorf("cursor gap: expected event %d, got %d", cursor+1, frame.Cursor),
 				}
 			}
-			cursor = event.ID
+			cursor = frame.Cursor
 			progressed = true
-			history = append(history, event)
-			if event.Type != "session.state" {
-				continue
-			}
-			var data struct {
-				State string `json:"state"`
-			}
-			if err := json.Unmarshal(event.Data, &data); err != nil {
-				return false, nil, cursor, &permanentArchivedProofError{
-					fmt.Errorf("decode session.state event %d: %w", event.ID, err),
+			for _, semanticEvent := range frame.Events {
+				event := semanticAgentHubEvent(semanticEvent)
+				history = append(history, event)
+				if event.Type != "session.state" {
+					continue
 				}
-			}
-			if data.State == "stopped" {
-				sawStopped = true
+				var data struct {
+					State string `json:"state"`
+				}
+				if err := json.Unmarshal(event.Data, &data); err != nil {
+					return false, nil, cursor, &permanentArchivedProofError{
+						fmt.Errorf("decode session.state event %d: %w", event.ID, err),
+					}
+				}
+				if data.State == "stopped" {
+					sawStopped = true
+				}
 			}
 		}
 		if cursor >= latestCursor {

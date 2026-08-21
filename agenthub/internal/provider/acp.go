@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/disksing/pua/agenthub/internal/semantic"
 )
 
 type acpSession struct {
@@ -296,7 +298,8 @@ func (a *acpSession) notification(method string, params json.RawMessage) {
 			event.Type = "message.reasoning.delta"
 			event.Data = map[string]any{"text": lookup(update.Update, "content", "text"), "method": method}
 		case "tool_call", "tool_call_update":
-			event.Type = "tool.event"
+			event.Type = "tool.call"
+			event.Data = semantic.ToolCallData(method, params)
 		case "plan", "plan_update", "plan_removed":
 			event.Type = "plan.event"
 		default:

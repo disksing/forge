@@ -579,7 +579,7 @@ func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
 	history := make([]agentHubEvent, 0)
 	latestCursor := cursor
 	for {
-		events, durableCursor, err := client.SessionEvents(context.Background(), sessionID, cursor, 500)
+		frames, durableCursor, err := client.SessionFrames(context.Background(), sessionID, cursor, 500)
 		if err != nil {
 			// The next poll/reconcile retries from the same durable cursor. A
 			// transient history failure must not invent a completion or advance
@@ -590,18 +590,20 @@ func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
 			latestCursor = durableCursor
 		}
 		previousCursor := cursor
-		for _, event := range events {
-			if event.ID <= cursor {
+		for _, frame := range frames {
+			if frame.Cursor <= cursor {
 				continue
 			}
-			if event.ID != cursor+1 {
+			if frame.Cursor != cursor+1 {
 				// Do not advance over a cursor gap. AgentHub promises lossless
 				// replay; retaining the old cursor lets a later reconcile retry
 				// instead of manufacturing a marker from incomplete history.
 				return
 			}
-			cursor = event.ID
-			history = append(history, event)
+			cursor = frame.Cursor
+			for _, event := range frame.Events {
+				history = append(history, semanticAgentHubEvent(event))
+			}
 		}
 		if cursor == previousCursor && cursor < durableCursor {
 			// A lossless replay must make progress. Keep the durable cursor
@@ -609,7 +611,7 @@ func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
 			// later poll can retry instead of skipping an unexamined event.
 			return
 		}
-		if len(events) < 500 || cursor >= durableCursor {
+		if len(frames) < 500 || cursor >= durableCursor {
 			break
 		}
 	}

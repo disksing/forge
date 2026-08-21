@@ -758,28 +758,30 @@ func mailboxPriority(message resourceMailboxMessage) int {
 func findCanonicalAgentHubMessage(ctx context.Context, client *agentHubClient, sessionID string, expected resourceMailboxMessage) (agentHubInboundMessage, bool, error) {
 	cursor := int64(0)
 	for {
-		events, latest, err := client.SessionEvents(ctx, sessionID, cursor, agentHubEventMaxCount)
+		frames, latest, err := client.SessionFrames(ctx, sessionID, cursor, agentHubEventMaxCount)
 		if err != nil {
 			return agentHubInboundMessage{}, false, err
 		}
-		for _, event := range events {
-			if event.Type != "message.input" {
-				continue
+		for _, frame := range frames {
+			for _, event := range frame.Events {
+				if event.Type != "message.input" {
+					continue
+				}
+				var canonical agentHubInboundMessage
+				if json.Unmarshal(event.Data, &canonical) != nil || canonical.MessageID != expected.ID {
+					continue
+				}
+				if !canonicalAgentHubMessageMatches(canonical, expected) {
+					return agentHubInboundMessage{}, false, &resourceAPIError{Code: "message_conflict", Message: "stable message id conflicts with a different canonical AgentHub input"}
+				}
+				canonical.TurnID = event.TurnID
+				return canonical, true, nil
 			}
-			var canonical agentHubInboundMessage
-			if json.Unmarshal(event.Data, &canonical) != nil || canonical.MessageID != expected.ID {
-				continue
-			}
-			if !canonicalAgentHubMessageMatches(canonical, expected) {
-				return agentHubInboundMessage{}, false, &resourceAPIError{Code: "message_conflict", Message: "stable message id conflicts with a different canonical AgentHub input"}
-			}
-			canonical.TurnID = event.TurnID
-			return canonical, true, nil
 		}
-		if len(events) == 0 || events[len(events)-1].ID <= cursor || events[len(events)-1].ID >= latest {
+		if len(frames) == 0 || frames[len(frames)-1].Cursor <= cursor || frames[len(frames)-1].Cursor >= latest {
 			return agentHubInboundMessage{}, false, nil
 		}
-		cursor = events[len(events)-1].ID
+		cursor = frames[len(frames)-1].Cursor
 	}
 }
 

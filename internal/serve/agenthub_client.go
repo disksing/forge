@@ -41,6 +41,8 @@ var requiredAgentHubCapabilities = []string{
 	"session.strict-stopped",
 	"events.lossless-replay",
 	"events.canonical-turn-terminals",
+	"events.semantic-v1",
+	"event.raw-v1",
 	"recovery.closed-turns",
 }
 
@@ -197,6 +199,46 @@ type agentHubEvent struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
+type agentHubSemanticEvent struct {
+	ID            string          `json:"id"`
+	SourceEventID int64           `json:"sourceEventId"`
+	Index         int             `json:"index"`
+	Time          string          `json:"time"`
+	StartTime     string          `json:"startTime,omitempty"`
+	Type          string          `json:"type"`
+	SessionID     string          `json:"sessionId"`
+	TurnID        string          `json:"turnId,omitempty"`
+	Data          json.RawMessage `json:"data,omitempty"`
+}
+
+type agentHubSemanticFrame struct {
+	Schema string `json:"schema"`
+	Cursor int64  `json:"cursor"`
+	Mode   string `json:"mode"`
+	Source struct {
+		EventID   int64  `json:"eventId"`
+		Type      string `json:"type"`
+		SessionID string `json:"sessionId"`
+		TurnID    string `json:"turnId,omitempty"`
+		Time      string `json:"time"`
+		StartTime string `json:"startTime,omitempty"`
+	} `json:"source"`
+	Events []agentHubSemanticEvent `json:"events"`
+}
+
+type agentHubEventDetail struct {
+	Schema      string                `json:"schema"`
+	SourceEvent agentHubEvent         `json:"sourceEvent"`
+	Frame       agentHubSemanticFrame `json:"frame"`
+}
+
+func semanticAgentHubEvent(event agentHubSemanticEvent) agentHubEvent {
+	return agentHubEvent{
+		ID: event.SourceEventID, Time: event.Time, Type: event.Type,
+		SessionID: event.SessionID, TurnID: event.TurnID, Data: event.Data,
+	}
+}
+
 type agentHubTurnItem struct {
 	Type                 string                 `json:"type"`
 	Role                 string                 `json:"role,omitempty"`
@@ -336,21 +378,33 @@ func (c *agentHubClient) GetSession(ctx context.Context, sessionID string) (agen
 	return response.Session, err
 }
 
-// SessionEvents returns one page of a session's durable event history along
+// SessionFrames returns one page of a session's durable semantic history along
 // with the latest cursor. It is used both to record canonical turn terminals
 // and to prove that an archived session passed through a durable stopped state.
-func (c *agentHubClient) SessionEvents(ctx context.Context, sessionID string, after int64, limit int) ([]agentHubEvent, int64, error) {
+func (c *agentHubClient) SessionFrames(ctx context.Context, sessionID string, after int64, limit int) ([]agentHubSemanticFrame, int64, error) {
 	query := make(url.Values)
 	query.Set("after", strconv.FormatInt(after, 10))
 	if limit > 0 {
 		query.Set("limit", strconv.Itoa(limit))
 	}
 	var response struct {
-		Events       []agentHubEvent `json:"events"`
-		LatestCursor int64           `json:"latestCursor"`
+		Schema       string                  `json:"schema"`
+		Frames       []agentHubSemanticFrame `json:"frames"`
+		LatestCursor int64                   `json:"latestCursor"`
 	}
 	err := c.doJSON(ctx, http.MethodGet, sessionPath(sessionID)+"/events?"+query.Encode(), nil, &response)
-	return response.Events, response.LatestCursor, err
+	if err == nil && response.Schema != "agenthub.semantic-events.v1" {
+		err = fmt.Errorf("AgentHub returned unsupported events schema %q", response.Schema)
+	}
+	if err == nil {
+		for _, frame := range response.Frames {
+			if frame.Schema != response.Schema || frame.Cursor <= 0 || frame.Source.EventID != frame.Cursor || (frame.Source.SessionID != "" && frame.Source.SessionID != sessionID) {
+				err = fmt.Errorf("AgentHub returned an invalid semantic frame at cursor %d", frame.Cursor)
+				break
+			}
+		}
+	}
+	return response.Frames, response.LatestCursor, err
 }
 
 func (c *agentHubClient) SessionTurns(ctx context.Context, sessionID string, before int64, latest bool, limit int) (agentHubTurnPage, error) {
@@ -381,18 +435,23 @@ func (c *agentHubClient) SessionTurn(ctx context.Context, sessionID, turnID stri
 	return response.Turn, response.LatestEventID, err
 }
 
-func (c *agentHubClient) SessionEvent(ctx context.Context, sessionID string, eventID int64) (agentHubEvent, error) {
+func (c *agentHubClient) SessionEvent(ctx context.Context, sessionID string, eventID int64) (agentHubEventDetail, error) {
 	if eventID <= 0 {
-		return agentHubEvent{}, errors.New("event id must be positive")
+		return agentHubEventDetail{}, errors.New("event id must be positive")
 	}
-	events, _, err := c.SessionEvents(ctx, sessionID, eventID-1, 1)
+	var result agentHubEventDetail
+	err := c.doJSON(ctx, http.MethodGet, sessionPath(sessionID)+"/event/"+strconv.FormatInt(eventID, 10), nil, &result)
 	if err != nil {
-		return agentHubEvent{}, err
+		return agentHubEventDetail{}, err
 	}
-	if len(events) != 1 || events[0].ID != eventID {
-		return agentHubEvent{}, &agentHubAPIError{StatusCode: http.StatusNotFound, Code: "event_not_found", Message: "event not found"}
+	if result.Schema != "agenthub.event-detail.v1" || result.SourceEvent.ID != eventID ||
+		result.Frame.Schema != "agenthub.semantic-events.v1" || result.Frame.Cursor != eventID ||
+		result.Frame.Source.EventID != eventID ||
+		(result.SourceEvent.SessionID != "" && result.SourceEvent.SessionID != sessionID) ||
+		(result.Frame.Source.SessionID != "" && result.Frame.Source.SessionID != sessionID) {
+		return agentHubEventDetail{}, errors.New("AgentHub returned an invalid event detail")
 	}
-	return events[0], nil
+	return result, nil
 }
 
 func (c *agentHubClient) ListSessions(ctx context.Context, filter agentHubSessionFilter) ([]agentHubSession, error) {

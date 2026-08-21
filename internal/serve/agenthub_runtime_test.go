@@ -150,6 +150,21 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		f.serveEvents(w, r, id)
 		return
 	}
+	if len(parts) == 5 && parts[3] == "event" && r.Method == http.MethodGet {
+		eventID, _ := strconv.ParseInt(parts[4], 10, 64)
+		f.mu.Lock()
+		all := append([]agentHubEvent(nil), f.events[id]...)
+		f.mu.Unlock()
+		for _, event := range all {
+			if event.ID == eventID {
+				writeRuntimeFakeJSON(w, map[string]any{"schema": "agenthub.event-detail.v1", "sourceEvent": event, "frame": runtimeFakeSemanticFrame(event)})
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNotFound)
+		writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{"code": "event_not_found", "message": "event not found"}})
+		return
+	}
 	if len(parts) == 4 && parts[3] == "turns" && r.Method == http.MethodGet {
 		f.mu.Lock()
 		turnMap := f.turns[id]
@@ -511,7 +526,7 @@ func (f *runtimeFakeAgentHub) serveEvents(w http.ResponseWriter, r *http.Request
 	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("stream") == "true" {
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, event := range events {
-			data, _ := json.Marshal(event)
+			data, _ := json.Marshal(runtimeFakeSemanticFrame(event))
 			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", event.ID, data)
 		}
 		return
@@ -521,12 +536,36 @@ func (f *runtimeFakeAgentHub) serveEvents(w http.ResponseWriter, r *http.Request
 		next = events[len(events)-1].ID
 	}
 	writeRuntimeFakeJSON(w, map[string]any{
-		"events": events,
+		"schema": "agenthub.semantic-events.v1",
+		"frames": func() []agentHubSemanticFrame {
+			frames := make([]agentHubSemanticFrame, 0, len(events))
+			for _, event := range events {
+				frames = append(frames, runtimeFakeSemanticFrame(event))
+			}
+			return frames
+		}(),
 		"page": map[string]any{
 			"after": after, "limit": limit, "nextAfter": next, "hasMore": next < int64(len(all)),
 		},
 		"latestCursor": len(all),
 	})
+}
+
+func runtimeFakeSemanticFrame(event agentHubEvent) agentHubSemanticFrame {
+	var frame agentHubSemanticFrame
+	frame.Schema = "agenthub.semantic-events.v1"
+	frame.Cursor = event.ID
+	frame.Mode = "replace"
+	frame.Source.EventID = event.ID
+	frame.Source.Type = event.Type
+	frame.Source.SessionID = event.SessionID
+	frame.Source.TurnID = event.TurnID
+	frame.Source.Time = event.Time
+	frame.Events = []agentHubSemanticEvent{{
+		ID: fmt.Sprintf("sem_%d_0", event.ID), SourceEventID: event.ID, Type: event.Type,
+		Time: event.Time, SessionID: event.SessionID, TurnID: event.TurnID, Data: event.Data,
+	}}
+	return frame
 }
 
 func (f *runtimeFakeAgentHub) appendLocked(sessionID, eventType string, data any) agentHubEvent {

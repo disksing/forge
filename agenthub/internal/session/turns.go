@@ -283,7 +283,7 @@ func buildTurnSummaries(events []Event) []TurnSummary {
 			}
 		case "message.reasoning.delta":
 			appendThinkingActivity(turn, event)
-		case "tool.event":
+		case "tool.event", "tool.call":
 			turn.ToolEventCount++
 			appendToolActivity(turn, event, toolIdentities)
 		case "approval.requested", "approval.resolved":

@@ -425,8 +425,12 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/stream" && method === "GET") {
       harness.streamRequests.push("project1.task1");
-      const event = { id: 100, time: now, type: "message.assistant.delta", sessionId: "session-1", turnId: "turn-stream", data: { text: "SSE update for project1.task1" } };
-      return route.fulfill({ status: 200, contentType: "text/event-stream", headers: { "cache-control": "no-cache" }, body: `id: 100\ndata: ${JSON.stringify(event)}\n\n` });
+      const frame = {
+        schema: "agenthub.semantic-events.v1", cursor: 100, mode: "replace",
+        source: { eventId: 100, time: now, type: "message.assistant.delta", sessionId: "session-1", turnId: "turn-stream" },
+        events: [{ id: "sem_100_0", sourceEventId: 100, index: 0, time: now, type: "message.assistant.delta", sessionId: "session-1", turnId: "turn-stream", data: { text: "SSE update for project1.task1" } }],
+      };
+      return route.fulfill({ status: 200, contentType: "text/event-stream", headers: { "cache-control": "no-cache" }, body: `id: 100\ndata: ${JSON.stringify(frame)}\n\n` });
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/messages" && method === "POST") {
       harness.inputBodies.push(request.postDataJSON());

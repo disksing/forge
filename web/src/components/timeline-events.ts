@@ -1,4 +1,4 @@
-import { buildTimeline } from "../../vendor/agenthub-event-timeline";
+import { buildTimeline } from "./timeline-projector";
 
 import type { AgentEvent, TimelineItem } from "./models";
 
@@ -21,21 +21,21 @@ export function visibleConversationTimelineItems(events: AgentEvent[], items: Ti
   const hiddenKeys = new Set(
     events
       .filter((event) => HIDDEN_CONVERSATION_EVENT_TYPES.has(event.type))
-      .map((event) => String(event.id)),
+      .map((event) => eventIdentity(event)),
   );
   return items.filter((item) => item.key === undefined || !hiddenKeys.has(String(item.key)));
 }
 
-// projectConversationEvents turns canonical events into conversation timeline
+// projectConversationEvents turns semantic events into conversation timeline
 // items, hiding routine lifecycle noise and annotating compact ranges so
 // callers can lazily expand them. Shared by the live Chat timeline and the
 // read-only History view.
 export function projectConversationEvents(events: AgentEvent[]): TimelineItem[] {
   const sourceEvents = events || [];
   const items = visibleConversationTimelineItems(sourceEvents, buildTimeline(sourceEvents) as TimelineItem[]);
-  const byID = new Map(sourceEvents.map((event) => [Number(event.id), event]));
+  const byKey = new Map(sourceEvents.map((event) => [eventIdentity(event), event]));
   for (const item of items) {
-    const event = byID.get(Number(item.key));
+    const event = byKey.get(String(item.key));
     applyPUAMessagePayload(item, event?.data?.payload);
     const range = event?.data?.compactRange as { start?: number; end?: number } | undefined;
     if (!range) continue;
@@ -119,10 +119,10 @@ export function markTurnAgentRuns(items: TimelineItem[]): TimelineItem[] {
 }
 
 // groupTimelineActivities is the compatibility seam between AgentHub Turn
-// projection generations. Event-timeline v2 and new compact Turns already
-// provide activity items; legacy compact Turns expose adjacent thinking/tool
+// projection generations. New compact Turns already provide activity items;
+// legacy compact Turns expose adjacent thinking/tool
 // items. Grouping here gives both inputs the same one-level UI without
-// rewriting old materialized history or requiring a canonical Event scan.
+// rewriting old materialized history or requiring a source Event scan.
 export function groupTimelineActivities(items: TimelineItem[]): TimelineItem[] {
   const grouped: TimelineItem[] = [];
   let run: TimelineItem[] = [];
@@ -198,14 +198,15 @@ export function formatClock(value?: string): string {
 }
 
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {
-  const byId = new Map<number, AgentEvent>();
+  const byId = new Map<string, AgentEvent>();
   for (const incoming of events) {
     const id = Number(incoming?.id) || 0;
     if (!id) continue;
-    const existing = byId.get(id);
-    byId.set(id, existing ? mergeEvent(existing, incoming) : normalizeAppendEvent(incoming));
+    const key = eventIdentity(incoming);
+    const existing = byId.get(key);
+    byId.set(key, existing ? mergeEvent(existing, incoming) : normalizeAppendEvent(incoming));
   }
-  return [...byId.values()].sort((left, right) => Number(left.id) - Number(right.id));
+  return [...byId.values()].sort(compareEvents);
 }
 
 export function mergeCanonicalEvent(events: AgentEvent[], incoming: AgentEvent): AgentEvent[] {
@@ -222,88 +223,46 @@ export function mergeCanonicalEventBatch(events: AgentEvent[], incomingEvents: A
 function mergeCanonicalEventInto(events: AgentEvent[], incoming: AgentEvent): void {
   const id = Number(incoming?.id) || 0;
   if (!id) return;
+  const identity = eventIdentity(incoming);
   let low = 0;
   let high = events.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
-    if (Number(events[middle].id) < id) low = middle + 1;
+    if (compareEvents(events[middle], incoming) < 0) low = middle + 1;
     else high = middle;
   }
-  const index = low < events.length && Number(events[low].id) === id ? low : -1;
+  let index = -1;
+  let insertAt = low;
+  while (insertAt < events.length && compareEvents(events[insertAt], incoming) === 0) {
+    if (eventIdentity(events[insertAt]) === identity) {
+      index = insertAt;
+      break;
+    }
+    insertAt++;
+  }
   if (index < 0) {
-    events.splice(low, 0, normalizeAppendEvent(incoming));
+    events.splice(insertAt, 0, normalizeAppendEvent(incoming));
     return;
   }
   events[index] = mergeEvent(events[index], incoming);
 }
 
 export function compactTimelineEvents(events: AgentEvent[]): AgentEvent[] {
-  const compacted: AgentEvent[] = [];
-  let toolUpdates = new Map<string, AgentEvent>();
-
-  const flushToolUpdates = () => {
-    if (!toolUpdates.size) return;
-    compacted.push(...[...toolUpdates.values()].sort((left, right) => Number(left.id) - Number(right.id)));
-    toolUpdates = new Map();
-  };
-
-  for (const event of events) {
-    // ACP tool_call_update frames carry a cumulative snapshot rather than a
-    // delta. Retain only the latest snapshot per call within an uninterrupted
-    // update segment; a non-update event remains a hard ordering boundary.
-    const callId = acpToolCallUpdateId(event);
-    if (callId) {
-      const previous = toolUpdates.get(callId);
-      toolUpdates.set(callId, previous ? mergeACPToolCallUpdate(previous, event) : event);
-      continue;
-    }
-    flushToolUpdates();
-    compacted.push(event);
-  }
-  flushToolUpdates();
-  return compacted;
-}
-
-function acpToolCallUpdateId(event: AgentEvent): string {
-  if (event.type !== "tool.event") return "";
-  const raw = objectValue(event.data?.raw);
-  const update = raw.update && typeof raw.update === "object" && !Array.isArray(raw.update) ? objectValue(raw.update) : raw;
-  if (update.sessionUpdate !== "tool_call_update") return "";
-  return stringValue(update.toolCallId) || stringValue(update.id);
-}
-
-function mergeACPToolCallUpdate(previous: AgentEvent, incoming: AgentEvent): AgentEvent {
-  const previousData = previous.data || {};
-  const incomingData = incoming.data || {};
-  const previousRaw = objectValue(previousData.raw);
-  const incomingRaw = objectValue(incomingData.raw);
-  const previousUpdate = previousRaw.update && typeof previousRaw.update === "object" && !Array.isArray(previousRaw.update) ? objectValue(previousRaw.update) : previousRaw;
-  const incomingUpdate = incomingRaw.update && typeof incomingRaw.update === "object" && !Array.isArray(incomingRaw.update) ? objectValue(incomingRaw.update) : incomingRaw;
-  return {
-    ...previous,
-    ...incoming,
-    data: {
-      ...previousData,
-      ...incomingData,
-      raw: {
-        ...previousRaw,
-        ...incomingRaw,
-        update: { ...previousUpdate, ...incomingUpdate },
-      },
-    },
-  };
-}
-
-function objectValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+  return events;
 }
 
 function mergeEvent(existing: AgentEvent, incoming: AgentEvent): AgentEvent {
   if (incoming.data?.append !== true) return { ...incoming, startTime: incoming.startTime || existing.startTime };
+  if (incoming.type === "tool.call") {
+    const oldOutput = existing.data?.output as { text?: string } | undefined;
+    const newOutput = incoming.data?.output as { text?: string; mode?: string } | undefined;
+    if (newOutput?.mode === "append") {
+      return {
+        ...existing, ...incoming, startTime: incoming.startTime || existing.startTime,
+        data: { ...existing.data, ...incoming.data, append: false, output: { ...newOutput, mode: "replace", text: `${oldOutput?.text || ""}${newOutput.text || ""}` } },
+      };
+    }
+  }
   const currentText = typeof existing.data?.text === "string" ? existing.data.text : "";
   const fragment = typeof incoming.data.text === "string" ? incoming.data.text : "";
   return {
@@ -317,4 +276,12 @@ function mergeEvent(existing: AgentEvent, incoming: AgentEvent): AgentEvent {
 function normalizeAppendEvent(event: AgentEvent): AgentEvent {
   if (event.data?.append !== true) return event;
   return { ...event, data: { ...event.data, append: false } };
+}
+
+function eventIdentity(event: AgentEvent): string {
+  return event.semanticId || `${Number(event.id) || 0}:${Number(event.semanticIndex) || 0}`;
+}
+
+function compareEvents(left: AgentEvent, right: AgentEvent): number {
+  return Number(left.id) - Number(right.id) || (Number(left.semanticIndex) || 0) - (Number(right.semanticIndex) || 0);
 }

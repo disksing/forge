@@ -138,9 +138,11 @@ type resourceHistoryPage struct {
 }
 
 type resourceHistoryEventDetail struct {
-	Reference  string                    `json:"reference"`
-	Generation resourceHistoryGeneration `json:"generation"`
-	Event      agentHubEvent             `json:"event"`
+	Reference   string                    `json:"reference"`
+	Generation  resourceHistoryGeneration `json:"generation"`
+	Schema      string                    `json:"schema"`
+	SourceEvent agentHubEvent             `json:"sourceEvent"`
+	Frame       agentHubSemanticFrame     `json:"frame"`
 }
 
 func encodeResourceHistoryReference(reference resourceHistoryReference) (string, error) {
@@ -591,7 +593,7 @@ func (m *agentManager) resourceHistoryEvent(ctx context.Context, workspace serve
 	if err != nil {
 		return resourceHistoryEventDetail{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
-	event, err := client.SessionEvent(ctx, record.AgentHubSessionID, reference.EventID)
+	detail, err := client.SessionEvent(ctx, record.AgentHubSessionID, reference.EventID)
 	if err != nil {
 		var upstream *agentHubAPIError
 		if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
@@ -599,10 +601,13 @@ func (m *agentManager) resourceHistoryEvent(ctx context.Context, workspace serve
 		}
 		return resourceHistoryEventDetail{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
-	if event.SessionID != "" && event.SessionID != record.AgentHubSessionID {
+	if detail.SourceEvent.SessionID != "" && detail.SourceEvent.SessionID != record.AgentHubSessionID {
 		return resourceHistoryEventDetail{}, &resourceAPIError{Code: "history_corrupt", Message: "AgentHub Event belongs to a different Session"}
 	}
-	return resourceHistoryEventDetail{Reference: value, Generation: historyGeneration(record), Event: event}, nil
+	return resourceHistoryEventDetail{
+		Reference: value, Generation: historyGeneration(record), Schema: detail.Schema,
+		SourceEvent: detail.SourceEvent, Frame: detail.Frame,
+	}, nil
 }
 
 func (m *agentManager) handleResourceHistory(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string, parts []string) {

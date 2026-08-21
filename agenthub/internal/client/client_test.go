@@ -78,12 +78,13 @@ func TestEventsAfterPagesToInitialDurableHead(t *testing.T) {
 		after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 		latest := int64(2500)
 		end := min(after+1000, latest)
-		events := make([]session.Event, 0, end-after)
+		frames := make([]map[string]any, 0, end-after)
 		for id := after + 1; id <= end; id++ {
-			events = append(events, session.Event{ID: id, Type: "provider.test"})
+			frames = append(frames, map[string]any{"schema": "agenthub.semantic-events.v1", "cursor": id, "mode": "replace", "source": map[string]any{"eventId": id, "type": "provider.test", "sessionId": "ses_test", "time": "2026-08-22T00:00:00Z"}, "events": []any{}})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"events":       events,
+			"schema":       "agenthub.semantic-events.v1",
+			"frames":       frames,
 			"latestCursor": latest,
 			"page": map[string]any{
 				"after": after, "limit": 1000, "nextAfter": end, "hasMore": end < latest,
@@ -95,8 +96,8 @@ func TestEventsAfterPagesToInitialDurableHead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 2500 || events[0].ID != 1 || events[2499].ID != 2500 {
-		t.Fatalf("events = %d (%d..%d)", len(events), events[0].ID, events[len(events)-1].ID)
+	if len(events) != 2500 || events[0].Cursor != 1 || events[2499].Cursor != 2500 {
+		t.Fatalf("events = %d (%d..%d)", len(events), events[0].Cursor, events[len(events)-1].Cursor)
 	}
 }
 
@@ -109,7 +110,8 @@ func TestEventsPageBeforeSendsBackwardCursor(t *testing.T) {
 			t.Errorf("limit = %q, want 100", got)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"events":       []session.Event{{ID: 831}, {ID: 930}},
+			"schema":       "agenthub.semantic-events.v1",
+			"frames":       []map[string]any{{"schema": "agenthub.semantic-events.v1", "cursor": 831}, {"schema": "agenthub.semantic-events.v1", "cursor": 930}},
 			"latestCursor": 1030,
 			"page": map[string]any{
 				"after": 0, "limit": 100, "nextAfter": 930, "hasMore": true,
@@ -133,7 +135,8 @@ func TestEventsPageBeforeSendsBackwardCursor(t *testing.T) {
 func TestEventsAfterStopsOnCursorGap(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"events":       []session.Event{{ID: 1}, {ID: 3}},
+			"schema":       "agenthub.semantic-events.v1",
+			"frames":       []map[string]any{{"schema": "agenthub.semantic-events.v1", "cursor": 1}, {"schema": "agenthub.semantic-events.v1", "cursor": 3}},
 			"latestCursor": 3,
 			"page":         map[string]any{"after": 0, "limit": 1000, "nextAfter": 3, "hasMore": false},
 		})
@@ -143,6 +146,16 @@ func TestEventsAfterStopsOnCursorGap(t *testing.T) {
 	var gap *EventCursorGapError
 	if !errors.As(err, &gap) || gap.Expected != 2 || gap.Got != 3 {
 		t.Fatalf("gap error = %#v", err)
+	}
+}
+
+func TestEventsPageRejectsMissingSemanticSchema(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"events":[],"latestCursor":0}`))
+	}))
+	defer server.Close()
+	if _, err := New(server.URL).EventsPage("ses_test", 0, 10); err == nil || !strings.Contains(err.Error(), "unsupported events schema") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

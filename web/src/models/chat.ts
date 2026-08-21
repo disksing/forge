@@ -95,12 +95,32 @@ export interface ResourceSessionStatus {
 
 export interface AgentEvent {
   id: number;
+  semanticId?: string;
+  semanticIndex?: number;
   type: string;
   time?: string;
   startTime?: string;
   sessionId?: string;
   turnId?: string;
   data?: Record<string, unknown> & { text?: string; append?: boolean; state?: string };
+}
+
+export interface AgentSemanticFrame {
+  schema: "agenthub.semantic-events.v1";
+  cursor: number;
+  mode: "replace" | "append";
+  source: { eventId: number; type: string; sessionId: string; turnId?: string; time?: string; startTime?: string };
+  events: Array<{
+    id: string;
+    sourceEventId: number;
+    index: number;
+    type: string;
+    time?: string;
+    startTime?: string;
+    sessionId?: string;
+    turnId?: string;
+    data?: Record<string, unknown> & { text?: string; state?: string };
+  }>;
 }
 
 export interface AgentTurnItem {

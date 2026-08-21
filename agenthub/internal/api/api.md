@@ -114,8 +114,10 @@ Current runtime-backed daemon instances advertise:
 | `session.launch-environment-update` | Resume accepts a `launchEnvironment` overlay, persisted before provider start. |
 | `session.strict-stopped` | `stopped` is published only after provider exit is confirmed. |
 | `events.lossless-replay` | Durable exclusive cursors, paginated REST catch-up and gap-free SSE replay. |
-| `events.delta-merge` | Consecutive same-message text deltas are folded into one durable event; SSE delivers live folds as append patches (`data.append: true`) under the folded event's id and re-sends the full cursor event on reconnect. |
+| `events.delta-merge` | Consecutive same-message text deltas are folded into one durable source Event; SSE delivers live folds as SemanticFrame append patches (`mode: "append"`) under the same cursor and re-sends the full replace frame on reconnect. |
 | `events.backward-pagination` | JSON event pages can also read the log backwards with `latest=true` or an exclusive `before` cursor. |
+| `events.semantic-v1` | `/events` JSON, range and SSE expose only provider-neutral `agenthub.semantic-events.v1` frames. |
+| `event.raw-v1` | Singular `/event/{sourceEventId}` returns one exact raw source Event together with its normalized frame for diagnostics. |
 | `activity.global-sse` | Best-effort one-second activity frames across all Sessions, with no historical beep replay. |
 | `events.canonical-turn-terminals` | Provider-independent `turn.completed`, `turn.failed` and `turn.cancelled`. |
 | `recovery.closed-turns` | Daemon recovery closes interrupted delivered turns before publishing `stopped`; an accepted input still pending Provider delivery remains recoverable and is retried. |
@@ -175,10 +177,10 @@ are `codex`, `kimi`, `pi` and `opencode`; each can be enabled or disabled,
 and a disabled provider makes its agents unavailable for new work without
 disturbing sessions that are already running.
 
-### Events
+### Durable source Events
 
-Every state change is appended to the session's durable event log. An event
-looks like:
+Every state change is appended to the session's internal durable event log. A
+source Event looks like:
 
 ```json
 {
@@ -193,18 +195,21 @@ looks like:
 
 `id` is a durable, per-session, monotonically increasing integer cursor. A
 committed id is never reused, including across daemon restarts. `turnId` is
-present on events that belong to a turn.
+present on Events that belong to a Turn. These source payloads are storage and
+diagnostic records, not the public timeline contract: `/events` always
+normalizes them into SemanticFrames, and only singular `/event/{id}` returns
+one exact source Event.
 
 Consecutive `message.assistant.delta` or `message.reasoning.delta` fragments
 of one provider message (same type, turn, and provider method) are folded
-into a single durable event instead of one event per fragment: the event
+into a single durable source Event instead of one Event per fragment: the Event
 keeps its original id, its `text` accumulates, its `time` tracks the newest
 fragment, and its optional `startTime` records the first fragment time.
 `startTime` is present once a delta has been folded and is omitted from
 events that contain only one fragment. Folding stops at a 32 KiB accumulated
-payload, so one long message may span several events. REST pages and stream
-replays always serve the full accumulated event; live streams deliver only
-the new fragment as an append patch under the folded event's id. See SSE
+payload, so one long message may span several Events. REST pages and stream
+replays always serve the full accumulated semantic Event; live streams deliver
+only the new fragment in a `mode: "append"` frame under the folded cursor. See SSE
 mode below. This holds for backward pages too, so a client paging up that
 already saw a newer copy of an id (for example a live append patch) treats
 the repeated id as a full replacement, never as an append. Core event types:
@@ -229,7 +234,8 @@ the repeated id as a full replacement, never as an append. Core event types:
 | `approval.resolved` | `{"approvalId", "decision", "optionId?", "text?"}` | An approval was answered. `optionId` records an explicit option selection; decision `text` records a custom free-text reply. |
 | `message.assistant.delta` | `{"text"}` | Assistant output chunk. |
 | `message.reasoning.delta` | `{"text"}` | Reasoning/thinking chunk. |
-| `tool.event` | provider-specific | Tool call lifecycle (start, update, end). |
+| `tool.call` | provider-neutral canonical fields plus an optional diagnostic `raw` sidecar | Tool call lifecycle (start, update, finish). Public `/events` responses always remove `raw`. |
+| `tool.event` | provider-specific legacy payload | Read-only compatibility for existing `events.jsonl`; projected as public `tool.call`. New writes never use this type. |
 | `provider.event` | `{"method", "raw"}` | Raw provider notification kept for transparency. |
 | `provider.error` | `{"message", "details"?, "willRetry"?}` | Provider process or protocol error. A Codex event with `willRetry: true` is recoverable and does not close the active turn; clients must wait for a canonical `turn.*` terminal event. |
 | `provider.stderr` | `{"text"}` | Provider stderr output. |
@@ -256,7 +262,10 @@ Daemon status, effective data paths and runtime summary.
   "apiVersion": "1",
   "capabilities": [
     "events.lossless-replay",
+    "events.delta-merge",
     "events.backward-pagination",
+    "events.semantic-v1",
+    "event.raw-v1",
     "session.source",
     "session.source-metadata",
     "session.idempotent-create",
@@ -658,8 +667,7 @@ curl -s -X DELETE "$BASE/v1/sessions/$SESSION" \
 
 ### GET /v1/sessions/{id}/events
 
-Read the session event log as JSON, or stream it live over Server-Sent
-Events. Works for active and archived sessions.
+以 JSON 或 Server-Sent Events 读取 provider-neutral SemanticFrame。接口适用于活动和已归档 Session；原始 Provider payload 永远不会出现在该接口中。
 
 #### JSON mode (default)
 
@@ -688,7 +696,8 @@ Plain requests return a JSON snapshot of the log after a cursor.
 
   ```json
   {
-    "events": [],
+    "schema": "agenthub.semantic-events.v1",
+    "frames": [],
     "page": {
       "after": 100,
       "limit": 200,
@@ -710,7 +719,8 @@ Plain requests return a JSON snapshot of the log after a cursor.
 
   ```json
   {
-    "events": [],
+    "schema": "agenthub.semantic-events.v1",
+    "frames": [],
     "page": {
       "after": 0,
       "limit": 100,
@@ -733,6 +743,8 @@ Plain requests return a JSON snapshot of the log after a cursor.
   `404 session_not_found`, `409 event_cursor_ahead` (the supplied `after`
   cursor is newer than this session's durable head; the error details
   include `latestCursor`).
+
+每条持久化 source Event 对应一个 frame，`frame.cursor` 等于 source Event ID。`frame.events` 可以为空、包含一条或多条 semantic events；空 frame 仍推进 cursor。REST 和 reconnect replay 返回 `mode: "replace"`，live folded delta 使用 `mode: "append"` 且不推进 cursor。
 
 ```bash
 curl -s "$BASE/v1/sessions/$SESSION/events"
@@ -757,10 +769,10 @@ a JSON-mode feature: streams reject `before` and `latest` with
   2. It pages through **all** stored events after the exclusive cursor up to
      that high-water mark, with no 1000-event backlog limit.
   3. It then consumes the live subscription. When a text delta folds into
-     the tail event, the live frame is an append patch: it reuses the folded
-     event's id and its `data` carries only the new fragment flagged with
-     `"append": true`. Consumers extend their stored copy of that event;
-     only a new id advances the stream cursor.
+     the tail source Event, the live SemanticFrame is an append patch: it
+     reuses the folded cursor, sets `mode: "append"`, and its semantic Event
+     carries only the new fragment. Consumers merge it into their stored
+     frame; only a new cursor advances the stream cursor.
   4. Every 15 seconds without traffic the daemon sends a `: heartbeat`
      comment line to keep proxies and clients alive.
   5. The stream ends when the client disconnects or when the daemon shuts
@@ -770,31 +782,30 @@ a JSON-mode feature: streams reject `before` and `latest` with
      and heartbeat writes have a five-second deadline, so a client that
      stops reading cannot pin the handler and prevent that terminal close.
 - **Recovery:** reconnect with `Last-Event-ID` set to the id of the last
-  contiguous event processed. The replay first re-sends that cursor event
+  contiguous frame processed. The replay first re-sends that cursor frame
   with its current durable content — append patches never move the cursor,
   so this heals fragments that folded into the tail event while the client
   was disconnected — and then continues with events after it, replayed from
   `events.jsonl` rather than the in-memory subscriber queue, so overflow
-  and daemon restart are recoverable. A frame whose id is at or below the
-  last processed id is either an append patch (`data.append: true`; extend
-  the stored event's `text` with the fragment) or a full replacement (swap
-  in the complete event); neither moves the cursor. Only an id greater
-  than `last_processed_id + 1` is a gap; a client that observes one must
+  and daemon restart are recoverable. A frame whose `cursor` is at or below
+  the last processed cursor is either an append patch (`mode: "append"`) or
+  a full replacement (`mode: "replace"`); neither moves the cursor. Only a
+  cursor greater than `last_processed_id + 1` is a gap; a client that observes one must
   stop projection and catch up through REST before resuming SSE.
-- **Frame format:** every event uses the default SSE message channel (no
-  per-type `event:` field), so consumers receive every event — including
-  types they do not know about yet — instead of silently dropping events
-  their subscription list does not name. The payload's `type` field carries
-  the event type.
+- **Frame format:** every SemanticFrame uses the default SSE message channel
+  (no per-type `event:` field). SSE `id:` equals `frame.cursor`; `data:` is
+  the complete `agenthub.semantic-events.v1` frame, including empty frames.
+  Consumers inspect each nested semantic Event's `type` and safely ignore
+  unknown types.
 
 ```text
 id: 43
-data: {"id":43,"time":"2026-07-26T12:05:01Z","type":"message.assistant.delta","sessionId":"ses_...","turnId":"turn_...","data":{"text":"Hello"}}
+data: {"schema":"agenthub.semantic-events.v1","cursor":43,"mode":"replace","source":{"eventId":43,"type":"message.assistant.delta","sessionId":"ses_...","turnId":"turn_...","time":"2026-07-26T12:05:01Z"},"events":[{"id":"sem_43_0","sourceEventId":43,"index":0,"time":"2026-07-26T12:05:01Z","type":"message.assistant.delta","sessionId":"ses_...","turnId":"turn_...","data":{"text":"Hello"}}]}
 
 : heartbeat
 
 id: 44
-data: {"id":44,"time":"2026-07-26T12:05:02Z","type":"turn.completed","sessionId":"ses_...","turnId":"turn_...","data":{...}}
+data: {"schema":"agenthub.semantic-events.v1","cursor":44,"mode":"replace","source":{"eventId":44,"type":"turn.completed","sessionId":"ses_...","turnId":"turn_...","time":"2026-07-26T12:05:02Z"},"events":[{"id":"sem_44_0","sourceEventId":44,"index":0,"time":"2026-07-26T12:05:02Z","type":"turn.completed","sessionId":"ses_...","turnId":"turn_...","data":{}}]}
 ```
 
 - **Errors:** `400 invalid_event_cursor`, `404 session_not_found`,
@@ -806,6 +817,42 @@ curl -N -H "Accept: text/event-stream" "$BASE/v1/sessions/$SESSION/events"
 curl -N -H "Accept: text/event-stream" -H "Last-Event-ID: 100" \
   "$BASE/v1/sessions/$SESSION/events"
 ```
+
+### GET /v1/sessions/{id}/event/{sourceEventId}
+
+按正整数 source Event ID 精确读取一条诊断记录。该接口不接受查询参数，不支持分页、range 或 SSE。成功响应同时包含未经过 normalizer 的持久化 `sourceEvent` 和同一 Event 的 provider-neutral `frame`：
+
+```json
+{
+  "schema": "agenthub.event-detail.v1",
+  "sourceEvent": {
+    "id": 301,
+    "time": "2026-08-22T00:00:00Z",
+    "type": "tool.call",
+    "sessionId": "ses_example",
+    "turnId": "turn_example",
+    "data": {"schemaVersion": 1, "callId": "call_1", "operation": "start", "toolKind": "command", "name": "Command", "status": "running", "raw": {}}
+  },
+  "frame": {
+    "schema": "agenthub.semantic-events.v1",
+    "cursor": 301,
+    "mode": "replace",
+    "source": {"eventId": 301, "type": "tool.call", "sessionId": "ses_example", "turnId": "turn_example", "time": "2026-08-22T00:00:00Z"},
+    "events": [{
+      "id": "sem_301_0",
+      "sourceEventId": 301,
+      "index": 0,
+      "time": "2026-08-22T00:00:00Z",
+      "type": "tool.call",
+      "sessionId": "ses_example",
+      "turnId": "turn_example",
+      "data": {"schemaVersion": 1, "callId": "call_1", "operation": "start", "toolKind": "command", "name": "Command", "status": "running"}
+    }]
+  }
+}
+```
+
+`sourceEvent.data` 是不稳定的诊断数据，可能包含 Provider raw payload，client 不得依赖其内部 schema。`frame` 使用与 `/events` 完全相同的稳定协议。找不到精确 ID 时返回 `404 event_not_found`；非法 ID 返回 `400 invalid_event_id`。
 
 ### GET /v1/activity/events
 

@@ -51,7 +51,7 @@ func TestClosedTurnProjectionPreservesMessagesAndCollapsesDetailRanges(t *testin
 	})
 	appendProjectionEvent(t, store, created.ID, "tool.event", turnID, map[string]any{"raw": map[string]any{"item": map[string]any{"id": "call-1"}}})
 	appendProjectionEvent(t, store, created.ID, "tool.event", turnID, map[string]any{"raw": map[string]any{"itemId": "call-1"}})
-	appendProjectionEvent(t, store, created.ID, "tool.event", turnID, map[string]any{"toolCallId": "call-2"})
+	appendProjectionEvent(t, store, created.ID, "tool.call", turnID, map[string]any{"schemaVersion": 1, "callId": "call-2", "operation": "start", "toolKind": "read", "status": "running"})
 	appendProjectionEvent(t, store, created.ID, "approval.requested", turnID, map[string]any{"approvalId": "approval-1", "question": "Continue?"})
 	appendProjectionEvent(t, store, created.ID, "provider.error", turnID, map[string]any{"message": "retrying"})
 	appendProjectionEvent(t, store, created.ID, "future.visible", turnID, map[string]any{"label": "future"})

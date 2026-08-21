@@ -220,11 +220,12 @@ POST   /v1/sessions/{id}/interrupt
 POST   /v1/sessions/{id}/stop
 POST   /v1/sessions/{id}/approvals/{approvalId}
 GET    /v1/sessions/{id}/events
+GET    /v1/sessions/{id}/event/{sourceEventId}
 GET    /v1/sessions/{id}/turns
 GET    /v1/sessions/{id}/turns/{turnId}
 ```
 
-事件端点在普通请求下返回分页 JSON，包含 exclusive `after` cursor、`nextAfter`、`hasMore` 和最新 durable cursor；带 `Accept: text/event-stream` 或 `?stream=true` 时返回 SSE，并通过 `Last-Event-ID` 使用相同的 exclusive cursor 语义。daemon 先建立订阅并捕获 high-water mark，再分页重放完整 durable backlog，最后切换到 live；subscriber overflow 会关闭流，客户端可从最后一个连续 id 重连并从 `events.jsonl` 恢复，daemon 重启后同样有效。SSE 帧使用默认 message 通道，因此未知 event envelope 也会原样传输。
+复数事件端点在普通请求下返回 provider-neutral `agenthub.semantic-events.v1` frame 的分页 JSON，包含 exclusive `after` cursor、`nextAfter`、`hasMore` 和最新 durable cursor；带 `Accept: text/event-stream` 或 `?stream=true` 时通过 SSE 返回相同 frame，并通过 `Last-Event-ID` 使用相同的 exclusive cursor 语义。daemon 先建立订阅并捕获 high-water mark，再分页重放完整 durable backlog，最后切换到 live；subscriber overflow 会关闭流，客户端可从最后一个连续 id 重连并从 `events.jsonl` 恢复，daemon 重启后同样有效。只有单数 `/event/{sourceEventId}` 会为排障返回精确 raw source Event。
 
 资源编排客户端可在创建请求中提供 `idempotencyKey`，并在 `source.metadata`
 保存 Workspace 实例、资源和代际标识；完全相同的请求在 daemon 重启后仍返回
@@ -252,19 +253,14 @@ JSON `payload`。AgentHub 不解释 payload，只负责持久化并原样返回�
 {"text":"旧客户端消息","role":"agent","sender":{"name":"Old Client"}}
 ```
 
-### 可复用 Event Timeline
+### Semantic Events
 
-[`packages/event-timeline`](packages/event-timeline/README.md) 是 API v1
-canonical event 的无依赖参考投影。AgentHub Web 直接导入其 ESM 产物；无
-bundler 的浏览器客户端可固定 vendoring IIFE，并调用
-`AgentHubEventTimeline.buildTimeline(events)`。package 包含脱敏的一致性
-fixtures 与精确 snapshots，覆盖 Provider 噪声、跨 Turn delta、reasoning、
-Codex/ACP/Pi 工具、审批、终态兜底、失败、取消、未知事件和分页重放。
-
-在 package 目录运行 `npm run build` 和 `npm test` 可复现并验证两种产物。
-`dist/manifest.json` 记录版本 `1.0.0`、契约 `agenthub.api.v1`、
-BSD-3-Clause 许可证、确定性构建命令，以及源码输入和生成产物的 SHA-256。
-下游应固定包含该 manifest 的 AgentHub Git commit。
+`GET /v1/sessions/{id}/events` 向所有 client 提供 provider-neutral 的
+`agenthub.semantic-events.v1` 协议。AgentHub Web 在自身源码中维护展示投影，
+只依赖公共协议，不再发布或要求共享 timeline package。既有 Provider raw
+Event 在读取时归一化；新的工具活动以 canonical `tool.call` source Event
+持久化。只有精确 raw 排障才使用单数
+`GET /v1/sessions/{id}/event/{sourceEventId}`。
 
 ### 归档 Session
 

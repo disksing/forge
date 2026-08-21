@@ -15,15 +15,15 @@ test("switching sessions clears stale events and raises the loading flag", async
   // The selection-change branch must empty the list before the fetch.
   const switchBranch = app.slice(
     app.indexOf("eventsSessionRef.current !== activeId"),
-    app.indexOf("catchUpEvents(activeId)"),
+    app.indexOf("catchUpFrames(activeId)"),
   );
-  assert.match(switchBranch, /setEvents\(\[\]\)/);
+  assert.match(switchBranch, /setFrames\(\[\]\)/);
   assert.match(switchBranch, /setEventsLoading\(true\)/);
 });
 
 test("the loading flag is released after catch-up succeeds or fails", async () => {
   const app = await readFile(path.join(srcRoot, "App.jsx"), "utf8");
-  const catchUp = app.slice(app.indexOf("catchUpEvents(activeId)"));
+  const catchUp = app.slice(app.indexOf("catchUpFrames(activeId)"));
   const success = catchUp.slice(catchUp.indexOf(".then("), catchUp.indexOf(".catch("));
   assert.match(success, /setEventsLoading\(false\)/);
   // The failure path must also stop loading and stay guarded against a

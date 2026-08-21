@@ -23,6 +23,7 @@ import (
 	"github.com/disksing/pua/agenthub/internal/config"
 	"github.com/disksing/pua/agenthub/internal/provider"
 	"github.com/disksing/pua/agenthub/internal/runtime"
+	"github.com/disksing/pua/agenthub/internal/semantic"
 	"github.com/disksing/pua/agenthub/internal/session"
 )
 
@@ -48,6 +49,8 @@ const (
 	CapabilityEventsDeltaMerge               = "events.delta-merge"
 	CapabilityEventsBackwardPagination       = "events.backward-pagination"
 	CapabilityEventsCanonicalTerminal        = "events.canonical-turn-terminals"
+	CapabilityEventsSemanticV1               = "events.semantic-v1"
+	CapabilityEventRawV1                     = "event.raw-v1"
 	CapabilityActivityGlobalSSE              = "activity.global-sse"
 	CapabilityRecoveryClosedTurns            = "recovery.closed-turns"
 )
@@ -260,6 +263,8 @@ func (s *Server) capabilities() []string {
 		CapabilityEventsLosslessReplay,
 		CapabilityEventsDeltaMerge,
 		CapabilityEventsBackwardPagination,
+		CapabilityEventsSemanticV1,
+		CapabilityEventRawV1,
 		CapabilityActivityGlobalSSE,
 		CapabilitySessionSource,
 		CapabilitySessionSourceMetadata,
@@ -716,6 +721,7 @@ func (s *Server) sessionOps() []sessionOp {
 		{http.MethodGet, "", s.getSession, "GET /v1/sessions/{id}"},
 		{http.MethodDelete, "", s.archiveSession, "DELETE /v1/sessions/{id}"},
 		{http.MethodGet, "events", s.events, "GET /v1/sessions/{id}/events"},
+		{http.MethodGet, "event/{sourceEventId}", s.event, "GET /v1/sessions/{id}/event/{sourceEventId}"},
 		{http.MethodGet, "turns", s.turns, "GET /v1/sessions/{id}/turns"},
 		{http.MethodGet, "turns/{turnId}", s.turn, "GET /v1/sessions/{id}/turns/{turnId}"},
 		{http.MethodPost, "messages", s.sendMessage, "POST /v1/sessions/{id}/messages"},
@@ -1256,7 +1262,7 @@ func isActivityEvent(event session.Event) bool {
 		session.EventMessageInput,
 		"message.assistant.delta",
 		"message.reasoning.delta",
-		"tool.event",
+		"tool.event", "tool.call",
 		"approval.requested",
 		"approval.resolved",
 		"provider.error",
@@ -1277,6 +1283,39 @@ func writeActivitySSE(w http.ResponseWriter, frame activityFrame) error {
 	return writeSSEBounded(w, func() error {
 		_, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", frame.Sequence, data)
 		return err
+	})
+}
+
+func (s *Server) event(w http.ResponseWriter, r *http.Request, id string) {
+	if r.URL.RawQuery != "" {
+		writeAPIError(w, http.StatusBadRequest, "invalid_event_query", "single event lookup does not accept query parameters", nil)
+		return
+	}
+	eventID, err := strconv.ParseInt(strings.TrimSpace(r.PathValue("sourceEventId")), 10, 64)
+	if err != nil || eventID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "invalid_event_id", "sourceEventId must be a positive event id", nil)
+		return
+	}
+	page, err := s.store.EventsPage(id, eventID-1, 1)
+	if err != nil {
+		if errors.Is(err, session.ErrEventCursorAhead) {
+			writeAPIError(w, http.StatusNotFound, "event_not_found", "event not found", nil)
+			return
+		}
+		s.writeStoreError(w, err)
+		return
+	}
+	if len(page.Events) != 1 || page.Events[0].ID != eventID {
+		writeAPIError(w, http.StatusNotFound, "event_not_found", "event not found", nil)
+		return
+	}
+	source := page.Events[0]
+	if source.SessionID != "" && source.SessionID != id {
+		writeAPIError(w, http.StatusInternalServerError, "event_session_mismatch", "event belongs to a different session", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, semantic.Detail{
+		Schema: semantic.EventDetailSchema, SourceEvent: source, Frame: semantic.FrameFor(source, false),
 	})
 }
 
@@ -1323,7 +1362,8 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, id string) {
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"events": page.Events,
+				"schema": semantic.EventsSchema,
+				"frames": semantic.FramesFor(page.Events),
 				"page": map[string]any{
 					"after":         page.After,
 					"limit":         page.Limit,
@@ -1363,7 +1403,8 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, id string) {
 			}
 		}
 		response := map[string]any{
-			"events": events,
+			"schema": semantic.EventsSchema,
+			"frames": semantic.FramesFor(events),
 			"page": map[string]any{
 				"after":     page.After,
 				"limit":     page.Limit,
@@ -1416,7 +1457,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, id string) {
 			return
 		}
 		if len(page.Events) == 1 {
-			if err := writeSSE(w, page.Events[0]); err != nil {
+			if err := writeSemanticSSE(w, page.Events[0], false); err != nil {
 				return
 			}
 		}
@@ -1433,7 +1474,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, id string) {
 			if live.Overflowed() || event.ID != lastSent+1 {
 				return
 			}
-			if err := writeSSE(w, event); err != nil {
+			if err := writeSemanticSSE(w, event, false); err != nil {
 				return
 			}
 			lastSent = event.ID
@@ -1465,7 +1506,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, id string) {
 				// and republishes an append patch under the id the client
 				// already has. Forward it so live readers extend the merged
 				// content; only a new id may advance the cursor.
-				if err := writeSSE(w, event); err != nil {
+				if err := writeSemanticSSE(w, event, true); err != nil {
 					return
 				}
 				flusher.Flush()
@@ -1474,7 +1515,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, id string) {
 			if event.ID != lastSent+1 {
 				return
 			}
-			if err := writeSSE(w, event); err != nil {
+			if err := writeSemanticSSE(w, event, false); err != nil {
 				return
 			}
 			lastSent = event.ID
@@ -1709,8 +1750,8 @@ func parseEventBackward(query url.Values) (before int64, backward bool, err erro
 // single channel guarantees that consumers receive every event — including
 // event types they do not know about yet — instead of silently dropping
 // events their subscription list does not name.
-func writeSSE(w http.ResponseWriter, event session.Event) error {
-	data, err := json.Marshal(event)
+func writeSemanticSSE(w http.ResponseWriter, event session.Event, appendMode bool) error {
+	data, err := json.Marshal(semantic.FrameFor(event, appendMode))
 	if err != nil {
 		return err
 	}

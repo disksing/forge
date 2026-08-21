@@ -169,7 +169,7 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/turns/"+turnRef):
 				_, _ = io.WriteString(w, `{"turn":{"reference":"`+turnRef+`","turnId":"turn-1","status":"completed","closed":true,"startedAt":"2026-08-13T00:00:00Z","endedAt":"2026-08-13T00:00:01Z","durationMs":1000,"triggerPreview":"coordinate now","triggerRole":"agent","finalReplyPreview":"done","eventCount":2,"toolEventCount":1,"startEventId":1,"lastEventId":2,"generation":{"generation":1,"generationId":"gen-1","title":"Mailbox task (gen #1)","binding":{"kind":"profile","name":"default"},"agentName":"test-agent","status":"running","createdAt":"2026-08-13T00:00:00Z","updatedAt":"2026-08-13T00:00:01Z"}},"items":[{"type":"message","role":"agent","text":"coordinate now","startEventId":1,"endEventId":1,"startEventRef":"`+eventRef+`","endEventRef":"`+eventRef+`","startedAt":"2026-08-13T00:00:00Z","endedAt":"2026-08-13T00:00:00Z","durationMs":0,"count":1}],"deliveries":[],"latestEventId":2,"latestEventRef":"`+eventRef+`","turnStartedEventId":1,"completedAt":"2026-08-13T00:00:01Z"}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/events/"+eventRef):
-				_, _ = io.WriteString(w, `{"reference":"`+eventRef+`","generation":{"generation":1,"generationId":"gen-1","title":"Mailbox task (gen #1)","binding":{"kind":"profile","name":"default"},"agentName":"test-agent","status":"running","createdAt":"2026-08-13T00:00:00Z","updatedAt":"2026-08-13T00:00:01Z"},"event":{"id":1,"time":"2026-08-13T00:00:00Z","type":"message.input","sessionId":"session-1","turnId":"turn-1","data":{"text":"coordinate now"}}}`)
+				_, _ = io.WriteString(w, `{"reference":"`+eventRef+`","generation":{"generation":1,"generationId":"gen-1","title":"Mailbox task (gen #1)","binding":{"kind":"profile","name":"default"},"agentName":"test-agent","status":"running","createdAt":"2026-08-13T00:00:00Z","updatedAt":"2026-08-13T00:00:01Z"},"schema":"agenthub.event-detail.v1","sourceEvent":{"id":1,"time":"2026-08-13T00:00:00Z","type":"message.input","sessionId":"session-1","turnId":"turn-1","data":{"text":"coordinate now"}},"frame":{"schema":"agenthub.semantic-events.v1","cursor":1,"mode":"replace","events":[{"id":"sem_1_0","type":"message.input","data":{"text":"coordinate now"}}]}}`)
 			default:
 				http.NotFound(w, r)
 			}
@@ -266,11 +266,11 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 			}
 		}
 		var eventJSON struct {
-			Event struct {
+			SourceEvent struct {
 				ID int64 `json:"id"`
-			} `json:"event"`
+			} `json:"sourceEvent"`
 		}
-		if err := json.Unmarshal([]byte(run(t, "history", "event", "show", "--ref="+eventRef, "--json")), &eventJSON); err != nil || eventJSON.Event.ID != 1 {
+		if err := json.Unmarshal([]byte(run(t, "history", "event", "show", "--ref="+eventRef, "--json")), &eventJSON); err != nil || eventJSON.SourceEvent.ID != 1 {
 			t.Fatalf("unexpected Event JSON: %#v, %v", eventJSON, err)
 		}
 		if _, err := runErr(t, "history", "turn", "show", "--ref="+turnRef, "--json", "--json"); err == nil || !strings.Contains(err.Error(), historyShowUsage) {

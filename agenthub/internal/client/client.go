@@ -13,6 +13,7 @@ import (
 
 	"github.com/disksing/pua/agenthub/internal/daemon"
 	"github.com/disksing/pua/agenthub/internal/paths"
+	"github.com/disksing/pua/agenthub/internal/semantic"
 	"github.com/disksing/pua/agenthub/internal/session"
 )
 
@@ -55,7 +56,8 @@ func (e *IncompatibleDaemonError) Error() string {
 }
 
 type EventPage struct {
-	Events []session.Event `json:"events"`
+	Schema string           `json:"schema"`
+	Frames []semantic.Frame `json:"frames"`
 	Page   struct {
 		After     int64 `json:"after"`
 		Limit     int   `json:"limit"`
@@ -247,6 +249,9 @@ func (c *Client) EventsPage(id string, after int64, limit int) (EventPage, error
 	if err := c.request(http.MethodGet, path, nil, &result); err != nil {
 		return EventPage{}, err
 	}
+	if err := validateEventPage(result); err != nil {
+		return EventPage{}, err
+	}
 	return result, nil
 }
 
@@ -260,15 +265,30 @@ func (c *Client) EventsPageBefore(id string, before int64, limit int) (EventPage
 	if err := c.request(http.MethodGet, path, nil, &result); err != nil {
 		return EventPage{}, err
 	}
+	if err := validateEventPage(result); err != nil {
+		return EventPage{}, err
+	}
 	return result, nil
+}
+
+func validateEventPage(page EventPage) error {
+	if page.Schema != semantic.EventsSchema {
+		return fmt.Errorf("unsupported events schema %q", page.Schema)
+	}
+	for _, frame := range page.Frames {
+		if frame.Schema != semantic.EventsSchema {
+			return fmt.Errorf("unsupported semantic frame schema %q at cursor %d", frame.Schema, frame.Cursor)
+		}
+	}
+	return nil
 }
 
 // EventsAfter catches up through the durable head reported by the first REST
 // page. It stops before projecting any non-contiguous event.
-func (c *Client) EventsAfter(id string, after int64) ([]session.Event, error) {
+func (c *Client) EventsAfter(id string, after int64) ([]semantic.Frame, error) {
 	cursor := after
 	var target int64 = -1
-	var events []session.Event
+	var frames []semantic.Frame
 	for {
 		page, err := c.EventsPage(id, cursor, session.MaxEventPageSize)
 		if err != nil {
@@ -277,20 +297,20 @@ func (c *Client) EventsAfter(id string, after int64) ([]session.Event, error) {
 		if target < 0 {
 			target = page.LatestCursor
 		}
-		for _, event := range page.Events {
-			if event.ID > target {
+		for _, frame := range page.Frames {
+			if frame.Cursor > target {
 				break
 			}
-			if event.ID != cursor+1 {
-				return nil, &EventCursorGapError{Expected: cursor + 1, Got: event.ID}
+			if frame.Cursor != cursor+1 {
+				return nil, &EventCursorGapError{Expected: cursor + 1, Got: frame.Cursor}
 			}
-			events = append(events, event)
-			cursor = event.ID
+			frames = append(frames, frame)
+			cursor = frame.Cursor
 		}
 		if cursor >= target {
-			return events, nil
+			return frames, nil
 		}
-		if len(page.Events) == 0 {
+		if len(page.Frames) == 0 {
 			return nil, &EventCursorGapError{Expected: cursor + 1, Got: 0}
 		}
 	}

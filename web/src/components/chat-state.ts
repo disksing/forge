@@ -1,6 +1,6 @@
 import { ApiClient, StaleResponseError } from "../api/client";
 import type {
-  AgentEvent, AgentNotice, AgentTurnItem, ChatContextSnapshot, ConversationBlock,
+  AgentEvent, AgentNotice, AgentSemanticFrame, AgentTurnItem, ChatContextSnapshot, ConversationBlock,
   ResourceHistoryGeneration, ResourceHistoryPage, ResourceHistorySegment,
   ResourceHistoryTurnDetail, ResourceHistoryTurnSummary, ResourceMessageStatus, TimelineItem,
 } from "./models";
@@ -22,13 +22,14 @@ const NOTICE_TIMEOUT_MS = 10000;
 // history head reads; when the budget is exhausted the Turn stays pending and
 // later status/head syncs keep retrying instead of leaving a stuck error.
 const TERMINAL_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000];
-const HIDDEN_EVENT_TYPES = new Set(["session.created", "session.provider", "session.launch-environment"]);
+const HIDDEN_EVENT_TYPES = new Set(["session.created", "session.provider", "session.launch-environment", "semantic.empty"]);
 
 type EventSourceFactory = (url: string) => EventSource;
 type SnapshotListener = (snapshot: ChatContextSnapshot) => void;
 
 interface EventPage {
-  events?: AgentEvent[];
+  schema?: string;
+  frames?: AgentSemanticFrame[];
   page?: { hasMore?: boolean; nextAfter?: number };
 }
 
@@ -290,7 +291,7 @@ export class ChatSessionController {
     const summary = reference ? this.findTurn(context, reference) : undefined;
     if (!reference || !summary || end > summary.lastEventId) return;
     const generation = context.requestGeneration;
-    // A block renders either compact Turn items or canonical raw Events. Load
+    // A block renders either compact Turn items or semantic Events. Load
     // the complete bounded Turn when expanding one compact range so messages
     // around the requested tool/thinking item remain visible as its details
     // replace the compact projection.
@@ -409,15 +410,15 @@ export class ChatSessionController {
       const generationBlocks: ConversationBlock[] = [];
       for (const turn of [...(segment.turns || [])].sort((left, right) => left.startEventId - right.startEventId)) {
         const detail = context.details.get(turn.reference);
-        const raw = context.liveEvents.get(turn.reference);
+        const live = context.liveEvents.get(turn.reference);
         // Closed non-user Turns stay as summary cards until the user expands
         // them; loaded details and leftover live events stay attached to the
         // context but out of the projection. Open Turns always stream live.
         const collapsed = turnIsCollapsedByPolicy(turn) && !context.expandedTurns.has(turn.reference);
         generationBlocks.push({
           kind: "turn", key: `${segment.generation.generationId}:${turn.turnId}`, generation: segment.generation, turn,
-          items: !collapsed && detail && !raw ? compactTurnItems(detail, segment.generation.generationId) : undefined,
-          events: collapsed ? undefined : raw?.filter((event) => !HIDDEN_EVENT_TYPES.has(event.type)),
+          items: !collapsed && detail && !live ? compactTurnItems(detail, segment.generation.generationId) : undefined,
+          events: collapsed ? undefined : live?.filter((event) => !HIDDEN_EVENT_TYPES.has(event.type)),
           loading: !collapsed && context.detailLoading.has(turn.reference), error: collapsed ? undefined : context.detailErrors.get(turn.reference),
         });
       }
@@ -462,12 +463,15 @@ export class ChatSessionController {
     stream.onmessage = (message) => {
       if (!this.isActiveStream(context, stream, streamGeneration)) return;
       try {
-        const event = JSON.parse(message.data) as AgentEvent;
-        if (!this.eventBelongsToContext(context, event)) return;
-        context.pendingEvents.push(event);
-        this.onEvent?.(context.workspaceId, context.resourceId, event);
+        const frame = JSON.parse(message.data) as AgentSemanticFrame;
+        const events = eventsFromSemanticFrame(frame);
+        for (const event of events) {
+          if (!this.eventBelongsToContext(context, event)) continue;
+          context.pendingEvents.push(event);
+          this.onEvent?.(context.workspaceId, context.resourceId, event);
+          if (isTurnTerminal(event)) void this.materializeTerminalTurn(context, String(event.turnId || ""));
+        }
         this.scheduleEventFlush(context);
-        if (isTurnTerminal(event)) void this.materializeTerminalTurn(context, String(event.turnId || ""));
       } catch {
         context.error = "An Agent event could not be decoded.";
         this.emit();
@@ -566,7 +570,8 @@ export class ChatSessionController {
       const query = new URLSearchParams({ generationId, start: String(start), end: String(end), after: String(after), limit: String(EVENT_LIMIT) });
       const page = await this.api.latest<EventPage>(`${resourceBase(context)}/events?${query}`, { scope: requestScope(context, scope) });
       if (!this.isCurrent(context, generation)) return [];
-      const batch = normalizeEvents(page.events).filter((event) => this.eventBelongsToContext(context, event));
+      if (page.schema !== "agenthub.semantic-events.v1") throw new Error(`Unsupported AgentHub events schema: ${page.schema || "missing"}.`);
+      const batch = normalizeEvents((page.frames || []).flatMap(eventsFromSemanticFrame)).filter((event) => this.eventBelongsToContext(context, event));
       events = mergeCanonicalEvents([...events, ...batch]);
       const next = Number(page.page?.nextAfter) || latestEventId(batch);
       if (!page.page?.hasMore || !next || next <= after) break;
@@ -609,7 +614,7 @@ export class ChatSessionController {
           const detail = await this.api.latest<ResourceHistoryTurnDetail>(turnPath(context, summary.reference), { scope: requestScope(context, `terminal:${materializationKey}`) });
           if (!this.isCurrent(context, generation)) return;
           // A repeated terminal frame may arrive while the history requests are
-          // in flight. Fold it before replacing the raw live view with the
+          // in flight. Fold it before replacing the semantic live view with the
           // canonical compact detail so a later batch flush cannot regress it.
           this.flushEvents(context, false);
           context.details.set(summary.reference, detail);
@@ -624,9 +629,9 @@ export class ChatSessionController {
         }
       }
       // The projection stayed unconfirmed past the retry budget (a slow or
-      // unavailable history head). Keep the raw live view, remember the Turn
+      // unavailable history head). Keep the semantic live view, remember the Turn
       // as pending, and let later status/head syncs retry instead of leaving
-      // the raw block and a stale error on screen forever.
+      // the live block and a stale error on screen forever.
       context.terminalPending.add(turnId);
       this.setTerminalError(context, failure);
       this.emit();
@@ -665,7 +670,7 @@ export class ChatSessionController {
         this.emit();
       }
     } catch (_) {
-      // The raw stream remains authoritative for the open Turn. A later event,
+      // The semantic stream remains authoritative for the open Turn. A later event,
       // terminal materialization, or status refresh retries the summary head.
     } finally {
       context.headRefreshing = false;
@@ -918,8 +923,8 @@ function turnPath(context: ResourceChatContext, reference: string): string {
 
 function currentGenerationHead(context: ResourceChatContext): number {
   const summaries = [...context.segments.values()].filter((segment) => segment.generation.generationId === context.generationId).flatMap((segment) => segment.turns || []);
-  const raw = [...context.liveEvents.values()].flat();
-  return Math.max(0, ...summaries.map((turn) => Number(turn.lastEventId) || 0), ...raw.map((event) => Number(event.id) || 0));
+  const live = [...context.liveEvents.values()].flat();
+  return Math.max(0, ...summaries.map((turn) => Number(turn.lastEventId) || 0), ...live.map((event) => Number(event.id) || 0));
 }
 
 function statusGeneration(context: ResourceChatContext): ResourceHistoryGeneration | null {
@@ -940,6 +945,24 @@ function statusGeneration(context: ResourceChatContext): ResourceHistoryGenerati
 
 function normalizeEvents(events?: AgentEvent[]): AgentEvent[] {
   return Array.isArray(events) ? events.filter((event) => Number(event?.id) > 0) : [];
+}
+
+function eventsFromSemanticFrame(frame: AgentSemanticFrame): AgentEvent[] {
+  if (frame?.schema !== "agenthub.semantic-events.v1" || !Number(frame.cursor)) throw new Error("An Agent semantic frame could not be decoded.");
+  const events = Array.isArray(frame.events) ? frame.events : [];
+  if (!events.length) {
+    return [{
+      id: Number(frame.cursor), semanticId: `empty:${frame.cursor}`, semanticIndex: -1,
+      type: "semantic.empty", time: frame.source?.time, startTime: frame.source?.startTime,
+      sessionId: frame.source?.sessionId, turnId: frame.source?.turnId, data: {},
+    }];
+  }
+  return events.map((event) => ({
+    id: Number(event.sourceEventId || frame.cursor), semanticId: String(event.id || ""), semanticIndex: Number(event.index) || 0,
+    type: String(event.type || "unknown"), time: event.time || frame.source?.time, startTime: event.startTime || frame.source?.startTime,
+    sessionId: event.sessionId || frame.source?.sessionId, turnId: event.turnId || frame.source?.turnId,
+    data: frame.mode === "append" ? { ...(event.data || {}), append: true } : event.data,
+  }));
 }
 
 function latestEventId(events: AgentEvent[]): number {

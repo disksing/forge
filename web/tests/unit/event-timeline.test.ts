@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import EventTimeline from "../../src/components/EventTimeline.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import HistoryTimeline from "../../src/components/HistoryTimeline.svelte";
-import type { AgentEvent, AgentTurnItem, EventTimelineModel, ResourceMessageStatus, TimelineItem } from "../../src/components/models";
+import type { AgentEvent, AgentSemanticFrame, AgentTurnItem, EventTimelineModel, ResourceMessageStatus, TimelineItem } from "../../src/components/models";
 import { formatClock, projectConversationEvents } from "../../src/components/timeline-events";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -36,6 +36,23 @@ class FakeEventSource {
   constructor(readonly url: string) { FakeEventSource.instances.push(this); }
   addEventListener(): void {}
   close(): void { this.closed = true; }
+}
+
+function semanticFrame(event: AgentEvent, mode: AgentSemanticFrame["mode"] = "replace"): AgentSemanticFrame {
+  const sessionId = event.sessionId || "session-test";
+  return {
+    schema: "agenthub.semantic-events.v1", cursor: event.id, mode,
+    source: { eventId: event.id, type: event.type, sessionId, turnId: event.turnId, time: event.time },
+    events: [{
+      id: `sem_${event.id}_0`, sourceEventId: event.id, index: 0, type: event.type,
+      time: event.time, sessionId, turnId: event.turnId, data: event.data,
+    }],
+  };
+}
+
+function semanticPage(events: AgentEvent[]) {
+  const latest = events.reduce((value, event) => Math.max(value, event.id), 0);
+  return { schema: "agenthub.semantic-events.v1", frames: events.map((event) => semanticFrame(event)), page: { hasMore: false, nextAfter: latest }, latestCursor: latest };
 }
 
 function project(events: AgentEvent[]): TimelineItem[] {
@@ -575,13 +592,13 @@ describe("EventTimeline", () => {
     // must survive that shift so streamed updates still scroll to the bottom.
     metrics.clientHeight = 440;
     metrics.scrollHeight = 1100;
-    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 100, time: "2026-08-12T00:00:01Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "live reply" } }) } as MessageEvent);
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify(semanticFrame({ id: 100, time: "2026-08-12T00:00:01Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "live reply" } })) } as MessageEvent);
 
     await vi.waitFor(() => expect(target.textContent).toContain("live reply"));
     await vi.waitFor(() => expect(metrics.scrollTop).toBe(1100 - 440));
 
     metrics.scrollHeight = 1250;
-    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 101, time: "2026-08-12T00:00:02Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "second reply" } }) } as MessageEvent);
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify(semanticFrame({ id: 101, time: "2026-08-12T00:00:02Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "second reply" } })) } as MessageEvent);
     await vi.waitFor(() => expect(metrics.scrollTop).toBe(1250 - 440));
   });
 
@@ -602,7 +619,7 @@ describe("EventTimeline", () => {
     target.scrollTop = 100;
     target.dispatchEvent(new Event("scroll"));
     metrics.scrollHeight = 1100;
-    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 100, time: "2026-08-12T00:00:01Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "live reply" } }) } as MessageEvent);
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify(semanticFrame({ id: 100, time: "2026-08-12T00:00:01Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "live reply" } })) } as MessageEvent);
     await vi.waitFor(() => expect(target.textContent).toContain("live reply"));
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(metrics.scrollTop).toBe(100);
@@ -610,7 +627,7 @@ describe("EventTimeline", () => {
     target.scrollTop = 1100 - 500;
     target.dispatchEvent(new Event("scroll"));
     metrics.scrollHeight = 1200;
-    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 101, time: "2026-08-12T00:00:02Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "second reply" } }) } as MessageEvent);
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify(semanticFrame({ id: 101, time: "2026-08-12T00:00:02Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "second reply" } })) } as MessageEvent);
     await vi.waitFor(() => expect(metrics.scrollTop).toBe(1200 - 500));
   });
 
@@ -627,15 +644,15 @@ describe("EventTimeline", () => {
     fixture.detail.turn = fixture.turn;
     const events: AgentEvent[] = [
       { id: 1, type: "message.input", turnId: "turn-1", sessionId: "session-task-a", data: { role: "user", text: "run tools" } },
-      { id: 2, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["echo", "one"] } } } },
-      { id: 3, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["echo", "one"], status: "completed" } } } },
-      { id: 4, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/started", raw: { item: { type: "mcpToolCall", id: "call-2", server: "fixture", tool: "lookup" } } } },
-      { id: 5, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/completed", raw: { item: { type: "mcpToolCall", id: "call-2", server: "fixture", tool: "lookup", status: "completed", result: "ok" } } } },
+      { id: 2, type: "tool.call", turnId: "turn-1", sessionId: "session-task-a", data: { schemaVersion: 1, callId: "call-1", operation: "start", toolKind: "command", name: "Command", summary: "echo one", status: "running" } },
+      { id: 3, type: "tool.call", turnId: "turn-1", sessionId: "session-task-a", data: { schemaVersion: 1, callId: "call-1", operation: "finish", toolKind: "command", name: "Command", summary: "echo one", status: "completed" } },
+      { id: 4, type: "tool.call", turnId: "turn-1", sessionId: "session-task-a", data: { schemaVersion: 1, callId: "call-2", operation: "start", toolKind: "mcp", name: "MCP", summary: "fixture / lookup", status: "running" } },
+      { id: 5, type: "tool.call", turnId: "turn-1", sessionId: "session-task-a", data: { schemaVersion: 1, callId: "call-2", operation: "finish", toolKind: "mcp", name: "MCP", summary: "fixture / lookup", status: "completed", output: { text: "ok", mode: "replace" } } },
       { id: 6, type: "message.assistant.delta", turnId: "turn-1", sessionId: "session-task-a", data: { text: "done" } },
     ];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      const body = path.includes("/events?") ? { events, page: { hasMore: false, nextAfter: 6 } } : path.includes("/history/turns/ref-") ? fixture.detail : fixture.page;
+      const body = path.includes("/events?") ? semanticPage(events) : path.includes("/history/turns/ref-") ? fixture.detail : fixture.page;
       return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
     }));
 

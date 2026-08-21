@@ -5,7 +5,7 @@ import AppShell from "../../src/components/AppShell.svelte";
 import MarkdownDocument from "../../src/components/MarkdownDocument.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import type { AgentEvent } from "../../src/components/models";
-import { compactTimelineEvents, mergeCanonicalEvent, mergeCanonicalEvents } from "../../src/components/timeline-events";
+import { mergeCanonicalEvent, mergeCanonicalEvents, projectConversationEvents } from "../../src/components/timeline-events";
 import { continuousEvents, largeMarkdown, largeTreeModel, performanceBudgets } from "../fixtures/performance";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -72,30 +72,26 @@ describe("performance and bounded-DOM gates", () => {
     expect(elapsed).toBeLessThan(performanceBudgets.continuousDeltaMs);
   });
 
-  it("bounds a sustained stream of cumulative ACP tool updates", () => {
+  it("projects a sustained stream of provider-neutral tool updates within budget", () => {
     const events: AgentEvent[] = [{
-      id: 1, type: "tool.event", data: {
-        method: "session/update",
-        raw: { update: { sessionUpdate: "tool_call", toolCallId: "call-a", status: "in_progress" } },
+      id: 1, semanticId: "sem_1_0", type: "tool.call", turnId: "turn-performance", data: {
+        schemaVersion: 1, callId: "call-a", operation: "start", toolKind: "read", name: "Read", status: "running",
       },
     }];
     for (let index = 0; index < 30_000; index++) {
       events.push({
-        id: index + 2, type: "tool.event", data: {
-          method: "session/update",
-          raw: { update: {
-            sessionUpdate: "tool_call_update", toolCallId: "call-a", status: "in_progress",
-            content: [{ type: "text", text: `cumulative output ${index}` }],
-          } },
+        id: index + 2, semanticId: `sem_${index + 2}_0`, type: "tool.call", turnId: "turn-performance", data: {
+          schemaVersion: 1, callId: "call-a", operation: "update", status: "running",
+          output: { mode: "replace", text: `output ${index}` },
         },
       });
     }
     const started = performance.now();
-    const compacted = compactTimelineEvents(events);
+    const projected = projectConversationEvents(events);
     const elapsed = performance.now() - started;
 
-    expect(compacted).toHaveLength(2);
-    expect(compacted[1].id).toBe(30_001);
+    expect(projected).toHaveLength(1);
+    expect(projected[0].toolCallCount).toBe(1);
     expect(elapsed).toBeLessThan(performanceBudgets.eventMergeMs);
   });
 });

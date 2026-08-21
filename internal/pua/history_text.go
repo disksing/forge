@@ -127,9 +127,19 @@ type historyEvent struct {
 }
 
 type historyEventDetail struct {
-	Reference  string            `json:"reference"`
-	Generation historyGeneration `json:"generation"`
-	Event      historyEvent      `json:"event"`
+	Reference   string            `json:"reference"`
+	Generation  historyGeneration `json:"generation"`
+	Schema      string            `json:"schema"`
+	SourceEvent historyEvent      `json:"sourceEvent"`
+	Frame       struct {
+		Cursor int64  `json:"cursor"`
+		Mode   string `json:"mode"`
+		Events []struct {
+			ID   string          `json:"id"`
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data,omitempty"`
+		} `json:"events"`
+	} `json:"frame"`
 }
 
 func decodeHistoryResponse(value map[string]any, output any) error {
@@ -234,14 +244,23 @@ func printHistoryDetailText(kind string, response map[string]any) error {
 		if err := decodeHistoryResponse(response, &detail); err != nil {
 			return err
 		}
-		fmt.Fprintf(&output, "Event: %d\n", detail.Event.ID)
+		fmt.Fprintf(&output, "Event: %d\n", detail.SourceEvent.ID)
 		fmt.Fprintf(&output, "  Reference: %s\n", detail.Reference)
-		fmt.Fprintf(&output, "  Type: %s\n", emptyHistoryValue(detail.Event.Type))
-		writeOptionalHistoryField(&output, "  Time", detail.Event.Time)
-		writeOptionalHistoryField(&output, "  Session", detail.Event.SessionID)
-		writeOptionalHistoryField(&output, "  Turn", detail.Event.TurnID)
+		fmt.Fprintf(&output, "  Type: %s\n", emptyHistoryValue(detail.SourceEvent.Type))
+		writeOptionalHistoryField(&output, "  Time", detail.SourceEvent.Time)
+		writeOptionalHistoryField(&output, "  Session", detail.SourceEvent.SessionID)
+		writeOptionalHistoryField(&output, "  Turn", detail.SourceEvent.TurnID)
 		writeHistoryGeneration(&output, detail.Generation, "  ")
-		writeHistoryJSONBlock(&output, "  Data", "    ", detail.Event.Data)
+		writeHistoryJSONBlock(&output, "  Raw data", "    ", detail.SourceEvent.Data)
+		fmt.Fprintf(&output, "  Semantic frame: cursor=%d, mode=%s\n", detail.Frame.Cursor, emptyHistoryValue(detail.Frame.Mode))
+		if len(detail.Frame.Events) == 0 {
+			output.WriteString("    Events: (empty)\n")
+		} else {
+			for _, event := range detail.Frame.Events {
+				fmt.Fprintf(&output, "    %s (%s)\n", emptyHistoryValue(event.Type), emptyHistoryValue(event.ID))
+				writeHistoryJSONBlock(&output, "      Data", "        ", event.Data)
+			}
+		}
 	default:
 		return fmt.Errorf("unsupported history detail kind %q", kind)
 	}

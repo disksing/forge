@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/disksing/pua/agenthub/internal/config"
+	"github.com/disksing/pua/agenthub/internal/semantic"
 )
 
 type codexSession struct {
@@ -288,14 +289,16 @@ func (c *codexSession) notification(method string, params json.RawMessage) {
 	case "item/started", "item/completed", "item/updated":
 		// Codex uses generic item lifecycle notifications for messages and
 		// reasoning as well as tools. Keep the former as raw provider events;
-		// only actual tool items belong to AgentHub's tool.event contract.
+		// only actual tool items belong to AgentHub's tool.call contract.
 		switch lookup(params, "item", "type") {
 		case "userMessage", "agentMessage", "reasoning":
 		default:
-			event.Type = "tool.event"
+			event.Type = "tool.call"
+			event.Data = semantic.ToolCallData(method, params)
 		}
 	case "item/commandExecution/outputDelta", "command/exec/outputDelta":
-		event.Type = "tool.event"
+		event.Type = "tool.call"
+		event.Data = semantic.ToolCallData(method, params)
 	}
 	if c.options.Hooks.Event != nil {
 		c.options.Hooks.Event(event)

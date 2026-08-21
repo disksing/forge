@@ -5,8 +5,8 @@ import {
 } from "@phosphor-icons/react";
 import { agentHubPath, api } from "./api";
 import { archiveDisabledReason, archiveListError, isArchived, isArchivable, pickActiveAfterArchive, sessionStatusLabel, sessionsQuery } from "./archive.js";
-import { catchUpEvents, mergeIncomingEvents, projectLiveEvent } from "./events.js";
-import { buildTimeline } from "@agenthub/event-timeline";
+import { catchUpFrames, flattenFrames, mergeIncomingFrames, projectLiveFrame } from "./events.js";
+import { buildTimeline } from "./timeline.js";
 import { displayTime } from "./display.js";
 import { Timeline } from "./Timeline.jsx";
 import { NewSessionModal } from "./NewSessionModal.jsx";
@@ -25,7 +25,7 @@ export function App() {
   const [providers, setProviders] = useState([]);
   const [defaultAgentName, setDefaultAgentName] = useState("");
   const [activeId, setActiveId] = useState("");
-  const [events, setEvents] = useState([]);
+  const [frames, setFrames] = useState([]);
   // True while the durable history of a newly selected session is being
   // fetched; the conversation shows a loading placeholder instead of the
   // previous session's events.
@@ -60,7 +60,7 @@ export function App() {
     () => sessions.find((item) => item.id === activeId) || archivedSessions.find((item) => item.id === activeId),
     [sessions, archivedSessions, activeId],
   );
-  const timeline = useMemo(() => buildTimeline(events), [events]);
+  const timeline = useMemo(() => buildTimeline(flattenFrames(frames)), [frames]);
   const activeResumeError = resumeErrorForSession(resumeFailure, activeSession);
 
   const refreshSessions = async () => {
@@ -109,10 +109,10 @@ export function App() {
     // Settings is open; otherwise its config request can sit behind streams
     // from this and other AgentHub tabs until the loading deadline expires.
     if (settingsOpen) return undefined;
-    if (!activeId) { eventsSessionRef.current = ""; setEvents([]); setEventsLoading(false); return undefined; }
+    if (!activeId) { eventsSessionRef.current = ""; setFrames([]); setEventsLoading(false); return undefined; }
     if (eventsSessionRef.current !== activeId) {
       eventsSessionRef.current = activeId;
-      setEvents([]);
+      setFrames([]);
       setEventsLoading(true);
     }
     let source;
@@ -122,9 +122,11 @@ export function App() {
     const project = (incoming) => {
       // New ids append in order; repeated ids are full replacements
       // (reconnect cursor re-sends) or append patches (live delta merges).
-      setEvents((current) => mergeIncomingEvents(current, incoming));
+      setFrames((current) => mergeIncomingFrames(current, incoming));
     };
-    const refreshForEvent = (event) => {
+    const refreshForFrame = (frame) => {
+      const event = frame.events?.find((value) => /^(session|turn|approval)\./.test(value.type));
+      if (!event) return;
       if (/^(session|turn|approval)\./.test(event.type)) {
         refreshSessions().catch(() => {});
         if (event.type === "session.archived") refreshArchivedSessions().catch(() => {});
@@ -137,14 +139,14 @@ export function App() {
       // live projection and catches up from the durable REST log.
       source.onmessage = async (message) => {
         if (disposed || recovering) return;
-        const event = JSON.parse(message.data);
-        if (event.id > cursor + 1) {
+        const frame = JSON.parse(message.data);
+        if (frame.cursor > cursor + 1) {
           recovering = true;
           source.close();
         }
         try {
-          cursor = await projectLiveEvent({ sessionId: activeId, cursor, event, project });
-          refreshForEvent(event);
+          cursor = await projectLiveFrame({ sessionId: activeId, cursor, frame, project });
+          refreshForFrame(frame);
           if (recovering) {
             recovering = false;
             connect();
@@ -157,10 +159,10 @@ export function App() {
       // restart. The server replays from the durable store.
       source.onerror = () => {};
     };
-    catchUpEvents(activeId)
+    catchUpFrames(activeId)
       .then((history) => {
         if (disposed) return;
-        setEvents(history.events);
+        setFrames(history.frames);
         setEventsLoading(false);
         cursor = history.cursor;
         connect();
