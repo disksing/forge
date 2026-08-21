@@ -27,6 +27,25 @@ func doctorAgentHub(t *testing.T) *httptest.Server {
 	}))
 }
 
+func TestDoctorEmptySnapshotSerializesWorkspaceArray(t *testing.T) {
+	s := &server{}
+	s.doctor = newDoctorMonitor(s)
+	recorder := httptest.NewRecorder()
+	s.handleDoctor(recorder, httptest.NewRequest(http.MethodGet, "/api/doctor", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET doctor = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Workspaces json.RawMessage `json:"workspaces"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if string(response.Workspaces) != "[]" {
+		t.Fatalf("empty doctor workspaces = %s, want []", response.Workspaces)
+	}
+}
+
 func TestDoctorMonitorScansConfiguredWorkspacesAndServesCache(t *testing.T) {
 	workspacePath := t.TempDir()
 	workspace, err := app.Initialize(workspacePath, "en")
