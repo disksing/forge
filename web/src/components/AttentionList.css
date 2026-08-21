@@ -45,7 +45,7 @@
 :where([data-component-owner="attention-list"]) .activity-tabs button:hover,
 :where([data-component-owner="attention-list"]) .activity-tabs button.active {
   background: var(--sidebar-row);
-  color: var(--panel);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="attention-list"]) .activity-tab-icon {
@@ -204,7 +204,7 @@
 :where([data-component-owner="attention-list"]) .favorite-star:hover,
 :where([data-component-owner="attention-list"]) .favorite-star:focus-visible {
   background: var(--sidebar-row);
-  color: var(--panel);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="attention-list"]) .favorite-star svg {
@@ -351,7 +351,7 @@
 
 :where([data-component-owner="attention-list"]) .inbox-action:hover:not(:disabled) {
   background: var(--sidebar-hover);
-  color: var(--panel);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="attention-list"]) .inbox-action:disabled {

@@ -23,7 +23,7 @@ describe("theme controller", () => {
     const options = themeOptions();
     expect(options.length).toBeGreaterThan(0);
     expect(options[0].id).toBe(DEFAULT_THEME_ID);
-    expect(options.map((option) => option.id)).toContain("riso");
+    expect(options.map((option) => option.id)).toEqual([DEFAULT_THEME_ID, "slate", "riso"]);
     expect(options.every((option) => option.label && option.description)).toBe(true);
   });
 
@@ -32,6 +32,7 @@ describe("theme controller", () => {
     expect(normalizeThemePreference(null)).toBe(DEFAULT_THEME_ID);
     expect(normalizeThemePreference("bogus")).toBe(DEFAULT_THEME_ID);
     expect(normalizeThemePreference(DEFAULT_THEME_ID)).toBe(DEFAULT_THEME_ID);
+    expect(normalizeThemePreference("slate")).toBe("slate");
     expect(normalizeThemePreference("riso")).toBe("riso");
   });
 

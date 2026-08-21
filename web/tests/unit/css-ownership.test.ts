@@ -133,7 +133,7 @@ function selectorHeaders(css: string): string[] {
 describe("CSS ownership", () => {
   it("defines every design token referenced by the stylesheets", () => {
     const defined = new Set<string>();
-    for (const file of ["src/styles/tokens.css", "src/styles/themes-riso.css"]) {
+    for (const file of ["src/styles/tokens.css", "src/styles/themes-slate.css", "src/styles/themes-riso.css"]) {
       for (const match of read(file).matchAll(/(--[a-z0-9-]+)\s*:/gi)) defined.add(match[1]);
     }
     // Tokens applied at runtime by controllers (pane sizes, font scales,
@@ -168,6 +168,7 @@ describe("CSS ownership", () => {
       '@import "./styles/base.css";',
       '@import "./styles/primitives.css";',
       '@import "./styles/rich-content.css";',
+      '@import "./styles/themes-slate.css";',
       '@import "./styles/themes-riso.css";',
     ].join("\n"));
     expect(selectorHeaders(read("src/styles/base.css"))).not.toEqual(expect.arrayContaining([expect.stringMatching(/\.[a-z]/)]));

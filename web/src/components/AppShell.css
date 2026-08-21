@@ -121,7 +121,7 @@
 
 :where([data-component-owner="app-shell"]) .brand-settings:hover {
   background: var(--sidebar-row);
-  color: var(--panel);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="app-shell"]) .brand-settings svg {

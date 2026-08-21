@@ -53,21 +53,21 @@
   --disabled-text: var(--faint);
 
   /* ---- 2. hue ramps ---- */
-  /* Accent (brand red). Doubles as the danger color in the default theme;
-     --red* aliases stay separate so a theme may split brand and danger. */
-  --accent: #e74c3c;
-  --accent-deep: #c0392b;
-  --accent-pressed: #a93226;
-  --accent-soft: #fdecea;
-  --accent-line: #f2b8b2;
-  --accent-bright: #f87171;
-  --accent-ring: rgba(231, 76, 60, 0.25);
-  --red: var(--accent);
-  --red-deep: var(--accent-deep);
-  --red-pressed: var(--accent-pressed);
-  --red-soft: var(--accent-soft);
-  --red-line: var(--accent-line);
-  --red-bright: var(--accent-bright);
+  /* Accent (restrained blue). Danger is a separate red ramp, so themes may
+     use a non-red brand color without losing a distinct danger color. */
+  --accent: #2980b9;
+  --accent-deep: #1f618d;
+  --accent-pressed: #1a5276;
+  --accent-soft: #eaf3fb;
+  --accent-line: #9ccceb;
+  --accent-bright: #4f9cf9;
+  --accent-ring: rgba(41, 128, 185, 0.25);
+  --red: #e74c3c;
+  --red-deep: #c0392b;
+  --red-pressed: #a93226;
+  --red-soft: #fdecea;
+  --red-line: #f2b8b2;
+  --red-bright: #f87171;
 
   --blue: #2980b9;
   --blue-deep: #1f618d;
@@ -108,16 +108,17 @@
      dark chrome or another light surface by redefining these aliases, while
      components only reference the region tokens. --ink* remains available
      for genuinely dark accent elements on light surfaces (toasts, strong
-     headings). */
-  --sidebar-bg: var(--ink);
-  --sidebar-bg-deep: var(--ink-deep);
-  --sidebar-row: var(--ink-row);
-  --sidebar-hover: var(--ink-hover);
-  --sidebar-active: var(--ink-active);
-  --sidebar-line: var(--ink-line);
-  --sidebar-line-strong: var(--ink-line-strong);
-  --sidebar-text: var(--text-on-dark);
-  --sidebar-muted: var(--faint-on-dark);
+     headings). The default is a quiet light region; the "slate" theme
+     restores the original dark chrome. */
+  --sidebar-bg: #f7f8fa;
+  --sidebar-bg-deep: #eef1f4;
+  --sidebar-row: #eceff3;
+  --sidebar-hover: rgba(43, 52, 64, 0.05);
+  --sidebar-active: rgba(43, 52, 64, 0.08);
+  --sidebar-line: var(--line-soft);
+  --sidebar-line-strong: var(--line-strong);
+  --sidebar-text: var(--text);
+  --sidebar-muted: var(--muted);
 
   /* ---- 4. effects ---- */
   --backdrop: rgba(34, 49, 63, 0.48);

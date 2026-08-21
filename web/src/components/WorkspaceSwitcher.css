@@ -92,7 +92,7 @@
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button:hover {
   background: var(--sidebar-row);
-  color: var(--panel);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-name {

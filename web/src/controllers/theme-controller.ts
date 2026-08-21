@@ -13,7 +13,8 @@ export const DEFAULT_THEME_ID = "default";
 // intentionally ships no overrides. Add new themes here plus a matching
 // stylesheet block (see web/src/styles/tokens.css for the token contract).
 const THEME_OPTIONS: readonly ThemeOption[] = Object.freeze([
-	{ id: DEFAULT_THEME_ID, label: "Default", description: "The standard PUA appearance" },
+	{ id: DEFAULT_THEME_ID, label: "Default", description: "Minimal light surfaces with a restrained blue accent" },
+	{ id: "slate", label: "Slate", description: "The original PUA look: dark slate sidebar, red accent" },
 	{ id: "riso", label: "Riso", description: "Risograph print: spot inks, grain and stencil edges" }
 ]);
 
