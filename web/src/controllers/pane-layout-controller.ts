@@ -5,11 +5,14 @@ const PANE_HANDLE_WIDTH = 8;
 const SIDEBAR_MIN_WIDTH = 220;
 const DETAILS_MIN_WIDTH = 360;
 const CHAT_MIN_WIDTH = 320;
+// Stacked two-column mode shrinks each pane down to its 56px header band.
+const CHAT_MIN_HEIGHT = 56;
 const PANE_MAX_SIZE = 10_000;
 
 export interface PaneSizes {
 	sidebarWidth: number;
 	chatWidth: number;
+	chatHeight: number;
 	sidebarAttentionHeight: number;
 }
 
@@ -35,13 +38,22 @@ export type PaneName = keyof PaneSizes;
 const PANE_DEFAULTS: PaneSizes = Object.freeze({
 	sidebarWidth: 280,
 	chatWidth: 420,
+	chatHeight: 320,
 	sidebarAttentionHeight: 210
 });
 
 const PANE_CSS_VARIABLES: Record<PaneName, string> = Object.freeze({
 	sidebarWidth: "--sidebar-width",
 	chatWidth: "--chat-width",
+	chatHeight: "--chat-height",
 	sidebarAttentionHeight: "--sidebar-attention-height"
+});
+
+const PANE_MIN_SIZES: Record<PaneName, number> = Object.freeze({
+	sidebarWidth: SIDEBAR_MIN_WIDTH,
+	chatWidth: CHAT_MIN_WIDTH,
+	chatHeight: CHAT_MIN_HEIGHT,
+	sidebarAttentionHeight: 84
 });
 
 function clamp(value: number, min: number, max: number): number {
@@ -93,6 +105,7 @@ export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): P
 		const detailsWidth = clamp(source.detailsWidth, DETAILS_MIN_WIDTH, availableWorkspaceWidth - PANE_HANDLE_WIDTH - CHAT_MIN_WIDTH);
 		sizes.chatWidth = clamp(availableWorkspaceWidth - PANE_HANDLE_WIDTH - detailsWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
 	}
+	if (finiteSize(source.chatHeight)) sizes.chatHeight = clamp(source.chatHeight, CHAT_MIN_HEIGHT, PANE_MAX_SIZE);
 	if (finiteSize(source.sidebarAttentionHeight)) sizes.sidebarAttentionHeight = clamp(source.sidebarAttentionHeight, 84, PANE_MAX_SIZE);
 	return sizes;
 }
@@ -144,8 +157,7 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 	function setPaneSize(name: string, value: number): void {
 		if (!Object.hasOwn(PANE_CSS_VARIABLES, name) || !Number.isFinite(value)) return;
 		const paneName = name as PaneName;
-		const minimum = paneName === "sidebarWidth" ? SIDEBAR_MIN_WIDTH : paneName === "chatWidth" ? CHAT_MIN_WIDTH : 84;
-		const next = Math.round(clamp(value, minimum, PANE_MAX_SIZE));
+		const next = Math.round(clamp(value, PANE_MIN_SIZES[paneName], PANE_MAX_SIZE));
 		paneSizes[paneName] = next;
 		setCSSPixels(PANE_CSS_VARIABLES[paneName], next);
 	}

@@ -2193,33 +2193,45 @@ test("keeps Workspace Wiki file rows at a 44px touch size without overflow", asy
   await page.getByRole("dialog", { name: "File preview" }).getByRole("button", { name: "Close" }).click();
 });
 
-test("merges details and chat into one tabbed column in the two-column layout", async ({ page }) => {
+test("stacks details above chat with a draggable divider in the two-column layout", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 800 });
   await installShellMockApi(page);
   await page.goto("/w/ws-a/r/project1.task1");
 
-  // Sidebar stays visible; details and chat share one column behind tabs.
+  // Sidebar stays visible; details stack above chat behind a horizontal divider.
   await expect(page.locator("#mobileSidebar")).toBeVisible();
-  await expect(page.locator(".workspace-view-tabs")).toBeVisible();
   await expect(page.locator("#detailsResize")).toBeHidden();
-  await expect(page.locator("#paneDetailsTab")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#detailsResizeY")).toBeVisible();
   await expect(page.locator("#detailsPanel")).toBeVisible();
-  await expect(page.locator("#agentPanel")).toBeHidden();
-
-  await page.locator("#paneChatTab").click();
-  await expect(page.locator("body")).toHaveClass(/mobile-chat-active/);
-  await expect(page.locator("#paneChatTab")).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#detailsPanel")).toBeHidden();
   await expect(page.locator("#agentPanel")).toBeVisible();
 
-  await page.locator("#paneDetailsTab").click();
-  await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
-  await expect(page.locator("#detailsPanel")).toBeVisible();
-  await expect(page.locator("#agentPanel")).toBeHidden();
+  const panelHeight = async (selector: string) => (await page.locator(selector).boundingBox())!.height;
+  const dragDivider = async (deltaY: number) => {
+    const box = (await page.locator("#detailsResizeY").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + deltaY, { steps: 5 });
+    await page.mouse.up();
+  };
 
-  // Widening back to the three-column layout hides the tabs and shows both panes.
+  // Dragging the divider up grows the chat pane and persists the new height.
+  const chatBefore = await panelHeight("#agentPanel");
+  await dragDivider(-120);
+  expect(await panelHeight("#agentPanel")).toBeGreaterThan(chatBefore + 80);
+  const saved = await page.evaluate(() => JSON.parse(window.localStorage.getItem("pua.web.paneSizes") || "{}"));
+  expect(saved.chatHeight).toBeGreaterThan(320);
+
+  // Dragging the divider to the bottom shrinks the chat pane to its header band.
+  await dragDivider(2000);
+  expect(await panelHeight("#agentPanel")).toBeLessThanOrEqual(64);
+
+  // Dragging the divider to the top shrinks the details pane to its header band.
+  await dragDivider(-2000);
+  expect(await panelHeight("#detailsPanel")).toBeLessThanOrEqual(64);
+
+  // Widening back to the three-column layout shows both panes side by side.
   await page.setViewportSize({ width: 1500, height: 800 });
-  await expect(page.locator(".workspace-view-tabs")).toBeHidden();
+  await expect(page.locator("#detailsResizeY")).toBeHidden();
   await expect(page.locator("#detailsPanel")).toBeVisible();
   await expect(page.locator("#agentPanel")).toBeVisible();
   await expect(page.locator("#detailsResize")).toBeVisible();
@@ -2231,7 +2243,7 @@ test("lets users switch the layout from the Appearance settings tab, including t
 
   // Desktop default viewport (1500px): auto resolves to the three-column layout.
   await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
-  await expect(page.locator(".workspace-view-tabs")).toBeHidden();
+  await expect(page.locator("#detailsResizeY")).toBeHidden();
 
   const openAppearanceTab = async () => {
     await page.locator("#systemSettingsButton").click();
@@ -2239,14 +2251,18 @@ test("lets users switch the layout from the Appearance settings tab, including t
     await expect(page.locator('[data-component-owner="appearance-settings-panel"]')).toBeVisible();
   };
 
-  // Two columns: the tabbed column appears even on a wide window.
+  // Scope to the workspace layout group; the theme group reuses the same classes.
+  const layoutGroup = page.locator('[role="radiogroup"][aria-label="Workspace layout"]');
+
+  // Two columns: details stack above chat even on a wide window.
   await openAppearanceTab();
-  await expect(page.locator(".layout-option.active")).toContainText("Auto");
+  await expect(layoutGroup.locator(".layout-option.active")).toContainText("Auto");
   await page.locator(".layout-option", { hasText: "Two columns" }).click();
   await expect(page.locator("body")).toHaveAttribute("data-layout", "two");
-  await expect(page.locator(".workspace-view-tabs")).toBeVisible();
   await expect(page.locator("#detailsResize")).toBeHidden();
-  await expect(page.locator("#agentPanel")).toBeHidden();
+  await expect(page.locator("#detailsResizeY")).toBeVisible();
+  await expect(page.locator("#detailsPanel")).toBeVisible();
+  await expect(page.locator("#agentPanel")).toBeVisible();
 
   // Split: the sidebar collapses into a drawer, details and chat sit side by side.
   await page.locator(".layout-option", { hasText: "Split" }).click();
@@ -2271,7 +2287,7 @@ test("lets users switch the layout from the Appearance settings tab, including t
   await expect(page.locator("body")).toHaveAttribute("data-layout", "split");
   await page.locator("#splitMenuButton").click();
   await openAppearanceTab();
-  await expect(page.locator(".layout-option.active")).toContainText("Split");
+  await expect(layoutGroup.locator(".layout-option.active")).toContainText("Split");
   await page.locator(".layout-option", { hasText: "Auto" }).click();
   await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
   await expect(page.locator("#mobileSidebar")).toBeVisible();

@@ -19,7 +19,7 @@
   const layoutOptions: Array<{ id: LayoutPreference; label: string; description: string }> = [
     { id: "auto", label: "Auto", description: "Follows the window width" },
     { id: "three", label: "Three columns", description: "Sidebar, details, and chat side by side" },
-    { id: "two", label: "Two columns", description: "Details and chat share one column behind tabs" },
+    { id: "two", label: "Two columns", description: "Details stacked above chat with a draggable divider" },
     { id: "split", label: "Split", description: "Sidebar collapsed into a drawer" },
   ];
 
@@ -58,7 +58,7 @@
             {:else if option.id === "three"}
               <svg viewBox="0 0 120 72" aria-hidden="true"><rect class="d-fill-strong" x="6" y="8" width="22" height="56" rx="3" /><rect class="d-fill-light" x="34" y="8" width="50" height="56" rx="3" /><rect class="d-fill-mid" x="90" y="8" width="24" height="56" rx="3" /></svg>
             {:else if option.id === "two"}
-              <svg viewBox="0 0 120 72" aria-hidden="true"><rect class="d-fill-strong" x="6" y="8" width="22" height="56" rx="3" /><rect class="d-fill-light" x="34" y="8" width="80" height="56" rx="3" /><rect class="d-fill-strong" x="40" y="13" width="30" height="8" rx="2" /><rect class="d-outline" x="74" y="13" width="30" height="8" rx="2" /></svg>
+              <svg viewBox="0 0 120 72" aria-hidden="true"><rect class="d-fill-strong" x="6" y="8" width="22" height="56" rx="3" /><rect class="d-fill-light" x="34" y="8" width="80" height="32" rx="3" /><rect class="d-fill-mid" x="34" y="46" width="80" height="18" rx="3" /></svg>
             {:else}
               <svg viewBox="0 0 120 72" aria-hidden="true"><rect class="d-fill-light" x="6" y="8" width="70" height="56" rx="3" /><rect class="d-fill-mid" x="82" y="8" width="32" height="56" rx="3" /><rect class="d-fill-strong" x="6" y="8" width="18" height="56" rx="3" /></svg>
             {/if}

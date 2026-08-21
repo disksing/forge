@@ -40,7 +40,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
     ],
     projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], treeEditing: false, activity: { running: [], favorites: [], unread: [], problems: [] }, inbox: [],
     doctor: { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] },
-    paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
+    paneSizes: { sidebarWidth: 280, chatWidth: 420, chatHeight: 320, sidebarAttentionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details" },
     layout: { preference: "auto", effective: "three" },
     route: { path: "", revision: 0, replace: true },
@@ -343,29 +343,22 @@ describe("AppShell", () => {
     expect(target.querySelector("#workspaceMenu")).toBeNull();
   });
 
-  it("switches the shared details/chat column through the workspace view tabs", async () => {
-    const onMobileView = vi.fn();
-    const initial = model({ onMobileView });
+  it("renders both panes with a horizontal divider for the stacked two-column layout", async () => {
+    const initial = model();
     const channel = createModelChannel(initial);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(AppShell, { target, props: { channel } });
     cleanups.push(() => unmount(component));
     await tick();
 
-    const detailsTab = target.querySelector<HTMLButtonElement>("#paneDetailsTab")!;
-    const chatTab = target.querySelector<HTMLButtonElement>("#paneChatTab")!;
-    expect(detailsTab.getAttribute("aria-selected")).toBe("true");
-    expect(chatTab.getAttribute("aria-selected")).toBe("false");
-
-    chatTab.click();
-    expect(onMobileView).toHaveBeenCalledWith("chat");
-    channel.publish({ ...initial, mobile: { ...initial.mobile, view: "chat" } });
-    await tick();
-    expect(detailsTab.getAttribute("aria-selected")).toBe("false");
-    expect(chatTab.getAttribute("aria-selected")).toBe("true");
-    expect(document.body.classList.contains("mobile-chat-active")).toBe(true);
-
-    detailsTab.click();
-    expect(onMobileView).toHaveBeenCalledWith("details");
+    expect(target.querySelector("#detailsPanel")).not.toBeNull();
+    expect(target.querySelector("#agentPanel")).not.toBeNull();
+    expect(target.querySelector("#paneDetailsTab")).toBeNull();
+    expect(target.querySelector("#paneChatTab")).toBeNull();
+    const divider = target.querySelector<HTMLElement>("#detailsResizeY")!;
+    expect(divider.getAttribute("role")).toBe("separator");
+    expect(divider.getAttribute("aria-orientation")).toBe("horizontal");
+    const vertical = target.querySelector<HTMLElement>("#detailsResize")!;
+    expect(vertical.getAttribute("aria-orientation")).toBe("vertical");
   });
 });

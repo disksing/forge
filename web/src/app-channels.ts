@@ -26,7 +26,7 @@ export function createPUAAppChannels(): PUAAppChannels {
     appShell: createModelChannel<AppShellModel>({
       identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaceName: "", workspaces: [], projects: [], treeEditing: false, activity: { running: [], favorites: [], unread: [], problems: [] }, inbox: [],
       doctor: { checking: true, complete: false, summary: { errors: 0, warnings: 0 }, workspaces: [] },
-      paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 }, mobile: { sidebarOpen: false, view: "details" },
+      paneSizes: { sidebarWidth: 280, chatWidth: 420, chatHeight: 320, sidebarAttentionHeight: 210 }, mobile: { sidebarOpen: false, view: "details" },
       layout: { preference: "auto", effective: "three" },
       route: { path: "", revision: 0, replace: true },
       onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onRefreshDoctor: noopAsync, onToggleProject: noopAsync, onSelectResource: noopAsync,

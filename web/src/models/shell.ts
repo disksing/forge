@@ -129,7 +129,7 @@ export interface AppShellModel {
   activity: ShellActivityLists;
   inbox: ShellInboxMessage[];
   doctor: DoctorSnapshotModel;
-  paneSizes: { sidebarWidth: number; chatWidth: number; sidebarAttentionHeight: number };
+  paneSizes: { sidebarWidth: number; chatWidth: number; chatHeight: number; sidebarAttentionHeight: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat" };
   layout: { preference: "auto" | "three" | "two" | "split"; effective: "three" | "two" | "split" | "single" };
   route: { path: string; revision: number; replace: boolean };

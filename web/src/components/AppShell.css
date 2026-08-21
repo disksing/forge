@@ -146,7 +146,6 @@
   background: var(--panel);
 }
 
-:where([data-component-owner="app-shell"]) .workspace-view-tabs,
 :where([data-component-owner="app-shell"]) .workspace-toolbar {
   display: none;
 }
@@ -217,62 +216,25 @@
 }
 
 /* Two-column mode: the sidebar stays visible while the details and chat panes
-share a single column and switch through the tabs above them. The effective
-layout is computed in JS and exposed as body[data-layout]. */
+stack vertically in a single column, split by a draggable horizontal divider.
+Each pane shrinks down to its header band at most. The effective layout is
+computed in JS and exposed as body[data-layout]. */
 body[data-layout="two"] :where([data-component-owner="app-shell"]).app-shell {
   grid-template-columns: minmax(var(--sidebar-min-width), min(var(--sidebar-width), calc(100vw - var(--pane-handle-width) - var(--details-min-width))))
   var(--pane-handle-width) minmax(0, 1fr);
 }
 body[data-layout="two"] :where([data-component-owner="app-shell"]) .workspace-panel {
-  grid-template-columns: 1fr;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-body[data-layout="two"] :where([data-component-owner="app-shell"]) .workspace-view-tabs {
-  grid-row: 1;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-}
-:where([data-component-owner="app-shell"]) .workspace-view-switcher {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  width: min(320px, 100%);
-  padding: 3px;
-  border-radius: 6px;
-  background: var(--line-soft);
-}
-:where([data-component-owner="app-shell"]) .workspace-view-switcher button {
-  min-height: 30px;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
-}
-:where([data-component-owner="app-shell"]) .workspace-view-switcher button[aria-selected="true"] {
-  background: var(--panel);
-  color: var(--accent);
-}
-:where([data-component-owner="app-shell"]) .workspace-view-switcher {
-  grid-column: 2;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(var(--details-min-height), 1fr) var(--pane-handle-width)
+  minmax(var(--chat-min-height), min(var(--chat-height), calc(100% - var(--details-min-height) - var(--pane-handle-width))));
 }
 body[data-layout="two"] :where([data-component-owner="app-shell"]) .details-panel {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 1;
 }
 body[data-layout="two"] :where([data-component-owner="app-shell"]) .agent-panel {
   grid-column: 1;
-  grid-row: 2;
-  display: none;
-}
-body[data-layout="two"].mobile-chat-active :where([data-component-owner="app-shell"]) .details-panel {
-  display: none;
-}
-body[data-layout="two"].mobile-chat-active :where([data-component-owner="app-shell"]) .agent-panel {
-  display: flex;
+  grid-row: 3;
 }
 
 /* Split mode: the sidebar collapses into an overlay drawer and the details

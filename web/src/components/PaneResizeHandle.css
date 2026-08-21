@@ -89,8 +89,22 @@ body.resizing-y {
   grid-row: 1;
 }
 
+/* Stacked two-column mode replaces the vertical divider with a horizontal one
+between the details and chat panes. */
+:where([data-component-owner="pane-resize-handle"]).details-resize-y {
+  display: none;
+}
+
 body[data-layout="two"] :where([data-component-owner="pane-resize-handle"]).details-resize {
   display: none;
+}
+
+body[data-layout="two"] :where([data-component-owner="pane-resize-handle"]).details-resize-y {
+  display: block;
+  grid-column: 1;
+  grid-row: 2;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 body[data-layout="split"] :where([data-component-owner="pane-resize-handle"]).sidebar-resize {

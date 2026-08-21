@@ -134,14 +134,9 @@
   <div class="workspace-toolbar">
     <button id="splitMenuButton" class="workspace-menu-button" type="button" aria-label="Open navigation" aria-controls="mobileSidebar" aria-expanded={model.mobile.sidebarOpen} onclick={() => model.onMobileSidebar(true)}><Icon name="menu" /></button>
   </div>
-  <div class="workspace-view-tabs">
-    <div class="workspace-view-switcher" role="tablist" aria-label="Workspace view">
-      <button id="paneDetailsTab" type="button" role="tab" aria-controls="detailsPanel" aria-selected={model.mobile.view === "details"} onclick={() => model.onMobileView("details")}>Details</button>
-      <button id="paneChatTab" type="button" role="tab" aria-controls="agentPanel" aria-selected={model.mobile.view === "chat"} onclick={() => model.onMobileView("chat")}>Chat</button>
-    </div>
-  </div>
   <section id="detailsPanel" class="details-panel" data-component-owner="detail-panel">{#if details}{@render details()}{/if}</section>
   <PaneResizeHandle id="detailsResize" kind="chatWidth" className="details-resize" label="Resize chat panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
+  <PaneResizeHandle id="detailsResizeY" kind="chatHeight" className="horizontal-resize details-resize-y" label="Resize chat panel height" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
   <aside id="agentPanel" class="agent-panel"><div class="chat-panel">{#if agentHeader}{@render agentHeader()}{/if}<div id="chatTimeline" class="chat-timeline" data-component-owner="event-timeline">{#if timeline}{@render timeline()}{/if}</div><div id="chatComposer" class="chat-composer" data-component-owner="chat-composer">{#if composer}{@render composer()}{/if}</div></div></aside>
 </main>
 </div>

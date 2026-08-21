@@ -34,6 +34,7 @@ describe("route and pane layout controllers", () => {
 		expect(normalizePaneSizes({ detailsWidth: 500, sidebarWidth: 100 }, 1_200)).toEqual({
 			sidebarWidth: 220,
 			chatWidth: 692,
+			chatHeight: 320,
 			sidebarAttentionHeight: 210
 		});
 		const layout = createPaneLayoutController(() => undefined, storage);

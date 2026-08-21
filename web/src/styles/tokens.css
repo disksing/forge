@@ -207,11 +207,15 @@
   /* ---- layout metrics ---- */
   --sidebar-width: 280px;
   --chat-width: 420px;
+  --chat-height: 320px;
   --sidebar-min-width: 220px;
   --details-min-width: 360px;
   --chat-min-width: 320px;
   --pane-handle-width: 8px;
   /* Unified fixed height for the header band of every column (option A). */
   --pane-header-height: 56px;
+  /* Stacked two-column mode shrinks each pane down to its header band. */
+  --details-min-height: var(--pane-header-height);
+  --chat-min-height: var(--pane-header-height);
   --sidebar-attention-height: 210px;
 }
