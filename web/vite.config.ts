@@ -6,6 +6,11 @@ import { defineConfig } from "vite";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 
+// Dev-server API proxy target: the running PUA backend the dev frontend
+// talks to. Override with PUA_DEV_API_TARGET when the backend is not on the
+// desktop default loopback address (e.g. the LAN-serving instance).
+const apiTarget = process.env.PUA_DEV_API_TARGET ?? "http://127.0.0.1:4936";
+
 export default defineConfig({
   root: resolve(root, "static"),
   cacheDir: resolve(root, ".vite"),
@@ -46,7 +51,7 @@ export default defineConfig({
       allow: [root, resolve(root, "static")],
     },
     proxy: {
-      "/api": "http://127.0.0.1:4936",
+      "/api": apiTarget,
     },
   },
   optimizeDeps: {
