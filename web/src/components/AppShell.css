@@ -65,7 +65,7 @@
 }
 
 :where([data-component-owner="app-shell"]) .brand-copy strong {
-  color: var(--panel);
+  color: var(--sidebar-text);
   font-size: calc(15px * var(--sidebar-font-scale, 1));
 }
 
@@ -95,18 +95,18 @@
   gap: 3px;
   padding: 0 6px;
   border-radius: 6px;
-  background: var(--amber-soft-on-dark);
-  color: var(--amber-bright);
+  background: var(--amber-soft);
+  color: var(--amber-deep);
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor.has-errors {
-  background: var(--red-soft-on-dark);
-  color: var(--accent-bright);
+  background: var(--red-soft);
+  color: var(--red-deep);
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor:hover {
-  background: var(--sidebar-hover);
-  color: var(--panel);
+  background: var(--sidebar-row);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor svg {
@@ -130,7 +130,7 @@
 }
 
 :where([data-component-owner="app-shell"]) .workspace-card {
-  margin: 10px 12px 12px;
+  margin: 6px 10px 8px;
   border: 1px solid var(--sidebar-hover);
   border-radius: 10px;
   background: var(--sidebar-bg-deep);

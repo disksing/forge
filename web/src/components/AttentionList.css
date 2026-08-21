@@ -89,7 +89,7 @@
   padding: 8px 8px 8px 20px;
   border-radius: 6px;
   background: transparent;
-  color: var(--line-strong);
+  color: var(--sidebar-text);
   font-size: calc(13px * var(--sidebar-font-scale, 1));
   text-align: left;
   transition: background-color 150ms ease, color 150ms ease;
@@ -234,7 +234,7 @@
 }
 
 :where([data-component-owner="attention-list"]) .empty-attention strong {
-  color: var(--line-strong);
+  color: var(--sidebar-text);
   font-size: calc(12px * var(--sidebar-font-scale, 1));
 }
 
@@ -257,7 +257,7 @@
   gap: 6px;
   padding: 8px;
   border-radius: 6px;
-  color: var(--line-strong);
+  color: var(--sidebar-text);
   font-size: calc(13px * var(--sidebar-font-scale, 1));
   text-align: left;
   cursor: pointer;
@@ -326,7 +326,7 @@
   display: block;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: var(--line-soft);
+  color: var(--sidebar-text);
   font-size: calc(13px * var(--sidebar-font-scale, 1));
   line-height: 1.45;
 }
@@ -344,7 +344,7 @@
   border: 1px solid var(--sidebar-active);
   border-radius: 6px;
   background: transparent;
-  color: var(--line-strong);
+  color: var(--sidebar-text);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   cursor: pointer;
 }
@@ -388,7 +388,7 @@
   border: 1px solid var(--sidebar-active);
   border-radius: 6px;
   background: var(--sidebar-bg-deep);
-  color: var(--line-soft);
+  color: var(--sidebar-text);
   font-size: calc(13px * var(--sidebar-font-scale, 1));
   font-family: inherit;
   resize: vertical;

@@ -1,8 +1,8 @@
 /* Slate theme: the original PUA look — dark slate sidebar and a red brand
    accent (which doubles as the danger color). Scoped entirely under
-   body[data-theme="slate"]; only tokens are overridden. */
+   :root[data-theme="slate"]; only tokens are overridden. */
 
-body[data-theme="slate"] {
+:root[data-theme="slate"] {
   --accent: #e74c3c;
   --accent-deep: #c0392b;
   --accent-pressed: #a93226;
@@ -26,4 +26,7 @@ body[data-theme="slate"] {
   --sidebar-line-strong: var(--ink-line-strong);
   --sidebar-text: var(--text-on-dark);
   --sidebar-muted: var(--faint-on-dark);
+  /* status accents must stay legible on the dark sidebar */
+  --sidebar-attention: var(--amber-bright);
+  --sidebar-attention-soft: var(--amber);
 }

@@ -395,8 +395,8 @@
   <div class="section-title">
     <span class="section-label">Projects</span>
     <span class="section-actions">
-      <button id="treeEditButton" type="button" class:active={editing} aria-pressed={editing} title={editing ? "Done editing" : "Edit projects"} onclick={onToggleEditing}><Icon name={editing ? "check" : "square-pen"} /></button>
-      <button id="newProjectButton" type="button" title="New project" onclick={onCreate}><Icon name="plus" /></button>
+      <button id="treeEditButton" type="button" class:active={editing} aria-pressed={editing} title={editing ? "Done editing" : "Edit projects"} onclick={onToggleEditing}><Icon name={editing ? "check" : "square-pen"} /><span>{editing ? "Done" : "Edit"}</span></button>
+      <button id="newProjectButton" type="button" title="New project" onclick={onCreate}><Icon name="plus" /><span>New</span></button>
     </span>
   </div>
   <nav id="projectTree" class="project-tree" data-navigation-identity={identity} bind:this={treeRoot}>

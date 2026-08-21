@@ -37,8 +37,17 @@
 }
 
 :where([data-component-owner="project-tree"]) .section-title button {
-  width: 24px;
+  min-width: 24px;
   height: 24px;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
+  font-weight: 600;
+}
+
+:where([data-component-owner="project-tree"]) .section-title button svg {
+  width: 13px;
+  height: 13px;
 }
 
 :where([data-component-owner="project-tree"]) .project-tree {
@@ -470,8 +479,8 @@
   }
 
   :where([data-component-owner="project-tree"]) .section-title button {
-    flex: 0 0 44px;
-    width: 44px;
+    min-width: 44px;
     height: 44px;
+    padding: 0 10px;
   }
 }

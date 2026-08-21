@@ -16,9 +16,9 @@
       // no override rules and falls back to the default appearance.
       try {
         var storedTheme = localStorage.getItem("pua.web.themePreference");
-        document.body.dataset.theme = /^[a-z0-9-]+$/.test(storedTheme || "") ? storedTheme : "default";
+        document.documentElement.dataset.theme = /^[a-z0-9-]+$/.test(storedTheme || "") ? storedTheme : "default";
       } catch (_) {
-        document.body.dataset.theme = "default";
+        document.documentElement.dataset.theme = "default";
       }
     </script>
     <div id="app"></div>
@@ -32,12 +32,12 @@
       </filter>
     </svg>
     <style>
-      body[data-theme="riso"] .create-dialog,
-      body[data-theme="riso"] .upload-dialog,
-      body[data-theme="riso"] .file-modal,
-      body[data-theme="riso"] .settings-modal,
-      body[data-theme="riso"] .confirm-dialog,
-      body[data-theme="riso"] .diff-modal {
+      :root[data-theme="riso"] .create-dialog,
+      :root[data-theme="riso"] .upload-dialog,
+      :root[data-theme="riso"] .file-modal,
+      :root[data-theme="riso"] .settings-modal,
+      :root[data-theme="riso"] .confirm-dialog,
+      :root[data-theme="riso"] .diff-modal {
         filter: url(#riso-rough);
       }
     </style>

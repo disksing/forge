@@ -1,6 +1,6 @@
 [data-component-owner="scheduler-nav"] {
   position: relative;
-  padding: 0 8px 8px 30px;
+  padding: 0 8px 4px 30px;
 }
 
 [data-component-owner="scheduler-nav"] > button {
@@ -12,8 +12,8 @@
   cursor: pointer;
   display: flex;
   gap: 8px;
-  min-height: 34px;
-  padding: 5px 8px;
+  min-height: 30px;
+  padding: 4px 8px;
   position: relative;
   text-align: left;
   width: 100%;
@@ -23,7 +23,7 @@
   content: "";
   position: absolute;
   left: -9px;
-  top: -8px;
+  top: -6px;
   bottom: 50%;
   width: 9px;
   border-left: 1.5px solid var(--sidebar-active);
@@ -45,7 +45,7 @@
 }
 
 [data-component-owner="scheduler-nav"] strong { font-size: calc(12.5px * var(--sidebar-font-scale, 1)); }
-[data-component-owner="scheduler-nav"] small { color: var(--sidebar-line-strong); font-size: calc(10px * var(--sidebar-font-scale, 1)); }
+[data-component-owner="scheduler-nav"] small { color: var(--sidebar-muted); font-size: calc(10px * var(--sidebar-font-scale, 1)); }
 [data-component-owner="scheduler-nav"] .scheduler-nav-icon { color: var(--blue-bright); width: 14px; height: 14px; }
 [data-component-owner="scheduler-nav"] .scheduler-nav-chevron { opacity: .45; width: 13px; height: 13px; }
 

@@ -9,7 +9,7 @@ export interface ThemeOption {
 export const DEFAULT_THEME_ID = "default";
 
 // Theme registry. Each theme is a set of CSS overrides scoped under
-// `body[data-theme="<id>"]`; the default theme is the unmodified baseline and
+// `:root[data-theme="<id>"]`; the default theme is the unmodified baseline and
 // intentionally ships no overrides. Add new themes here plus a matching
 // stylesheet block (see web/src/styles/tokens.css for the token contract).
 const THEME_OPTIONS: readonly ThemeOption[] = Object.freeze([
@@ -34,7 +34,7 @@ export function readStoredThemePreference(storage: Storage | null): string {
 	}
 }
 
-export function applyThemePreference(theme: string, target: HTMLElement | null = typeof document !== "undefined" ? document.body : null): void {
+export function applyThemePreference(theme: string, target: HTMLElement | null = typeof document !== "undefined" ? document.documentElement : null): void {
 	if (target) target.dataset.theme = normalizeThemePreference(theme);
 }
 

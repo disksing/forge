@@ -16,7 +16,7 @@ const STORAGE_KEY = "pua.web.themePreference";
 
 describe("theme controller", () => {
   beforeEach(() => {
-    delete document.body.dataset.theme;
+    delete document.documentElement.dataset.theme;
   });
 
   it("exposes a registry that always contains the default theme", () => {
@@ -48,11 +48,11 @@ describe("theme controller", () => {
     expect(readStoredThemePreference(throwing)).toBe(DEFAULT_THEME_ID);
   });
 
-  it("applies the theme to the body dataset", () => {
+  it("applies the theme to the root element dataset", () => {
     applyThemePreference(DEFAULT_THEME_ID);
-    expect(document.body.dataset.theme).toBe(DEFAULT_THEME_ID);
+    expect(document.documentElement.dataset.theme).toBe(DEFAULT_THEME_ID);
     applyThemePreference("bogus");
-    expect(document.body.dataset.theme).toBe(DEFAULT_THEME_ID);
+    expect(document.documentElement.dataset.theme).toBe(DEFAULT_THEME_ID);
   });
 
   it("initializes from storage and applies the stored theme", () => {
@@ -61,7 +61,7 @@ describe("theme controller", () => {
     const controller = createThemeController(vi.fn(), storage);
     controller.initialize();
     expect(controller.theme()).toBe(DEFAULT_THEME_ID);
-    expect(document.body.dataset.theme).toBe(DEFAULT_THEME_ID);
+    expect(document.documentElement.dataset.theme).toBe(DEFAULT_THEME_ID);
   });
 
   it("persists selection changes and notifies listeners", () => {
@@ -71,11 +71,11 @@ describe("theme controller", () => {
     controller.initialize();
     controller.setTheme("riso");
     expect(storage.getItem(STORAGE_KEY)).toBe("riso");
-    expect(document.body.dataset.theme).toBe("riso");
+    expect(document.documentElement.dataset.theme).toBe("riso");
     expect(onChange).toHaveBeenCalledTimes(1);
     controller.setTheme(DEFAULT_THEME_ID);
     expect(storage.getItem(STORAGE_KEY)).toBe(DEFAULT_THEME_ID);
-    expect(document.body.dataset.theme).toBe(DEFAULT_THEME_ID);
+    expect(document.documentElement.dataset.theme).toBe(DEFAULT_THEME_ID);
   });
 
   it("ignores unregistered themes on set", () => {

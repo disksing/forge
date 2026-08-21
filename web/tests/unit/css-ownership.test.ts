@@ -321,8 +321,7 @@ describe("CSS ownership", () => {
     expect(title).toContain("min-height: 44px;");
 
     const actions = body(':where([data-component-owner="project-tree"]) .section-title button {');
-    expect(actions).toContain("flex: 0 0 44px;");
-    expect(actions).toContain("width: 44px;");
+    expect(actions).toContain("min-width: 44px;");
     expect(actions).toContain("height: 44px;");
   });
 
@@ -645,6 +644,31 @@ describe("CSS ownership", () => {
     const toolOutput = body("src/components/ToolItem.css", ':where([data-component-owner="event-timeline"]) .agent-tool-item pre {');
     expect(toolOutput).toContain("var(--chat-output-bg)");
     expect(toolOutput).toContain("var(--chat-output-text)");
+  });
+
+  it("keeps sidebar text and status colors on sidebar region tokens", () => {
+    const body = (path: string, selector: string) => {
+      const css = read(path);
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    // The sidebar is light in the default theme: text must come from the
+    // sidebar region tokens, never from line tokens (invisible on light
+    // surfaces) or --panel (white).
+    expect(body("src/components/AppShell.css", ':where([data-component-owner="app-shell"]) .brand-copy strong {')).toContain("color: var(--sidebar-text);");
+    expect(body("src/components/AttentionList.css", ':where([data-component-owner="attention-list"]) .inbox-text {')).toContain("color: var(--sidebar-text);");
+    expect(body("src/components/AttentionList.css", ':where([data-component-owner="attention-list"]) .inbox-row {')).toContain("color: var(--sidebar-text);");
+    const schedulerSmall = body("src/components/SchedulerNav.css", '[data-component-owner="scheduler-nav"] small {');
+    expect(schedulerSmall).toContain("color: var(--sidebar-muted);");
+
+    // Tree state markers use the sidebar status accents so dark sidebars
+    // can raise them without touching the light themes.
+    const blocked = body("src/components/StatusPresentation.css", ':where([data-component-owner="status-presentation"]) .task-state-blocked {');
+    expect(blocked).toContain("color: var(--sidebar-attention);");
+    const waiting = body("src/components/StatusPresentation.css", ':where([data-component-owner="status-presentation"]) .task-state-waiting,');
+    expect(waiting).toContain("color: var(--sidebar-attention-soft);");
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {

@@ -1,12 +1,12 @@
 /* Riso theme: Risograph (Riso) print surface.
-   Scoped entirely under body[data-theme="riso"] so the default theme is
+   Scoped entirely under :root[data-theme="riso"] so the default theme is
    untouched. Token overrides restyle every component automatically; the
    cosmetic layer below adds grain, misregistration and stencil edges.
    Palette: hot pink #ff4da6, cyan #00b4d8, sunflower #ffd60a, black
    #1a1a1a on porous off-white paper #f6f1e7. No gradients, no soft
    shadows — misregistration ghosts are flat, light-gray ink offsets. */
 
-body[data-theme="riso"] {
+:root[data-theme="riso"] {
   /* neutral paper + ink */
   --bg: #f6f1e7;
   --panel: #faf5eb;
@@ -86,7 +86,7 @@ body[data-theme="riso"] {
 }
 
 /* fine irregular grain: soy ink pushed through the stencil mesh */
-body[data-theme="riso"]::after {
+:root[data-theme="riso"] body::after {
   content: "";
   position: fixed;
   inset: 0;
@@ -99,7 +99,7 @@ body[data-theme="riso"]::after {
 }
 
 /* chunky grotesk headings with a light gray misregistration ghost */
-body[data-theme="riso"] :is(h1, h2, h3, h4) {
+:root[data-theme="riso"] :is(h1, h2, h3, h4) {
   font-family: "Arial Black", "Helvetica Neue", Inter, sans-serif;
   font-weight: 900;
   letter-spacing: 0.01em;
@@ -109,35 +109,35 @@ body[data-theme="riso"] :is(h1, h2, h3, h4) {
 /* buttons read as separate ink passes: flat fill, 2px black outline and a
    flat gray registration offset; black ink text on the spot-color fill
    keeps contrast on the hot pink primary */
-body[data-theme="riso"] :is(.primary-button, .secondary-button, .danger-button, .icon-button) {
+:root[data-theme="riso"] :is(.primary-button, .secondary-button, .danger-button, .icon-button) {
   border-width: 2px;
   border-color: #1a1a1a;
   border-radius: 2px;
   box-shadow: 2px 2px 0 rgba(26, 26, 26, 0.22);
 }
 
-body[data-theme="riso"] :is(.primary-button, .secondary-button, .danger-button, .icon-button):active {
+:root[data-theme="riso"] :is(.primary-button, .secondary-button, .danger-button, .icon-button):active {
   box-shadow: none;
 }
 
-body[data-theme="riso"] .primary-button:not(:disabled) {
+:root[data-theme="riso"] .primary-button:not(:disabled) {
   color: #1a1a1a;
 }
 
-body[data-theme="riso"] .ghost-button {
+:root[data-theme="riso"] .ghost-button {
   border-radius: 2px;
 }
 
-body[data-theme="riso"] .ghost-button:hover {
+:root[data-theme="riso"] .ghost-button:hover {
   outline: 2px solid #1a1a1a;
   outline-offset: -2px;
 }
 
 /* form fields: stencil-cut rectangles */
-body[data-theme="riso"] .details-form :is(input, textarea),
-body[data-theme="riso"] [data-component-owner][data-settings-panel] :is(input, select, textarea),
-body[data-theme="riso"] [data-component-owner="task-wizard"] :is(input, select, textarea),
-body[data-theme="riso"] .schedule-editor :is(input, textarea) {
+:root[data-theme="riso"] .details-form :is(input, textarea),
+:root[data-theme="riso"] [data-component-owner][data-settings-panel] :is(input, select, textarea),
+:root[data-theme="riso"] [data-component-owner="task-wizard"] :is(input, select, textarea),
+:root[data-theme="riso"] .schedule-editor :is(input, textarea) {
   border-width: 2px;
   border-radius: 2px;
 }
@@ -145,7 +145,7 @@ body[data-theme="riso"] .schedule-editor :is(input, textarea) {
 /* dialogs: heavier black frame with a flat registration offset; the rough
    stencil edge filter itself lives in static/index.html because
    url(#...) in an external stylesheet resolves against the CSS URL */
-body[data-theme="riso"] :is(.create-dialog, .upload-dialog, .file-modal, .settings-modal, .confirm-dialog, .diff-modal) {
+:root[data-theme="riso"] :is(.create-dialog, .upload-dialog, .file-modal, .settings-modal, .confirm-dialog, .diff-modal) {
   border: 2px solid #1a1a1a;
   border-radius: 2px;
   box-shadow: 5px 4px 0 rgba(26, 26, 26, 0.25);
@@ -153,11 +153,11 @@ body[data-theme="riso"] :is(.create-dialog, .upload-dialog, .file-modal, .settin
 
 /* region layout: heavy black rules frame the sidebar like a printed page;
    themes may scope structural overrides like this under their data-theme */
-body[data-theme="riso"] [data-component-owner="app-shell"] .sidebar {
+:root[data-theme="riso"] [data-component-owner="app-shell"] .sidebar {
   border-right: 2.5px solid #1a1a1a;
 }
 
-body[data-theme="riso"] [data-component-owner="project-tree"] .section-title button {
+:root[data-theme="riso"] [data-component-owner="project-tree"] .section-title button {
   border: 2px solid #1a1a1a;
   border-radius: 2px;
 }
@@ -167,7 +167,7 @@ body[data-theme="riso"] [data-component-owner="project-tree"] .section-title but
    each frame (the default role tokens resolve to the Riso spot inks), the
    user message gets the cyan fill with black ink text, and bubbles hug
    alternating edges like the demo instead of spanning the column. */
-body[data-theme="riso"] {
+:root[data-theme="riso"] {
   --chat-bubble-bg: var(--panel);
   --chat-bubble-border-width: 2.5px;
   --chat-bubble-border-color: #1a1a1a;
@@ -175,6 +175,9 @@ body[data-theme="riso"] {
   --chat-bubble-shadow: 3px 3px 0 rgba(26, 26, 26, 0.18);
   --chat-bubble-padding: 10px 14px;
   --chat-rail-width: 2.5px;
+  /* system messages merge their rail into the black frame; a paper-beige
+     left edge would read as a misprint against the frame */
+  --chat-role-system: #1a1a1a;
   --chat-user-bg: var(--blue);
   --chat-user-text: #1a1a1a;
   --chat-user-padding: 10px 14px;
@@ -210,24 +213,35 @@ body[data-theme="riso"] {
 
 /* demo-style staggered bubbles: user messages hug the right edge, agent
    messages the left, neither spans the full column */
-body[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-main {
+:root[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-main {
   max-width: 92%;
 }
 
-body[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-row.user .agent-message-main {
+:root[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-row.user .agent-message-main {
   margin-left: auto;
 }
 
+/* the user meta row (name, timestamp) follows the right-aligned bubble */
+:root[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-row.user .agent-message-meta {
+  justify-content: flex-end;
+}
+
+/* the workspace card gets a printed frame to match the sidebar rules */
+:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-card {
+  border-color: rgba(26, 26, 26, 0.4);
+  border-radius: 4px;
+}
+
 /* collapsed digests and rich content square off to match the stencil edges */
-body[data-theme="riso"] [data-component-owner="event-timeline"] .turn-collapsed-digest {
+:root[data-theme="riso"] [data-component-owner="event-timeline"] .turn-collapsed-digest {
   border-radius: 2px;
 }
 
-body[data-theme="riso"] .markdown-rendered pre,
-body[data-theme="riso"] .markdown-rendered code {
+:root[data-theme="riso"] .markdown-rendered pre,
+:root[data-theme="riso"] .markdown-rendered code {
   border-radius: 2px;
 }
 
-body[data-theme="riso"] .markdown-rendered pre {
+:root[data-theme="riso"] .markdown-rendered pre {
   border-width: 2px;
 }

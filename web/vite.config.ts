@@ -28,6 +28,23 @@ export default defineConfig({
         return null;
       },
     },
+    {
+      // index.html links the built bundle stylesheet; in dev that file is a
+      // stale build artifact while every style comes from the module graph.
+      // Serve an empty sheet instead so stale rules cannot shadow dev CSS.
+      name: "pua-dev-no-stale-bundle-css",
+      apply: "serve",
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url?.split("?")[0] === "/assets/pua-app.css") {
+            res.setHeader("content-type", "text/css");
+            res.end("/* dev mode: styles load through the Vite module graph, not the built bundle */");
+            return;
+          }
+          next();
+        });
+      },
+    },
     svelte({ configFile: resolve(root, "svelte.config.js") }),
   ],
   build: {

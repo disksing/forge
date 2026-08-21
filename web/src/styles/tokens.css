@@ -1,12 +1,19 @@
 /* tokens styles. Keep selectors within the documented ownership boundary. */
 
 /* Theming contract: the default theme is the bare `:root` block below. An
-   alternate theme is a `body[data-theme="<id>"]` block (in this file for
+   alternate theme is a `:root[data-theme="<id>"]` block (in this file for
    token overrides, or in a dedicated stylesheet for stronger restyling) that
    redefines tokens and, where needed, adds scoped cosmetic rules. The active
-   theme id is applied to `document.body.dataset.theme` by the inline
-   bootstrap in static/index.html and by controllers/theme-controller.ts,
+   theme id is applied to `document.documentElement.dataset.theme` by the
+   inline bootstrap in static/index.html and by controllers/theme-controller.ts,
    and persisted under the `pua.web.themePreference` localStorage key.
+
+   The theme attribute lives on the root element (not <body>) so token
+   aliases defined here — e.g. `--chat-rail: var(--line-strong)` — re-resolve
+   against the theme's overridden tokens: a custom property's var() references
+   are substituted on the element where the property is defined and then
+   inherited as a frozen computed value. With overrides on <body>, aliases on
+   :root would silently keep the default theme's values.
 
    Token layers, from most stable to most specific:
    1. Surface and text neutrals (`--bg`, `--panel`, `--line*`, `--text`,
@@ -26,7 +33,7 @@
       per module whether it is dark chrome or another light surface. Layout
       metrics below may also be overridden per theme; a theme stylesheet
       may additionally scope structural overrides (borders, spacing, even
-      grid templates) under `body[data-theme="<id>"]` as long as
+      grid templates) under `:root[data-theme="<id>"]` as long as
       functionality is unchanged.
    4. Effects (`--backdrop*`, `--accent-ring`, shadows) — overlays, focus
       rings and the rare shadow. */
@@ -120,6 +127,10 @@
   --sidebar-line-strong: var(--line-strong);
   --sidebar-text: var(--text);
   --sidebar-muted: var(--muted);
+  /* Sidebar status accents: waiting/paused and blocked tree markers must
+     stay legible on the sidebar surface; dark sidebars raise these. */
+  --sidebar-attention: var(--amber-deep);
+  --sidebar-attention-soft: var(--amber);
 
   /* ---- region: chat ----
      The conversation column is a region: message bubbles, role coding,

@@ -55,11 +55,11 @@
 
 :where([data-component-owner="status-presentation"]) .task-state-waiting,
 :where([data-component-owner="status-presentation"]) .task-state-paused {
-  color: var(--amber-line);
+  color: var(--sidebar-attention-soft);
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-blocked {
-  color: var(--amber);
+  color: var(--sidebar-attention);
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-completed {
@@ -67,7 +67,7 @@
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-error {
-  color: var(--accent);
+  color: var(--red);
 }
 
 @keyframes task-status-spin {

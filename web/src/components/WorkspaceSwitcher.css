@@ -7,7 +7,7 @@
 }
 
 :where([data-component-owner="workspace-switcher"]).workspace-switcher {
-  padding: 12px;
+  padding: 6px 8px;
 }
 
 :where([data-component-owner="workspace-switcher"]).workspace-switcher select {
@@ -40,11 +40,11 @@
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-head {
-  min-height: 46px;
+  min-height: 38px;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 6px;
+  padding: 3px 6px;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-open {
@@ -76,7 +76,7 @@
 
 :where([data-component-owner="workspace-switcher"]) .workspace-open:hover .workspace-open-icon {
   opacity: 1;
-  color: var(--panel);
+  color: var(--sidebar-text);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {
