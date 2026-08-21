@@ -12,14 +12,10 @@
   font-weight: 500;
 }
 
+
 :where([data-component-owner="detail-panel"]) .details-actions button {
   min-height: 44px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--panel);
-  padding: 0 12px;
   font-size: calc(13px * var(--details-font-scale, 1));
-  font-weight: 700;
 }
 
 :where([data-component-owner="detail-panel"]) .details-header {
@@ -126,10 +122,6 @@
   gap: 8px;
 }
 
-:where([data-component-owner="detail-panel"]) .details-actions button.danger {
-  background: var(--panel);
-  color: var(--red);
-}
 
 :where([data-component-owner="detail-panel"]) .template-row.invalid {
   border-color: var(--red);
@@ -195,40 +187,10 @@
   align-items: center;
 }
 
-:where([data-component-owner="detail-panel"]) .details-actions button {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: calc(13px * var(--details-font-scale, 1));
-  font-weight: 700;
-  box-shadow: none;
-}
 
-:where([data-component-owner="detail-panel"]) .details-actions button:not(.danger) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--panel);
-}
 
-:where([data-component-owner="detail-panel"]) .details-actions button.danger {
-  background: var(--panel);
-  color: var(--accent);
-}
 
-:where([data-component-owner="detail-panel"]) .details-actions button:hover {
-  border-color: var(--line-strong);
-  background: var(--bg);
-}
 
-:where([data-component-owner="detail-panel"]) .details-actions button:not(.danger):hover {
-  background: var(--accent-deep);
-  border-color: var(--accent-deep);
-}
 
 :where([data-component-owner="detail-panel"]) .content-section {
   padding: 24px 32px;

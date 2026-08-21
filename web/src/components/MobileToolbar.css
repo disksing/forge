@@ -54,7 +54,7 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
     grid-template-columns: 1fr 1fr;
     padding: 3px;
     border-radius: 6px;
-    background: var(--line);
+    background: var(--line-soft);
   }
 
   :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button {

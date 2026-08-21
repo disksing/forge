@@ -6,33 +6,98 @@
    redefines tokens and, where needed, adds scoped cosmetic rules. The active
    theme id is applied to `document.body.dataset.theme` by the inline
    bootstrap in static/index.html and by controllers/theme-controller.ts,
-   and persisted under the `pua.web.themePreference` localStorage key. */
+   and persisted under the `pua.web.themePreference` localStorage key.
+
+   Token layers, from most stable to most specific:
+   1. Surface and text neutrals (`--bg`, `--panel`, `--line*`, `--text`,
+      `--muted`, `--faint`) — every component must consume these instead of
+      hard-coding grays.
+   2. Hue ramps (`--accent*`, `--blue*`, `--green*`, `--amber*`, `--red*`).
+      Each ramp provides: base, `-deep` (hover/emphasis), `-pressed`,
+      `-soft` (tinted fill), `-line` (border on tinted fill), `-bright`
+      (legible on dark surfaces), `-ink` (text on tinted fill).
+   3. Dark chrome (`--ink*` and `*-on-dark`) — the sidebar and other dark
+      blocks; kept separate so a theme can restyle dark surfaces without
+      touching light ones. Text or lines painted on dark chrome must use
+      the `*-on-dark` tokens, never the neutral light-surface tokens.
+   4. Effects (`--backdrop*`, `--accent-ring`, shadows) — overlays, focus
+      rings and the rare shadow. */
 
 :root {
   color-scheme: light;
-  /* Flat design palette: solid fills, 1px borders, no shadows/gradients. */
+
+  /* ---- 1. neutral surfaces, lines and text (flat design: solid fills,
+     1px borders, no shadows/gradients) ---- */
   --bg: #f4f5f7;
   --panel: #ffffff;
+  /* Recessed fill between --bg and --panel: hovered rows, code blocks,
+     sunken wells. */
+  --panel-sunken: #f7f8fa;
   --line: #dcdfe4;
   --line-soft: #e8eaee;
+  --line-strong: #c3c9d1;
   --text: #2b3440;
   --muted: #5c6b7a;
+  /* Stronger secondary text/icon color, between --text and --muted. */
+  --muted-strong: #4a5560;
   --faint: #8a97a5;
+
+  /* ---- 2. hue ramps ---- */
+  /* Accent (brand red). Doubles as the danger color in the default theme;
+     --red* aliases stay separate so a theme may split brand and danger. */
   --accent: #e74c3c;
   --accent-deep: #c0392b;
   --accent-pressed: #a93226;
   --accent-soft: #fdecea;
+  --accent-line: #f2b8b2;
+  --accent-bright: #f87171;
+  --accent-ring: rgba(231, 76, 60, 0.25);
+  --red: var(--accent);
+  --red-deep: var(--accent-deep);
+  --red-pressed: var(--accent-pressed);
+  --red-soft: var(--accent-soft);
+  --red-line: var(--accent-line);
+  --red-bright: var(--accent-bright);
+
+  --blue: #2980b9;
+  --blue-deep: #1f618d;
+  --blue-bright: #4f9cf9;
+  --blue-soft: #eaf3fb;
+  --blue-line: #9ccceb;
+
   --green: #27ae60;
   --green-deep: #1e8a4c;
+  --green-soft: #e8f5ee;
+  --green-line: #c3e6d0;
+
   --amber: #e67e22;
   --amber-deep: #b46218;
-  --red: #e74c3c;
-  --blue: #2980b9;
-  /* Dark slate sidebar block. */
+  --amber-bright: #fbbf24;
+  --amber-soft: #fff8df;
+  --amber-line: #ead7a3;
+  --amber-ink: #704d08;
+
+  /* ---- 3. dark chrome (sidebar block and other dark surfaces) ---- */
   --ink: #2c3e50;
   --ink-deep: #22313f;
   --ink-row: #33475c;
+  --ink-hover: rgba(255, 255, 255, 0.09);
+  --ink-active: rgba(255, 255, 255, 0.14);
+  --ink-line: rgba(255, 255, 255, 0.22);
+  --ink-line-strong: rgba(255, 255, 255, 0.38);
+  --ink-shadow: rgba(44, 62, 80, 0.18);
+  --text-on-dark: #ecf0f3;
   --faint-on-dark: #aebac6;
+  --amber-soft-on-dark: rgba(245, 158, 11, 0.16);
+  --red-soft-on-dark: rgba(239, 68, 68, 0.17);
+  --red-line-on-dark: rgb(255 120 120 / 45%);
+  --line-strong-on-dark: rgb(220 228 239 / 50%);
+
+  /* ---- 4. effects ---- */
+  --backdrop: rgba(34, 49, 63, 0.48);
+  --backdrop-soft: rgba(34, 49, 63, 0.38);
+
+  /* ---- layout metrics ---- */
   --sidebar-width: 280px;
   --chat-width: 420px;
   --sidebar-min-width: 220px;

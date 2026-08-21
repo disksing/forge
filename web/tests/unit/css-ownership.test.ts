@@ -131,6 +131,36 @@ function selectorHeaders(css: string): string[] {
 }
 
 describe("CSS ownership", () => {
+  it("defines every design token referenced by the stylesheets", () => {
+    const defined = new Set<string>();
+    for (const file of ["src/styles/tokens.css", "src/styles/themes-riso.css"]) {
+      for (const match of read(file).matchAll(/(--[a-z0-9-]+)\s*:/gi)) defined.add(match[1]);
+    }
+    // Tokens applied at runtime by controllers (pane sizes, font scales,
+    // mobile viewport metrics) rather than by stylesheets.
+    const runtimeTokens = new Set([
+      "--sidebar-width", "--chat-width", "--sidebar-attention-height",
+      "--sidebar-font-scale", "--details-font-scale", "--chat-font-scale",
+      "--app-viewport-height", "--app-viewport-offset-top", "--app-viewport-offset-left",
+      // Component-local variables set inline by FileBrowser rows.
+      "--depth"
+    ]);
+    const sources = [
+      ...components.map((name) => `src/components/${name === "ActivityPanel" ? "AttentionList" : name}.css`),
+      "src/styles/base.css", "src/styles/primitives.css", "src/styles/rich-content.css", "src/styles/themes-riso.css"
+    ];
+    const missing = new Map<string, string[]>();
+    for (const file of sources) {
+      for (const match of read(file).matchAll(/var\((--[a-z0-9-]+)/gi)) {
+        const token = match[1];
+        if (defined.has(token) || runtimeTokens.has(token)) continue;
+        if (!missing.has(token)) missing.set(token, []);
+        missing.get(token)!.push(file);
+      }
+    }
+    expect([...missing.entries()].map(([token, files]) => `${token} used by ${[...new Set(files)].join(", ")}`)).toEqual([]);
+  });
+
   it("keeps the global entry limited to documented shared layers", () => {
     expect(read("src/app.css").trim()).toBe([
       "/* Global CSS entry: tokens, browser defaults, and deliberately shared primitives only. */",

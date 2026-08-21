@@ -7,7 +7,7 @@
 }
 
 :where([data-component-owner="project-tree"]) .section-title {
-  color: var(--muted);
+  color: var(--faint-on-dark);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -56,7 +56,7 @@
   padding: 6px 8px;
   border-radius: 6px;
   background: transparent;
-  color: var(--line-strong);
+  color: var(--faint-on-dark);
   text-align: left;
 }
 
@@ -72,7 +72,7 @@
 
 :where([data-component-owner="project-tree"]) .tree-item .chevron {
   width: 14px;
-  color: var(--faint);
+  color: var(--faint-on-dark);
 }
 
 :where([data-component-owner="project-tree"]) .tree-item .name {
@@ -139,7 +139,7 @@
 }
 
 :where([data-component-owner="project-tree"]) .resource-ref {
-  color: var(--muted);
+  color: var(--faint-on-dark);
   font-weight: 400;
   white-space: nowrap;
 }
@@ -210,7 +210,7 @@
   align-items: center;
   padding: 6px 8px;
   border-radius: 6px;
-  color: var(--line-strong);
+  color: var(--faint-on-dark);
   font-size: calc(14px * var(--sidebar-font-scale, 1));
   font-weight: 500;
 }

@@ -242,7 +242,7 @@ body[data-layout="two"] :where([data-component-owner="app-shell"]) .workspace-vi
   width: min(320px, 100%);
   padding: 3px;
   border-radius: 6px;
-  background: var(--line);
+  background: var(--line-soft);
 }
 :where([data-component-owner="app-shell"]) .workspace-view-switcher button {
   min-height: 30px;

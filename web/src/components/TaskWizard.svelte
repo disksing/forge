@@ -243,6 +243,6 @@
     <span class="wizard-footer-spacer"></span>
     {#if step > 0}<button type="button" class="secondary-button" disabled={model.submitting} onclick={back}>Back</button>{/if}
     <button type="button" class="secondary-button" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
-    <button type="submit" class="wizard-primary" disabled={!canProceed()}>{model.submitting ? "Creating..." : step === lastStep ? (draft.startAfterCreate ? "Create & start" : "Create task") : "Next"}</button>
+    <button type="submit" class="wizard-primary primary-button" disabled={!canProceed()}>{model.submitting ? "Creating..." : step === lastStep ? (draft.startAfterCreate ? "Create & start" : "Create task") : "Next"}</button>
   </div>
 </form>

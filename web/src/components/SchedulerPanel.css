@@ -41,16 +41,9 @@
 .schedule-editor textarea { resize: vertical; }
 .schedule-editor > button { justify-self: start; }
 .schedule-editor > button {
-  align-items: center;
-  background: var(--accent, var(--accent));
-  border-radius: 7px;
-  color: var(--panel);
-  display: inline-flex;
   gap: 7px;
   min-height: 44px;
-  padding: 0 12px;
 }
-.schedule-editor > button:disabled { cursor: not-allowed; opacity: .55; }
 .schedule-editor > button .schedule-icon {
   display: inline-flex;
   align-items: center;
@@ -73,7 +66,6 @@
 .schedule-editor > button.busy .schedule-icon-busy {
   display: inline-flex;
 }
-.schedule-list .danger { color: var(--red, var(--accent-deep)); }
 
 .schedule-list { display: grid; gap: 10px; min-width: 0; }
 .schedule-list > * { min-width: 0; }

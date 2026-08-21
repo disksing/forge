@@ -119,7 +119,9 @@ body[data-theme="riso"] .ghost-button:hover {
 
 /* form fields: stencil-cut rectangles */
 body[data-theme="riso"] .details-form :is(input, textarea),
-body[data-theme="riso"] [data-component-owner][data-settings-panel] :is(input, select, textarea) {
+body[data-theme="riso"] [data-component-owner][data-settings-panel] :is(input, select, textarea),
+body[data-theme="riso"] [data-component-owner="task-wizard"] :is(input, select, textarea),
+body[data-theme="riso"] .schedule-editor :is(input, textarea) {
   border-width: 2px;
   border-radius: 2px;
 }
