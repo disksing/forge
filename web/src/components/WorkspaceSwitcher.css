@@ -14,7 +14,7 @@
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   color: var(--text);
   outline: none;
 }
@@ -22,7 +22,7 @@
 :where([data-component-owner="workspace-switcher"]).workspace-switcher select {
   border-color: var(--ink-row);
   background: var(--ink-deep);
-  color: #ecf0f3;
+  color: var(--text-on-dark);
 }
 
 :where([data-component-owner="workspace-switcher"]).workspace-switcher select {
@@ -56,7 +56,7 @@
   padding: 5px 6px;
   border-radius: 6px;
   background: transparent;
-  color: #ecf0f3;
+  color: var(--text-on-dark);
   font-size: calc(14px * var(--sidebar-font-scale, 1));
   font-weight: 600;
   text-align: left;
@@ -76,7 +76,7 @@
 
 :where([data-component-owner="workspace-switcher"]) .workspace-open:hover .workspace-open-icon {
   opacity: 1;
-  color: #fff;
+  color: var(--panel);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {
@@ -92,7 +92,7 @@
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button:hover {
   background: var(--ink-row);
-  color: #fff;
+  color: var(--panel);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-switcher-name {
@@ -134,7 +134,7 @@
   place-items: center;
   border-radius: 4px;
   background: var(--blue);
-  color: #fff;
+  color: var(--panel);
   font-size: calc(10px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   flex: 0 0 auto;
@@ -160,16 +160,16 @@
   left: 8px;
   right: 8px;
   padding: 4px;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   animation: modal-zoom-in 140ms ease-out;
   transform-origin: top center;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-title {
   padding: 7px 9px 5px;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -185,15 +185,15 @@
   padding: 7px 9px;
   border-radius: 4px;
   background: transparent;
-  color: #2b3440;
+  color: var(--text);
   text-align: left;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-row:hover,
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-row:focus-visible,
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-row[aria-selected="true"] {
-  background: #e8eaee;
-  color: #2c3e50;
+  background: var(--line-soft);
+  color: var(--ink);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-row:focus-visible {
@@ -219,7 +219,7 @@
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-main small {
-  color: #8a97a5;
+  color: var(--faint);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
@@ -227,13 +227,13 @@
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-check {
   width: 15px;
   height: 15px;
-  color: #e74c3c;
+  color: var(--accent);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-footer {
   margin-top: 2px;
   padding-top: 2px;
-  border-top: 1px solid #e8eaee;
+  border-top: 1px solid var(--line-soft);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-footer button {
@@ -244,14 +244,14 @@
   padding: 7px 9px;
   border-radius: 4px;
   background: transparent;
-  color: #4a5560;
+  color: var(--muted-strong);
   font-size: calc(13px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-footer button:hover {
-  background: #e8eaee;
-  color: #2c3e50;
+  background: var(--line-soft);
+  color: var(--ink);
 }
 
 :where([data-component-owner="workspace-switcher"]) .workspace-menu-footer svg {

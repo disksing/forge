@@ -16,14 +16,14 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #8a97a5;
+  color: var(--faint);
   font-size: calc(12px * var(--chat-font-scale, 1));
   font-weight: 700;
 }
 
 :where([data-component-owner="event-timeline"]) .load-older-events:hover {
   background: transparent;
-  color: #2b3440;
+  color: var(--text);
 }
 
 :where([data-component-owner="event-timeline"]) .load-older-events svg {
@@ -55,7 +55,7 @@
   place-items: center;
   align-content: center;
   gap: 6px;
-  color: #5c6b7a;
+  color: var(--muted);
   text-align: center;
 }
 
@@ -69,7 +69,7 @@
   align-items: baseline;
   gap: 8px;
   margin: 18px 0 10px;
-  color: #6c7885;
+  color: var(--muted);
   font-size: calc(11px * var(--chat-font-scale, 1));
   text-transform: uppercase;
   letter-spacing: .06em;
@@ -80,11 +80,11 @@
   content: "";
   height: 1px;
   flex: 1;
-  background: #dfe4e8;
+  background: var(--line-soft);
 }
 
 :where([data-component-owner="event-timeline"]) .conversation-generation strong {
-  color: #344150;
+  color: var(--ink-row);
 }
 
 :where([data-component-owner="event-timeline"]) .conversation-generation small {
@@ -100,10 +100,10 @@
   gap: 9px;
   margin: 10px 0;
   padding: 10px 12px;
-  border: 1px dashed #d6a857;
+  border: 1px dashed var(--amber-line);
   border-radius: 8px;
-  color: #72521c;
-  background: #fffaf0;
+  color: var(--amber-ink);
+  background: var(--amber-soft);
   font-size: calc(12px * var(--chat-font-scale, 1));
 }
 
@@ -122,7 +122,7 @@
 
 :where([data-component-owner="event-timeline"]) .turn-summary-preview {
   margin: 8px 0;
-  color: #7c8792;
+  color: var(--muted);
   font-size: calc(12px * var(--chat-font-scale, 1));
   white-space: nowrap;
   overflow: hidden;
@@ -162,14 +162,14 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: #9aa6b3;
+  color: var(--faint);
   font-size: calc(11px * var(--chat-font-scale, 1));
   cursor: pointer;
 }
 
 :where([data-component-owner="event-timeline"]) .turn-collapsed-gap:hover {
-  background: #f2f6f9;
-  color: #5b6771;
+  background: var(--panel-sunken);
+  color: var(--muted-strong);
 }
 
 :where([data-component-owner="event-timeline"]) .turn-collapsed-gap svg {
@@ -180,8 +180,8 @@
 :where([data-component-owner="event-timeline"]) .turn-collapsed-status {
   padding: 1px 6px;
   border-radius: 999px;
-  background: #fde8e8;
-  color: #9b2c2c;
+  background: var(--accent-soft);
+  color: var(--red-deep);
   font-size: calc(11px * var(--chat-font-scale, 1));
   font-weight: 600;
 }
@@ -201,17 +201,17 @@
   gap: 4px;
   margin: 6px 0 2px;
   padding: 2px 8px;
-  border: 1px solid #e2e7ec;
+  border: 1px solid var(--line-soft);
   border-radius: 999px;
   background: transparent;
-  color: #8b96a1;
+  color: var(--faint);
   font-size: calc(11px * var(--chat-font-scale, 1));
   cursor: pointer;
 }
 
 :where([data-component-owner="event-timeline"]) .turn-collapse-again:hover {
-  border-color: #c9d2da;
-  color: #5b6771;
+  border-color: var(--line-strong);
+  color: var(--muted-strong);
 }
 
 :where([data-component-owner="event-timeline"]) .turn-collapse-again svg {
@@ -221,9 +221,9 @@
 
 :where([data-component-owner="event-timeline"]) .conversation-session-starting,
 :where([data-component-owner="event-timeline"]) .turn-loading {
-  border-color: #dfe4e8;
-  color: #74808c;
-  background: #f8fafb;
+  border-color: var(--line-soft);
+  color: var(--muted);
+  background: var(--panel-sunken);
 }
 
 :where([data-component-owner="event-timeline"]) .turn-working-indicator {
@@ -231,7 +231,7 @@
   align-items: center;
   gap: 7px;
   margin: 10px 0;
-  color: #74808c;
+  color: var(--muted);
   font-size: calc(12px * var(--chat-font-scale, 1));
   font-weight: 600;
 }

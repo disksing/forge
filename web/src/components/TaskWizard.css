@@ -59,7 +59,7 @@
 :where([data-component-owner="task-wizard"]) .wizard-steps li.active .wizard-step-num {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--panel);
 }
 
 :where([data-component-owner="task-wizard"]) .wizard-steps li.done {
@@ -69,7 +69,7 @@
 :where([data-component-owner="task-wizard"]) .wizard-steps li.done .wizard-step-num {
   border-color: var(--green);
   background: var(--green);
-  color: #fff;
+  color: var(--panel);
 }
 
 :where([data-component-owner="task-wizard"]) .wizard-body {
@@ -160,7 +160,7 @@
 :where([data-component-owner="task-wizard"]) .wizard-field-error {
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid #f5d0cb;
+  border: 1px solid var(--accent-line);
   border-radius: 6px;
   background: var(--accent-soft);
   color: var(--accent-deep);
@@ -176,7 +176,7 @@
   align-items: center;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   transition: border-color 150ms ease;
 }
 
@@ -276,10 +276,10 @@
 :where([data-component-owner="task-wizard"]) .wizard-binding-note {
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid #c6dcf0;
+  border: 1px solid var(--blue-line);
   border-radius: 6px;
-  background: #eaf3fb;
-  color: #1f618d;
+  background: var(--blue-soft);
+  color: var(--blue-deep);
   font-size: 12.5px;
 }
 
@@ -346,19 +346,19 @@
 }
 
 :where([data-component-owner="task-wizard"]) .wizard-footer button.secondary-button {
-  border-color: #dcdfe4;
-  background: #fff;
-  color: #2b3440;
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--text);
 }
 
 :where([data-component-owner="task-wizard"]) .wizard-footer button.secondary-button:hover:not(:disabled) {
-  border-color: #c3c9d1;
-  background: #f4f5f7;
+  border-color: var(--line-strong);
+  background: var(--bg);
 }
 
 :where([data-component-owner="task-wizard"]) .wizard-footer .wizard-primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--panel);
 }
 
 :where([data-component-owner="task-wizard"]) .wizard-footer .wizard-primary:hover:not(:disabled) {

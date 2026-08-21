@@ -8,13 +8,13 @@
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-path-form input[aria-invalid="true"] {
-  border-color: var(--red, #e74c3c);
+  border-color: var(--red, var(--accent));
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-field-error {
   grid-column: 1 / -1;
   margin: -4px 0 0;
-  color: var(--red, #e74c3c);
+  color: var(--red, var(--accent));
   font-size: 12px;
   line-height: 1.35;
 }
@@ -24,7 +24,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #4a5560;
+  color: var(--muted-strong);
   font-size: 13px;
   font-weight: 700;
 }
@@ -39,17 +39,17 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #4a5560;
+  color: var(--muted-strong);
   font-size: 13px;
   font-weight: 700;
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-language select {
   min-width: 150px;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #2c3e50;
+  background: var(--panel);
+  color: var(--ink);
   padding: 7px 9px;
   font: inherit;
 }
@@ -72,9 +72,9 @@
   gap: 12px;
   min-width: 0;
   min-height: 58px;
-  border: 1px solid #dcdfe4;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   padding: 10px 12px;
 }
 
@@ -91,7 +91,7 @@
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-row-main strong {
   display: block;
-  color: #2c3e50;
+  color: var(--ink);
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -101,7 +101,7 @@
 :where([data-component-owner="workspace-settings-panel"]) .settings-row-main small {
   display: block;
   margin-top: 3px;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -115,8 +115,8 @@
   display: grid;
   place-items: center;
   border-radius: 6px;
-  background: #2c3e50;
-  color: #fff;
+  background: var(--ink);
+  color: var(--panel);
   overflow: hidden;
 }
 
@@ -151,10 +151,10 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #4a5560;
+  background: var(--panel);
+  color: var(--muted-strong);
   padding: 3px 7px 3px 4px;
   font-size: 11px;
   font-weight: 700;
@@ -162,8 +162,8 @@
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-icon-button:hover:not(:disabled),
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-icon-button[aria-expanded="true"] {
-  border-color: #c3c9d1;
-  background: #f4f5f7;
+  border-color: var(--line-strong);
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -196,9 +196,9 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
   gap: 7px;
-  border: 1px solid #e8eaee;
+  border: 1px solid var(--line-soft);
   border-radius: 6px;
-  background: #f4f5f7;
+  background: var(--bg);
   padding: 10px;
 }
 
@@ -211,7 +211,7 @@
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
-  color: #4a5560;
+  color: var(--muted-strong);
   padding: 7px 5px;
   font-size: 10px;
   font-weight: 700;
@@ -219,13 +219,13 @@
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-icon-picker button:hover {
-  border-color: #c3c9d1;
-  background: #fff;
+  border-color: var(--line-strong);
+  background: var(--panel);
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-icon-picker button.selected {
   border-color: var(--accent);
-  background: #fff;
+  background: var(--panel);
   color: var(--accent-deep);
 }
 
@@ -250,8 +250,8 @@
   width: 13px;
   height: 13px;
   border-radius: 999px;
-  background: #e74c3c;
-  color: #fff;
+  background: var(--accent);
+  color: var(--panel);
   padding: 2px;
 }
 
@@ -260,15 +260,15 @@
   height: 30px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #4a5560;
+  background: var(--panel);
+  color: var(--muted-strong);
   padding: 0;
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-rename-button:hover:not(:disabled) {
-  background: #f4f5f7;
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -287,9 +287,9 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  border: 1px solid #e8eaee;
+  border: 1px solid var(--line-soft);
   border-radius: 6px;
-  background: #f4f5f7;
+  background: var(--bg);
   padding: 10px;
 }
 
@@ -297,9 +297,9 @@
   flex: 1 1 220px;
   min-width: 0;
   height: 30px;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   color: var(--text);
   padding: 3px 8px;
   font-size: 12px;
@@ -310,17 +310,17 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
-  color: #4a5560;
+  background: var(--panel);
+  color: var(--muted-strong);
   padding: 3px 9px;
   font-size: 11px;
   font-weight: 700;
 }
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-name-form button:hover:not(:disabled) {
-  background: #f4f5f7;
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -336,7 +336,7 @@
 
 :where([data-component-owner="workspace-settings-panel"]) .settings-workspace-name-hint {
   flex: 1 1 100%;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 11px;
 }
 

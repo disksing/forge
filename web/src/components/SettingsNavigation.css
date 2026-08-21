@@ -2,14 +2,14 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-right: 1px solid #dcdfe4;
-  background: #f4f5f7;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
   padding: 18px 12px;
 }
 
 :where([data-component-owner="settings-navigation"]) .settings-title {
   margin: 0 6px 12px;
-  color: #2c3e50;
+  color: var(--ink);
   font-size: 15px;
   font-weight: 700;
 }
@@ -21,7 +21,7 @@
   gap: 10px;
   border-radius: 6px;
   background: transparent;
-  color: #4a5560;
+  color: var(--muted-strong);
   padding: 0 10px;
   text-align: left;
   font-weight: 700;
@@ -29,8 +29,8 @@
 
 :where([data-component-owner="settings-navigation"]) .settings-tab:hover,
 :where([data-component-owner="settings-navigation"]) .settings-tab.active {
-  background: #dcdfe4;
-  color: #2c3e50;
+  background: var(--line);
+  color: var(--ink);
 }
 
 :where([data-component-owner="settings-navigation"]) .settings-tab svg {
@@ -43,7 +43,7 @@
   height: 6px;
   margin-left: auto;
   border-radius: 999px;
-  background: #e67e22;
+  background: var(--amber);
   opacity: 0;
 }
 
@@ -61,7 +61,7 @@
     flex-wrap: wrap;
     overflow-x: visible;
     border-right: 0;
-    border-bottom: 1px solid #dcdfe4;
+    border-bottom: 1px solid var(--line);
   }
 
   :where([data-component-owner="settings-navigation"]) .settings-title {

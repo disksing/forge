@@ -7,7 +7,7 @@
 }
 
 :where([data-component-owner="user-settings-panel"]) .settings-user-form label {
-  color: #2b3440;
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -17,7 +17,7 @@
 }
 
 :where([data-component-owner="user-settings-panel"]) .settings-user-form small {
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
 }

@@ -3,7 +3,7 @@
 :where([data-component-owner="agenthub-settings-panel"]) .settings-default-agent {
   display: grid;
   gap: 5px;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -24,9 +24,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border: 1px solid #dcdfe4;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   padding: 12px;
 }
 
@@ -39,14 +39,14 @@
 
 :where([data-component-owner="agenthub-settings-panel"]) .settings-service-row strong {
   display: block;
-  color: #2c3e50;
+  color: var(--ink);
   font-size: 13px;
 }
 
 :where([data-component-owner="agenthub-settings-panel"]) .settings-service-row small {
   display: block;
   margin-top: 3px;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -60,7 +60,7 @@
   display: grid;
   place-items: center;
   border-radius: 6px;
-  background: #f4f5f7;
+  background: var(--bg);
   color: var(--blue);
   font-size: 12px;
   font-weight: 700;

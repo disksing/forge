@@ -4,7 +4,7 @@
   position: fixed;
   inset: 0;
   z-index: 80;
-  background: rgba(34, 49, 63, 0.38);
+  background: var(--backdrop-soft);
   backdrop-filter: blur(4px);
 }
 
@@ -18,9 +18,9 @@
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   transform: translate(-50%, -50%);
 }
 
@@ -57,12 +57,12 @@
   justify-content: center;
   border-radius: 6px;
   background: transparent;
-  color: #5c6b7a;
+  color: var(--muted);
 }
 
 :where([data-component-owner="settings"]) .settings-close:hover {
-  background: #e8eaee;
-  color: #2c3e50;
+  background: var(--line-soft);
+  color: var(--ink);
 }
 
 :where([data-component-owner="settings"]) .settings-close svg {

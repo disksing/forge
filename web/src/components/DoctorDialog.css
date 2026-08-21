@@ -7,7 +7,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.48);
+  background: var(--backdrop);
 }
 
 :where([data-component-owner="doctor-dialog"]) .doctor-dialog {
@@ -18,8 +18,8 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+  background: var(--panel);
+  box-shadow: 0 24px 70px var(--backdrop-soft);
 }
 
 :where([data-component-owner="doctor-dialog"]) header {
@@ -113,8 +113,8 @@
   align-items: flex-start;
   flex-direction: column;
   margin-bottom: 12px;
-  background: #fef2f2;
-  color: #991b1b;
+  background: var(--accent-soft);
+  color: var(--red-deep);
 }
 
 :where([data-component-owner="doctor-dialog"]) .doctor-empty svg {
@@ -175,11 +175,11 @@
 }
 
 :where([data-component-owner="doctor-dialog"]) article.error {
-  border-left-color: #dc2626;
+  border-left-color: var(--red);
 }
 
 :where([data-component-owner="doctor-dialog"]) article.warning {
-  border-left-color: #d97706;
+  border-left-color: var(--amber-deep);
 }
 
 :where([data-component-owner="doctor-dialog"]) .doctor-issue-icon {
@@ -187,11 +187,11 @@
 }
 
 :where([data-component-owner="doctor-dialog"]) article.error .doctor-issue-icon {
-  color: #dc2626;
+  color: var(--red);
 }
 
 :where([data-component-owner="doctor-dialog"]) article.warning .doctor-issue-icon {
-  color: #d97706;
+  color: var(--amber-deep);
 }
 
 :where([data-component-owner="doctor-dialog"]) .doctor-issue-icon svg {

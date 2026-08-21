@@ -4,7 +4,7 @@
   margin: 0;
   white-space: pre-wrap;
   overflow: auto;
-  color: #4a5560;
+  color: var(--muted-strong);
   font-size: calc(13px * var(--details-font-scale, 1));
   line-height: 1.55;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -13,7 +13,7 @@
 :where([data-component-owner="markdown-document"]) .markdown-view:not(.markdown-rendered) {
   max-height: none;
   padding: 0;
-  color: #4a5560;
+  color: var(--muted-strong);
   background: transparent;
   font-size: calc(13px * var(--details-font-scale, 1));
   line-height: 1.55;

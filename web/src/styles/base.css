@@ -3,7 +3,7 @@
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
-  scrollbar-color: #c3c9d1 transparent;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 html,
@@ -25,11 +25,11 @@ body {
 
 ::-webkit-scrollbar-thumb {
   border-radius: 4px;
-  background: #c3c9d1;
+  background: var(--line-strong);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8a97a5;
+  background: var(--faint);
 }
 
 body {
@@ -52,8 +52,8 @@ button {
 }
 
 ::selection {
-  background: #f6d9d4;
-  color: #8e2f24;
+  background: var(--accent-line);
+  color: var(--accent-pressed);
 }
 
 :focus-visible {

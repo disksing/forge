@@ -128,7 +128,7 @@
 
 [data-component-owner="history-timeline"] .history-turn-dot {
   background: var(--faint);
-  border: 2px solid #fff;
+  border: 2px solid var(--panel);
   border-radius: 50%;
   height: 11px;
   left: -34px;
@@ -265,7 +265,7 @@
 [data-component-owner="history-timeline"] .history-gap {
   align-items: center;
   background: var(--accent-soft);
-  border: 1px solid #f3d7d3;
+  border: 1px solid var(--accent-line);
   border-radius: 8px;
   color: var(--muted);
   display: flex;

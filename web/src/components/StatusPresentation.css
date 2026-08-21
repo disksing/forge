@@ -27,7 +27,7 @@
 }
 
 :where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-attention {
-  color: #e67e22;
+  color: var(--amber);
 }
 
 :where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-running {
@@ -40,12 +40,12 @@
 }
 
 :where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-neutral {
-  color: #8d9aa8;
+  color: var(--faint);
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-not-started,
 :where([data-component-owner="status-presentation"]) .task-state-unknown {
-  color: #8d9aa8;
+  color: var(--faint);
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-in-progress {
@@ -55,11 +55,11 @@
 
 :where([data-component-owner="status-presentation"]) .task-state-waiting,
 :where([data-component-owner="status-presentation"]) .task-state-paused {
-  color: #d6a84b;
+  color: var(--amber-line);
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-blocked {
-  color: #e67e22;
+  color: var(--amber);
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-completed {
@@ -67,7 +67,7 @@
 }
 
 :where([data-component-owner="status-presentation"]) .task-state-error {
-  color: #e05d5d;
+  color: var(--accent);
 }
 
 @keyframes task-status-spin {

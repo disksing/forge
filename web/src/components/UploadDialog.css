@@ -12,7 +12,7 @@
 :where([data-component-owner="upload-dialog"]) .upload-dialog-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(34, 49, 63, 0.42);
+  background: var(--backdrop);
   backdrop-filter: blur(3px);
 }
 
@@ -23,9 +23,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-dialog-header {
@@ -65,10 +65,10 @@
   place-items: center;
   gap: 7px;
   min-height: 180px;
-  border: 2px dashed #c3c9d1;
+  border: 2px dashed var(--line-strong);
   border-radius: 6px;
-  background: #f4f5f7;
-  color: #4a5560;
+  background: var(--bg);
+  color: var(--muted-strong);
   text-align: center;
   outline: none;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -76,23 +76,23 @@
 
 :where([data-component-owner="upload-dialog"]) .upload-drop-zone:focus,
 :where([data-component-owner="upload-dialog"]) .upload-drop-zone.dragging {
-  border-color: #e74c3c;
-  background: #f4f5f7;
+  border-color: var(--accent);
+  background: var(--bg);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-drop-zone>svg {
   width: 30px;
   height: 30px;
-  color: #e74c3c;
+  color: var(--accent);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-drop-zone>strong {
-  color: #2b3440;
+  color: var(--text);
   font-size: 15px;
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-drop-zone>span {
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -104,28 +104,28 @@
 
 :where([data-component-owner="upload-dialog"]) .upload-empty {
   border-radius: 4px;
-  background: #f4f5f7;
+  background: var(--bg);
   padding: 14px;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 12px;
   text-align: center;
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item {
-  border: 1px solid #dcdfe4;
+  border: 1px solid var(--line);
   border-radius: 6px;
   padding: 11px 12px;
-  background: #fff;
+  background: var(--panel);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-success {
-  border-color: #c3e6d0;
-  background: #eef7f1;
+  border-color: var(--green-line);
+  background: var(--green-soft);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-error {
-  border-color: #f2b8b2;
-  background: #fdecea;
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-heading {
@@ -151,7 +151,7 @@
 :where([data-component-owner="upload-dialog"]) .upload-item-status-icon svg {
   width: 18px;
   height: 18px;
-  color: #2980b9;
+  color: var(--blue);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-status-uploading,
@@ -185,7 +185,7 @@
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-status-icon svg {
-  color: #27ae60;
+  color: var(--green);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-status-queued,
@@ -200,7 +200,7 @@
 
 :where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-status-icon svg,
 :where([data-component-owner="upload-dialog"]) .upload-error {
-  color: #e74c3c;
+  color: var(--accent);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-heading>span {
@@ -217,19 +217,19 @@
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-heading strong {
-  color: #2b3440;
+  color: var(--text);
   font-size: 13px;
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-heading small {
   margin-top: 2px;
-  color: #8a97a5;
+  color: var(--faint);
   font-size: 10px;
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-heading em {
   flex: 0 0 auto;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 11px;
   font-style: normal;
   font-weight: 700;
@@ -240,23 +240,23 @@
   margin-top: 9px;
   overflow: hidden;
   border-radius: 4px;
-  background: #dcdfe4;
+  background: var(--line);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-progress>span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: #2980b9;
+  background: var(--blue);
   transition: width 0.12s ease;
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-success .upload-progress>span {
-  background: #27ae60;
+  background: var(--green);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-item-error .upload-progress>span {
-  background: #e74c3c;
+  background: var(--accent);
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-result-path,
@@ -268,7 +268,7 @@
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-result-path {
-  color: #1e8a4c;
+  color: var(--green-deep);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -282,7 +282,7 @@
 }
 
 :where([data-component-owner="upload-dialog"]) .upload-dialog-footer>span {
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -290,8 +290,8 @@
   min-width: 82px;
   min-height: 34px;
   border-radius: 6px;
-  background: #e74c3c;
-  color: #fff;
+  background: var(--accent);
+  color: var(--panel);
   font-weight: 700;
 }
 

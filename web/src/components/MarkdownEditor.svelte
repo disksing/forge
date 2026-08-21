@@ -45,15 +45,15 @@
   }
 
   const markdownHighlight = HighlightStyle.define([
-    { tag: tags.heading1, fontSize: "1.55em", fontWeight: "750", color: "#182433" },
-    { tag: tags.heading2, fontSize: "1.35em", fontWeight: "730", color: "#1d2b3b" },
-    { tag: tags.heading3, fontSize: "1.18em", fontWeight: "700", color: "#263647" },
-    { tag: [tags.heading4, tags.heading5, tags.heading6], fontWeight: "700", color: "#304254" },
+    { tag: tags.heading1, fontSize: "1.55em", fontWeight: "750", color: "var(--text)" },
+    { tag: tags.heading2, fontSize: "1.35em", fontWeight: "730", color: "var(--text)" },
+    { tag: tags.heading3, fontSize: "1.18em", fontWeight: "700", color: "var(--text)" },
+    { tag: [tags.heading4, tags.heading5, tags.heading6], fontWeight: "700", color: "var(--muted-strong)" },
     { tag: tags.strong, fontWeight: "750" },
     { tag: tags.emphasis, fontStyle: "italic" },
-    { tag: tags.quote, color: "#66788a", fontStyle: "italic" },
-    { tag: tags.link, color: "#1769aa", textDecoration: "underline" },
-    { tag: tags.monospace, color: "#8c3b2d", backgroundColor: "#f4f1ed" },
+    { tag: tags.quote, color: "var(--muted)", fontStyle: "italic" },
+    { tag: tags.link, color: "var(--blue)", textDecoration: "underline" },
+    { tag: tags.monospace, color: "var(--accent-deep)", backgroundColor: "var(--panel-sunken)" },
   ]);
 
   let { identity, file, mode, onSave, onToast }: {

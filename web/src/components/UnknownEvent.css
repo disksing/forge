@@ -16,7 +16,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #4a5560;
+  color: var(--muted-strong);
 }
 
 :where([data-component-owner="event-timeline"]) .agent-unknown-event pre {
@@ -25,8 +25,8 @@
   overflow: auto;
   padding: 9px;
   border-radius: 4px;
-  background: #232a33;
-  color: #d6dde5;
+  background: var(--text);
+  color: var(--line);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: calc(11px * var(--chat-font-scale, 1));
   line-height: 1.5;

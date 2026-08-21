@@ -6,9 +6,9 @@
   justify-content: space-between;
   gap: 16px;
   min-height: 58px;
-  border: 1px solid #dcdfe4;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   padding: 12px;
 }
 
@@ -19,13 +19,13 @@
 }
 
 :where([data-component-owner="notification-settings-panel"]) .settings-notification-copy strong {
-  color: #2c3e50;
+  color: var(--ink);
   font-size: 13px;
 }
 
 :where([data-component-owner="notification-settings-panel"]) .settings-notification-copy small,
 :where([data-component-owner="notification-settings-panel"]) .settings-notification-help {
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
 }

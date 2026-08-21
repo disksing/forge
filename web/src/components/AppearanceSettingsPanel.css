@@ -18,14 +18,14 @@
   gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
   color: var(--muted);
   padding: 12px;
   text-align: left;
 }
 
 :where([data-component-owner="appearance-settings-panel"]) .layout-option:hover {
-  border-color: #c3c9d1;
+  border-color: var(--line-strong);
   color: var(--text);
 }
 
@@ -135,7 +135,7 @@
 }
 
 :where([data-component-owner="appearance-settings-panel"]) .font-scale-label {
-  color: #2b3440;
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
 }

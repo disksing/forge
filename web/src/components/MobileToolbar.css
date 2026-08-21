@@ -14,7 +14,7 @@ body[data-layout="split"] :where([data-component-owner="mobile-toolbar"]).mobile
   /* Keep the backdrop's hit area outside the drawer. Otherwise an accessible
      click on its full-viewport button can land on the drawer content above it. */
   inset: 0 0 0 min(86vw, 340px);
-  background: rgba(34, 49, 63, 0.42);
+  background: var(--backdrop);
 }
 
 body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {
@@ -35,7 +35,7 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
     padding: 4px 10px;
     padding-top: calc(4px + env(safe-area-inset-top, 0px));
     border-bottom: 1px solid var(--line);
-    background: #fff;
+    background: var(--panel);
   }
 
   :where([data-component-owner="mobile-toolbar"]) .mobile-icon-button {
@@ -54,7 +54,7 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
     grid-template-columns: 1fr 1fr;
     padding: 3px;
     border-radius: 6px;
-    background: #dcdfe4;
+    background: var(--line);
   }
 
   :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button {
@@ -67,7 +67,7 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
   }
 
   :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button[aria-selected="true"] {
-    background: #fff;
+    background: var(--panel);
     color: var(--accent);
   }
 
@@ -78,7 +78,7 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
        the button's hit area. This keeps its center outside the drawer even at
        the minimum supported mobile width. */
     inset: 0 0 0 min(86vw, 340px);
-    background: rgba(34, 49, 63, 0.42);
+    background: var(--backdrop);
   }
 
   :where(body).mobile-sidebar-open :where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {

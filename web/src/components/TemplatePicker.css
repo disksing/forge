@@ -29,7 +29,7 @@
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   color: var(--text);
   font-size: calc(13px * var(--details-font-scale, 1));
   font-weight: 400;
@@ -39,8 +39,8 @@
 }
 
 :where([data-component-owner="template-picker"]) .template-card:hover:not(:disabled) {
-  border-color: #c3c9d1;
-  background: #fff;
+  border-color: var(--line-strong);
+  background: var(--panel);
   color: var(--text);
 }
 
@@ -71,7 +71,7 @@
   justify-content: center;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--panel);
 }
 
 :where([data-component-owner="template-picker"]) .template-card-check svg {

@@ -2,10 +2,10 @@
   margin: 14px 0;
   padding: 4px 0 4px 12px;
   border: 0;
-  border-left: 3px solid #dfe4ea;
+  border-left: 3px solid var(--line-soft);
   border-radius: 0;
   background: transparent;
-  color: #2b3440;
+  color: var(--text);
 }
 
 :where([data-component-owner="event-timeline"]) .timeline-notice.timeline-notice-error { border-left-color: var(--red); }
@@ -38,11 +38,11 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #647181;
+  color: var(--muted);
   cursor: pointer;
 }
 
-:where([data-component-owner="event-timeline"]) .timeline-notice-dismiss:hover { background: #edf1f4; color: #253040; }
+:where([data-component-owner="event-timeline"]) .timeline-notice-dismiss:hover { background: var(--panel-sunken); color: var(--text); }
 :where([data-component-owner="event-timeline"]) .timeline-notice-dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :where([data-component-owner="event-timeline"]) .timeline-notice-dismiss svg { width: 16px; height: 16px; }
 
@@ -50,7 +50,7 @@
   margin: 6px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #5c6b7a;
+  color: var(--muted);
   font-family: inherit;
   font-size: calc(12px * var(--chat-font-scale, 1));
   line-height: 1.5;

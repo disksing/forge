@@ -12,7 +12,7 @@
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(34, 49, 63, 0.42);
+  background: var(--backdrop);
   backdrop-filter: blur(3px);
 }
 
@@ -22,9 +22,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #c3c9d1;
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
 }
 
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-header {
@@ -41,7 +41,7 @@
   flex: 0 0 auto;
   width: 20px;
   height: 20px;
-  color: #2980b9;
+  color: var(--blue);
 }
 
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-icon svg {
@@ -50,7 +50,7 @@
 }
 
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-icon-danger {
-  color: #e74c3c;
+  color: var(--accent);
 }
 
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-header strong {
@@ -64,7 +64,7 @@
 
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-content p {
   margin: 0;
-  color: #4a5560;
+  color: var(--muted-strong);
   font-size: 13px;
   line-height: 1.55;
   overflow-wrap: anywhere;
@@ -87,12 +87,12 @@
 }
 
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-confirm {
-  background: #2980b9;
-  color: #fff;
+  background: var(--blue);
+  color: var(--panel);
 }
 
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-confirm-danger {
-  background: #e74c3c;
+  background: var(--accent);
 }
 
 @media (max-width:980px) {

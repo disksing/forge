@@ -20,19 +20,19 @@
   display: flex;
   flex-direction: column;
   background: var(--ink);
-  color: #d3dbe3;
+  color: var(--line-strong);
 }
 :where([data-component-owner="app-shell"]) .sidebar,
 :where([data-component-owner="app-shell"]) .sidebar * {
-  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+  scrollbar-color: var(--ink-line) transparent;
 }
 
 :where([data-component-owner="app-shell"]) .sidebar ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--ink-line);
 }
 
 :where([data-component-owner="app-shell"]) .sidebar ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.38);
+  background: var(--ink-line-strong);
 }
 
 :where([data-component-owner="app-shell"]) .brand-band {
@@ -51,7 +51,7 @@
   place-items: center;
   border-radius: 4px;
   background: var(--accent);
-  color: #fff;
+  color: var(--panel);
   font-size: calc(12px * var(--sidebar-font-scale, 1));
   font-weight: 700;
 }
@@ -65,7 +65,7 @@
 }
 
 :where([data-component-owner="app-shell"]) .brand-copy strong {
-  color: #fff;
+  color: var(--panel);
   font-size: calc(15px * var(--sidebar-font-scale, 1));
 }
 
@@ -95,18 +95,18 @@
   gap: 3px;
   padding: 0 6px;
   border-radius: 6px;
-  background: rgba(245, 158, 11, 0.16);
-  color: #fbbf24;
+  background: var(--amber-soft-on-dark);
+  color: var(--amber-bright);
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor.has-errors {
-  background: rgba(239, 68, 68, 0.17);
-  color: #f87171;
+  background: var(--red-soft-on-dark);
+  color: var(--accent-bright);
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor:hover {
-  background: rgba(255, 255, 255, 0.11);
-  color: #fff;
+  background: var(--ink-hover);
+  color: var(--panel);
 }
 
 :where([data-component-owner="app-shell"]) .brand-doctor svg {
@@ -121,7 +121,7 @@
 
 :where([data-component-owner="app-shell"]) .brand-settings:hover {
   background: var(--ink-row);
-  color: #fff;
+  color: var(--panel);
 }
 
 :where([data-component-owner="app-shell"]) .brand-settings svg {
@@ -131,7 +131,7 @@
 
 :where([data-component-owner="app-shell"]) .workspace-card {
   margin: 10px 12px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--ink-hover);
   border-radius: 10px;
   background: var(--ink-deep);
 }
@@ -143,7 +143,7 @@
   grid-template-columns: minmax(var(--details-min-width), 1fr) var(--pane-handle-width)
   minmax(var(--chat-min-width), min(var(--chat-width), calc(100% - var(--details-min-width) - var(--pane-handle-width))));
   overflow: hidden;
-  background: #fff;
+  background: var(--panel);
 }
 
 :where([data-component-owner="app-shell"]) .workspace-view-tabs,
@@ -173,7 +173,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--panel);
 }
 
 :where([data-component-owner="app-shell"]) .chat-timeline {
@@ -234,7 +234,7 @@ body[data-layout="two"] :where([data-component-owner="app-shell"]) .workspace-vi
   align-items: center;
   padding: 6px 12px;
   border-bottom: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
 }
 :where([data-component-owner="app-shell"]) .workspace-view-switcher {
   display: grid;
@@ -242,7 +242,7 @@ body[data-layout="two"] :where([data-component-owner="app-shell"]) .workspace-vi
   width: min(320px, 100%);
   padding: 3px;
   border-radius: 6px;
-  background: #dcdfe4;
+  background: var(--line);
 }
 :where([data-component-owner="app-shell"]) .workspace-view-switcher button {
   min-height: 30px;
@@ -253,7 +253,7 @@ body[data-layout="two"] :where([data-component-owner="app-shell"]) .workspace-vi
   font-weight: 700;
 }
 :where([data-component-owner="app-shell"]) .workspace-view-switcher button[aria-selected="true"] {
-  background: #fff;
+  background: var(--panel);
   color: var(--accent);
 }
 :where([data-component-owner="app-shell"]) .workspace-view-switcher {
@@ -308,7 +308,7 @@ body[data-layout="split"] :where([data-component-owner="app-shell"]) .workspace-
   justify-content: space-between;
   padding: 6px 12px;
   border-bottom: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
 }
 body[data-layout="split"] :where([data-component-owner="app-shell"]) .details-panel {
   grid-column: 1;
@@ -404,7 +404,7 @@ body[data-layout="split"] :where([data-component-owner="app-shell"]) .agent-pane
   }
   :where([data-component-owner="app-shell"]) .chat-composer {
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: #fff;
+    background: var(--panel);
   }
 }
 

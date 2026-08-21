@@ -8,7 +8,7 @@
   margin: 4px 0;
   border: 0;
   padding: 0;
-  color: #5c6b7a;
+  color: var(--muted);
   font-size: calc(11.5px * var(--chat-font-scale, 1));
 }
 
@@ -35,13 +35,13 @@
 
 :where([data-component-owner="event-timeline"]) .agent-activity-icon svg,
 :where([data-component-owner="event-timeline"]) .agent-activity-chevron svg { width: 14px; height: 14px; }
-:where([data-component-owner="event-timeline"]) .agent-activity-icon { color: #8a97a5; }
-:where([data-component-owner="event-timeline"]) .agent-activity-title { flex: 0 0 auto; color: #4a5560; font-weight: 700; }
+:where([data-component-owner="event-timeline"]) .agent-activity-icon { color: var(--faint); }
+:where([data-component-owner="event-timeline"]) .agent-activity-title { flex: 0 0 auto; color: var(--muted-strong); font-weight: 700; }
 
 :where([data-component-owner="event-timeline"]) .agent-activity-preview {
   min-width: 0;
   overflow: hidden;
-  color: #8a97a5;
+  color: var(--faint);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -72,7 +72,7 @@
   align-items: center;
   gap: 7px;
   padding: 5px 0;
-  color: #657383;
+  color: var(--muted);
   font-weight: 700;
 }
 
@@ -101,7 +101,7 @@
 :where([data-component-owner="event-timeline"]) .agent-activity-thought p {
   margin: 0;
   padding: 0 0 7px 21px;
-  color: #5c6b7a;
+  color: var(--muted);
   line-height: 1.55;
   overflow-wrap: anywhere;
   white-space: pre-wrap;

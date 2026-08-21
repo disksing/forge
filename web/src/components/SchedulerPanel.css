@@ -1,8 +1,8 @@
 .scheduler-settings-card,
 .schedule-editor,
 .schedule-list article {
-  background: var(--surface-raised, #fff);
-  border: 1px solid var(--border-subtle, #dfe4eb);
+  background: var(--surface-raised, var(--panel));
+  border: 1px solid var(--border-subtle, var(--line-soft));
   border-radius: 10px;
 }
 
@@ -25,13 +25,13 @@
 .schedule-editor-heading { align-items: flex-start; display: flex; gap: 12px; }
 .schedule-editor label { display: grid; gap: 5px; }
 .schedule-editor label > span { color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.schedule-field-error { color: var(--red, #c0392b); font-size: 12px; }
-.schedule-editor input[aria-invalid="true"] { border-color: var(--red, #c0392b); }
+.schedule-field-error { color: var(--red, var(--accent-deep)); font-size: 12px; }
+.schedule-editor input[aria-invalid="true"] { border-color: var(--red, var(--accent-deep)); }
 .schedule-editor input,
 .schedule-editor textarea,
 .scheduler-settings-card input {
-  background: var(--surface, #fff);
-  border: 1px solid var(--border-subtle, #ccd4df);
+  background: var(--surface, var(--panel));
+  border: 1px solid var(--border-subtle, var(--line-strong));
   border-radius: 7px;
   color: inherit;
   font: inherit;
@@ -42,9 +42,9 @@
 .schedule-editor > button { justify-self: start; }
 .schedule-editor > button {
   align-items: center;
-  background: var(--accent, #e74c3c);
+  background: var(--accent, var(--accent));
   border-radius: 7px;
-  color: #fff;
+  color: var(--panel);
   display: inline-flex;
   gap: 7px;
   min-height: 44px;
@@ -73,12 +73,12 @@
 .schedule-editor > button.busy .schedule-icon-busy {
   display: inline-flex;
 }
-.schedule-list .danger { color: var(--red, #c0392b); }
+.schedule-list .danger { color: var(--red, var(--accent-deep)); }
 
 .schedule-list { display: grid; gap: 10px; min-width: 0; }
 .schedule-list > * { min-width: 0; }
 .schedule-list article { padding: 13px; }
-.schedule-list article.editing { border-color: var(--accent, #478ac9); box-shadow: 0 0 0 1px var(--accent, #478ac9); }
+.schedule-list article.editing { border-color: var(--accent, var(--blue)); box-shadow: 0 0 0 1px var(--accent, var(--blue)); }
 .schedule-list header { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }
 .schedule-list header > div { align-items: flex-start; display: flex; gap: 7px; min-width: 0; }
 .schedule-list header > div:first-child { flex: 1 1 auto; }

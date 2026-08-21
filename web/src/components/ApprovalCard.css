@@ -5,7 +5,7 @@
   border-left: 3px solid var(--amber);
   border-radius: 0;
   background: transparent;
-  color: #2b3440;
+  color: var(--text);
 }
 
 :where([data-component-owner="event-timeline"]) .agent-event.approval>div:first-child { display: flex; align-items: center; gap: 7px; min-width: 0; }
@@ -15,7 +15,7 @@
   margin: 6px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #5c6b7a;
+  color: var(--muted);
   font-family: inherit;
   font-size: calc(12px * var(--chat-font-scale, 1));
   line-height: 1.5;
@@ -31,7 +31,7 @@
   border: 1px solid var(--ink);
   border-radius: 4px;
   background: var(--ink);
-  color: #fff;
+  color: var(--panel);
   padding: 0 11px;
   font-size: calc(13px * var(--chat-font-scale, 1));
   font-weight: 700;
@@ -40,9 +40,9 @@
 :where([data-component-owner="event-timeline"]) .approval-actions { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 8px; }
 
 :where([data-component-owner="event-timeline"]) .approval-actions .secondary-button,
-:where([data-component-owner="event-timeline"]) .approval-options .secondary-button { border: 1px solid #d3d9e0; background: transparent; color: #4a5560; }
+:where([data-component-owner="event-timeline"]) .approval-options .secondary-button { border: 1px solid var(--line); background: transparent; color: var(--muted-strong); }
 
-:where([data-component-owner="event-timeline"]) .agent-event.approval .approval-question { color: #2b3440; font-family: inherit; font-size: calc(13px * var(--chat-font-scale, 1)); }
+:where([data-component-owner="event-timeline"]) .agent-event.approval .approval-question { color: var(--text); font-family: inherit; font-size: calc(13px * var(--chat-font-scale, 1)); }
 :where([data-component-owner="event-timeline"]) .approval-options { margin-top: 9px; display: grid; gap: 7px; }
 :where([data-component-owner="event-timeline"]) .approval-options button { justify-content: flex-start; min-height: 34px; text-align: left; }
 :where([data-component-owner="event-timeline"]) .approval-reply { margin-top: 9px; display: flex; gap: 7px; }
@@ -50,11 +50,11 @@
 :where([data-component-owner="event-timeline"]) .approval-reply input {
   min-width: 0;
   flex: 1;
-  border: 1px solid #d3d9e0;
+  border: 1px solid var(--line);
   border-radius: 4px;
   padding: 6px 8px;
-  background: #fff;
-  color: #2b3440;
+  background: var(--panel);
+  color: var(--text);
   font: inherit;
 }
 
