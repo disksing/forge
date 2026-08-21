@@ -143,9 +143,10 @@
   border-radius: 2px;
 }
 
-/* dialogs: heavier black frame with a flat registration offset; the rough
-   stencil edge filter itself lives in static/index.html because
-   url(#...) in an external stylesheet resolves against the CSS URL */
+/* dialogs: heavier black frame with a flat registration offset. An earlier
+   feDisplacementMap stencil edge was removed: filter on a dialog makes it
+   the containing block for position:fixed descendants, which breaks the
+   agent-binding menu's viewport anchoring inside these dialogs. */
 :root[data-theme="riso"] :is(.create-dialog, .upload-dialog, .file-modal, .settings-modal, .confirm-dialog, .diff-modal) {
   border: 2px solid #1a1a1a;
   border-radius: 2px;

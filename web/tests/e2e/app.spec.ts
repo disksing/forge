@@ -1683,6 +1683,41 @@ test("creates and starts a task with a chosen agent from the wizard", async ({ p
   await expect(page).toHaveURL(/project1\.task3/);
 });
 
+test("anchors the wizard binding menu to its trigger under the Riso theme", async ({ page }) => {
+  // The Riso theme once applied an feDisplacementMap filter to dialogs; a
+  // filtered ancestor becomes the containing block for position:fixed
+  // children, which stranded the fixed binding menu against the dialog edge
+  // instead of the trigger.
+  await page.addInitScript(() => window.localStorage.setItem("pua.web.themePreference", "riso"));
+  await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+  await page.getByRole("button", { name: "New Task" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Create task" });
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.locator('input[name="title"]').fill("Riso binding anchor");
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await dialog.getByRole("radio", { name: /Create and start/ }).click();
+
+  const trigger = dialog.getByRole("button", { name: "Start agent" });
+  await trigger.click();
+  const menu = page.getByRole("listbox", { name: "Start agent" });
+  await expect(menu).toBeVisible();
+
+  const triggerBox = (await trigger.boundingBox())!;
+  const menuBox = (await menu.boundingBox())!;
+  // Right edges align and the menu hugs the trigger on either side (viewport
+  // coordinates), with every option reachable.
+  expect(Math.abs(menuBox.x + menuBox.width - (triggerBox.x + triggerBox.width))).toBeLessThanOrEqual(2);
+  const below = Math.abs(menuBox.y - (triggerBox.y + triggerBox.height + 6));
+  const above = Math.abs(menuBox.y + menuBox.height - (triggerBox.y - 6));
+  expect(Math.min(below, above)).toBeLessThanOrEqual(2);
+  for (const option of await menu.getByRole("option").all()) {
+    await expect(option).toBeInViewport();
+  }
+});
+
 test("keeps the Create task wizard usable across desktop and mobile layouts", async ({ page }) => {
   await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");
