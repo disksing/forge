@@ -32,10 +32,10 @@
 :where([data-component-owner][data-settings-panel]).settings-agent-panel select {
   height: 36px;
   min-width: 0;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
-  color: var(--ink);
+  color: var(--text);
   padding: 0 10px;
   font: inherit;
 }
