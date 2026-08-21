@@ -29,6 +29,8 @@ const (
 	backendFileName   = "pua"
 	defaultProbePath  = "/api/workspaces"
 	defaultStartDelay = 100 * time.Millisecond
+	pathBlockStart    = "# >>> PUA desktop managed PATH >>>"
+	pathBlockEnd      = "# <<< PUA desktop managed PATH <<<"
 )
 
 // Options controls how the desktop shell finds and starts the PUA backend.
@@ -37,6 +39,8 @@ type Options struct {
 	ConfigPath     string
 	AppSupportDir  string
 	BackendPath    string
+	CLIPath        string
+	ShellProfile   string
 	StartupTimeout time.Duration
 	HTTPClient     *http.Client
 }
@@ -91,6 +95,8 @@ func DefaultOptions() (Options, error) {
 		ConfigPath:     configPath,
 		AppSupportDir:  appSupport,
 		BackendPath:    os.Getenv("PUA_DESKTOP_BACKEND"),
+		CLIPath:        envOrDefault("PUA_DESKTOP_CLI_PATH", filepath.Join(home, ".pua", "bin", backendFileName)),
+		ShellProfile:   envOrDefault("PUA_DESKTOP_SHELL_PROFILE", defaultShellProfile(home)),
 		StartupTimeout: 30 * time.Second,
 		HTTPClient:     &http.Client{Timeout: 2 * time.Second},
 	}, nil
@@ -105,10 +111,16 @@ func Ensure(ctx context.Context, options Options) (Result, error) {
 
 	if result, ok := discoverExisting(ctx, options); ok {
 		if !result.Managed {
+			if err := installBundledCLI(options); err != nil {
+				return Result{}, err
+			}
 			return result, nil
 		}
 		backendPath, digest, err := selectBackend(options)
 		if err != nil {
+			return Result{}, err
+		}
+		if err := installCLI(options, backendPath); err != nil {
 			return Result{}, err
 		}
 		if result.Digest == digest {
@@ -122,6 +134,9 @@ func Ensure(ctx context.Context, options Options) (Result, error) {
 
 	backendPath, digest, err := selectBackend(options)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := installCLI(options, backendPath); err != nil {
 		return Result{}, err
 	}
 	return startBackend(ctx, options, backendPath, digest)
@@ -264,6 +279,41 @@ func installBackend(options Options, source string) (string, string, error) {
 	return destination, digest, nil
 }
 
+func installBundledCLI(options Options) error {
+	if options.CLIPath == "" {
+		return nil
+	}
+	backendPath, _, err := selectBackend(options)
+	if err != nil {
+		return err
+	}
+	return installCLI(options, backendPath)
+}
+
+func installCLI(options Options, source string) error {
+	if options.CLIPath == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(options.CLIPath), 0o700); err != nil {
+		return fmt.Errorf("create PUA CLI directory: %w", err)
+	}
+	sourceDigest, err := fileDigest(source)
+	if err != nil {
+		return fmt.Errorf("hash PUA CLI source: %w", err)
+	}
+	if installedDigest, digestErr := fileDigest(options.CLIPath); digestErr != nil || installedDigest != sourceDigest {
+		if err := copyExecutable(source, options.CLIPath); err != nil {
+			return fmt.Errorf("install PUA CLI: %w", err)
+		}
+	}
+	if options.ShellProfile != "" {
+		if err := ensureShellPath(options.ShellProfile, filepath.Dir(options.CLIPath)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func startBackend(ctx context.Context, options Options, backendPath, digest string) (Result, error) {
 	if err := os.MkdirAll(filepath.Dir(options.ConfigPath), 0o700); err != nil {
 		return Result{}, fmt.Errorf("create PUA config directory: %w", err)
@@ -279,6 +329,9 @@ func startBackend(ctx context.Context, options Options, backendPath, digest stri
 
 	command := exec.Command(backendPath, "serve", "--addr="+options.Address, "--no-default-workspace")
 	command.Env = replaceEnv(os.Environ(), "PUA_SERVE_CONFIG", options.ConfigPath)
+	if options.CLIPath != "" {
+		command.Env = prependEnvPath(command.Env, filepath.Dir(options.CLIPath))
+	}
 	command.Stdout = logFile
 	command.Stderr = logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -359,6 +412,73 @@ func stopManagedBackend(ctx context.Context, options Options, result Result) err
 		}
 	}
 	return nil
+}
+
+// StopManaged gracefully stops a backend only when it is still owned by this
+// desktop installation. External PUA processes are never stopped.
+func StopManaged(ctx context.Context, options Options, result Result) error {
+	options = withDefaults(options)
+	if !result.Managed {
+		return nil
+	}
+	return stopManagedBackend(ctx, options, result)
+}
+
+// ActiveTurnCount reports resources with an active turn across all configured
+// Workspaces. It uses the same public API that drives the desktop activity UI.
+func ActiveTurnCount(ctx context.Context, options Options, result Result) (int, error) {
+	options = withDefaults(options)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(result.URL, "/")+defaultProbePath, nil)
+	if err != nil {
+		return 0, err
+	}
+	response, err := options.HTTPClient.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("read PUA workspaces: HTTP %d", response.StatusCode)
+	}
+	var workspaces struct {
+		Workspaces []struct {
+			ID string `json:"id"`
+		} `json:"workspaces"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&workspaces); err != nil {
+		return 0, fmt.Errorf("decode PUA workspaces: %w", err)
+	}
+
+	count := 0
+	for _, workspace := range workspaces.Workspaces {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			strings.TrimRight(result.URL, "/")+"/api/workspaces/"+url.PathEscape(workspace.ID)+"/tree", nil)
+		if err != nil {
+			return 0, err
+		}
+		response, err := options.HTTPClient.Do(request)
+		if err != nil {
+			return 0, err
+		}
+		var tree struct {
+			Activity struct {
+				Running []json.RawMessage `json:"running"`
+			} `json:"activity"`
+		}
+		decodeErr := json.NewDecoder(response.Body).Decode(&tree)
+		closeErr := response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return 0, fmt.Errorf("read Workspace %q activity: HTTP %d", workspace.ID, response.StatusCode)
+		}
+		if decodeErr != nil {
+			return 0, fmt.Errorf("decode Workspace %q activity: %w", workspace.ID, decodeErr)
+		}
+		if closeErr != nil {
+			return 0, fmt.Errorf("close Workspace %q activity response: %w", workspace.ID, closeErr)
+		}
+		count += len(tree.Activity.Running)
+	}
+	return count, nil
 }
 
 func healthy(ctx context.Context, client *http.Client, endpoint string) bool {
@@ -501,6 +621,91 @@ func replaceEnv(environ []string, key, value string) []string {
 	return append(result, prefix+value)
 }
 
+func prependEnvPath(environ []string, directory string) []string {
+	current := ""
+	for _, entry := range environ {
+		if strings.HasPrefix(entry, "PATH=") {
+			current = strings.TrimPrefix(entry, "PATH=")
+			break
+		}
+	}
+	for _, entry := range filepath.SplitList(current) {
+		if entry == directory {
+			return environ
+		}
+	}
+	if current == "" {
+		return replaceEnv(environ, "PATH", directory)
+	}
+	return replaceEnv(environ, "PATH", directory+string(os.PathListSeparator)+current)
+}
+
+func ensureShellPath(profilePath, directory string) error {
+	if info, err := os.Lstat(profilePath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		resolved, resolveErr := filepath.EvalSymlinks(profilePath)
+		if resolveErr != nil {
+			return fmt.Errorf("resolve shell profile symlink: %w", resolveErr)
+		}
+		profilePath = resolved
+	}
+	data, err := os.ReadFile(profilePath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read shell profile: %w", err)
+	}
+	content := string(data)
+	start := strings.Index(content, pathBlockStart)
+	end := strings.Index(content, pathBlockEnd)
+	if start >= 0 && end >= start {
+		end += len(pathBlockEnd)
+		content = strings.TrimRight(content[:start], "\n") + strings.TrimLeft(content[end:], "\n")
+	}
+	block := pathBlockStart + "\nexport PATH=" + strconv.Quote(directory+":$PATH") + "\n" + pathBlockEnd
+	content = strings.TrimRight(content, "\n")
+	if content != "" {
+		content += "\n\n"
+	}
+	content += block + "\n"
+	if string(data) == content {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(profilePath), 0o700); err != nil {
+		return fmt.Errorf("create shell profile directory: %w", err)
+	}
+	mode := os.FileMode(0o644)
+	if info, statErr := os.Stat(profilePath); statErr == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := writeFileAtomic(profilePath, []byte(content), mode); err != nil {
+		return fmt.Errorf("update shell PATH: %w", err)
+	}
+	return nil
+}
+
+func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".pua-desktop-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(mode); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
+}
+
 func manifestPath(options Options) string {
 	return filepath.Join(options.AppSupportDir, "backend", "current.json")
 }
@@ -514,4 +719,11 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func defaultShellProfile(home string) string {
+	if filepath.Base(os.Getenv("SHELL")) == "bash" {
+		return filepath.Join(home, ".bash_profile")
+	}
+	return filepath.Join(home, ".zprofile")
 }

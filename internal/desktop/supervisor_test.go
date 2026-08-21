@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -129,6 +130,102 @@ func TestSelectBundledBackendReplacesOlderCurrentManifest(t *testing.T) {
 	}
 	if actual, err := os.ReadFile(selected); err != nil || string(actual) != "backend-v2" {
 		t.Fatalf("selected backend content = %q, %v", actual, err)
+	}
+}
+
+func TestInstallCLIUpdatesStableBinaryAndShellPathIdempotently(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	source := filepath.Join(temporary, "source-pua")
+	cliPath := filepath.Join(temporary, ".pua", "bin", "pua")
+	profileTarget := filepath.Join(temporary, "dotfiles", "zprofile")
+	profilePath := filepath.Join(temporary, ".zprofile")
+	if err := os.WriteFile(source, []byte("desktop-cli"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(profileTarget), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profileTarget, []byte("export EDITOR=vim\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(profileTarget, profilePath); err != nil {
+		t.Fatal(err)
+	}
+	options := Options{CLIPath: cliPath, ShellProfile: profilePath}
+	if err := installCLI(options, source); err != nil {
+		t.Fatal(err)
+	}
+	if err := installCLI(options, source); err != nil {
+		t.Fatal(err)
+	}
+
+	installed, err := os.ReadFile(cliPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(installed) != "desktop-cli" {
+		t.Fatalf("CLI content = %q", installed)
+	}
+	info, err := os.Stat(cliPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("CLI mode = %o, want 755", info.Mode().Perm())
+	}
+	profile, err := os.ReadFile(profileTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(profile), pathBlockStart) != 1 || strings.Count(string(profile), pathBlockEnd) != 1 {
+		t.Fatalf("managed PATH block was duplicated:\n%s", profile)
+	}
+	wantExport := "export PATH=\"" + filepath.Dir(cliPath) + ":$PATH\""
+	if !strings.Contains(string(profile), "export EDITOR=vim") || !strings.Contains(string(profile), wantExport) {
+		t.Fatalf("shell profile was not preserved and updated:\n%s", profile)
+	}
+	if info, err := os.Stat(profileTarget); err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("shell profile mode changed: info=%v err=%v", info, err)
+	}
+	if info, err := os.Lstat(profilePath); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("shell profile symlink was replaced: info=%v err=%v", info, err)
+	}
+}
+
+func TestPrependEnvPath(t *testing.T) {
+	t.Parallel()
+	environ := []string{"HOME=/tmp/home", "PATH=/usr/bin:/bin"}
+	updated := prependEnvPath(environ, "/tmp/home/.pua/bin")
+	if want := "PATH=/tmp/home/.pua/bin:/usr/bin:/bin"; !slices.Contains(updated, want) {
+		t.Fatalf("PATH not prepended: %v", updated)
+	}
+	if repeated := prependEnvPath(updated, "/tmp/home/.pua/bin"); !slices.Equal(repeated, updated) {
+		t.Fatalf("PATH prepend was not idempotent: %v", repeated)
+	}
+}
+
+func TestActiveTurnCount(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/workspaces", func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{"workspaces":[{"id":"one"},{"id":"two"}]}`))
+	})
+	mux.HandleFunc("/api/workspaces/one/tree", func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{"activity":{"running":[{},{}]}}`))
+	})
+	mux.HandleFunc("/api/workspaces/two/tree", func(response http.ResponseWriter, request *http.Request) {
+		_, _ = response.Write([]byte(`{"activity":{"running":[{}]}}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	count, err := ActiveTurnCount(context.Background(), Options{HTTPClient: server.Client()}, Result{URL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("active turn count = %d, want 3", count)
 	}
 }
 
@@ -298,6 +395,8 @@ func TestEnsureStartsRealBackend(t *testing.T) {
 		ConfigPath:     filepath.Join(temporary, "pua", "serve.json"),
 		AppSupportDir:  filepath.Join(temporary, "desktop"),
 		BackendPath:    backend,
+		CLIPath:        filepath.Join(temporary, ".pua", "bin", "pua"),
+		ShellProfile:   filepath.Join(temporary, ".zprofile"),
 		StartupTimeout: 30 * time.Second,
 		HTTPClient:     &http.Client{Timeout: time.Second},
 	}
@@ -334,6 +433,20 @@ func TestEnsureStartsRealBackend(t *testing.T) {
 	}
 	if !strings.HasPrefix(result.BackendPath, filepath.Join(options.AppSupportDir, "backend", "versions")) {
 		t.Fatalf("backend was not launched from the versioned runtime: %q", result.BackendPath)
+	}
+	cliDigest, err := fileDigest(options.CLIPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cliDigest != result.Digest {
+		t.Fatalf("installed CLI digest = %q, want %q", cliDigest, result.Digest)
+	}
+	profile, err := os.ReadFile(options.ShellProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(profile), filepath.Dir(options.CLIPath)) {
+		t.Fatalf("shell profile does not contain CLI path:\n%s", profile)
 	}
 
 	state, ok := readJSON[backendState](statePath(options))
