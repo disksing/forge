@@ -23,14 +23,16 @@ describe("theme controller", () => {
     const options = themeOptions();
     expect(options.length).toBeGreaterThan(0);
     expect(options[0].id).toBe(DEFAULT_THEME_ID);
+    expect(options.map((option) => option.id)).toContain("riso");
     expect(options.every((option) => option.label && option.description)).toBe(true);
   });
 
   it("normalizes unknown or missing preferences back to the default theme", () => {
     expect(normalizeThemePreference(undefined)).toBe(DEFAULT_THEME_ID);
     expect(normalizeThemePreference(null)).toBe(DEFAULT_THEME_ID);
-    expect(normalizeThemePreference("riso")).toBe(DEFAULT_THEME_ID);
+    expect(normalizeThemePreference("bogus")).toBe(DEFAULT_THEME_ID);
     expect(normalizeThemePreference(DEFAULT_THEME_ID)).toBe(DEFAULT_THEME_ID);
+    expect(normalizeThemePreference("riso")).toBe("riso");
   });
 
   it("reads the stored preference defensively", () => {
@@ -66,17 +68,20 @@ describe("theme controller", () => {
     const onChange = vi.fn();
     const controller = createThemeController(onChange, storage);
     controller.initialize();
+    controller.setTheme("riso");
+    expect(storage.getItem(STORAGE_KEY)).toBe("riso");
+    expect(document.body.dataset.theme).toBe("riso");
+    expect(onChange).toHaveBeenCalledTimes(1);
     controller.setTheme(DEFAULT_THEME_ID);
     expect(storage.getItem(STORAGE_KEY)).toBe(DEFAULT_THEME_ID);
     expect(document.body.dataset.theme).toBe(DEFAULT_THEME_ID);
-    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it("ignores unregistered themes on set", () => {
     const storage = new MemoryStorage();
     const controller = createThemeController(vi.fn(), storage);
     controller.initialize();
-    controller.setTheme("riso");
+    controller.setTheme("bogus");
     expect(controller.theme()).toBe(DEFAULT_THEME_ID);
     expect(storage.getItem(STORAGE_KEY)).toBe(DEFAULT_THEME_ID);
   });

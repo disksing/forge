@@ -13,7 +13,8 @@ export const DEFAULT_THEME_ID = "default";
 // intentionally ships no overrides. Add new themes here plus a matching
 // stylesheet block (see web/src/styles/tokens.css for the token contract).
 const THEME_OPTIONS: readonly ThemeOption[] = Object.freeze([
-	{ id: DEFAULT_THEME_ID, label: "Default", description: "The standard PUA appearance" }
+	{ id: DEFAULT_THEME_ID, label: "Default", description: "The standard PUA appearance" },
+	{ id: "riso", label: "Riso", description: "Risograph print: spot inks, grain and stencil edges" }
 ]);
 
 export function themeOptions(): ThemeOption[] {

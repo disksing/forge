@@ -138,6 +138,7 @@ describe("CSS ownership", () => {
       '@import "./styles/base.css";',
       '@import "./styles/primitives.css";',
       '@import "./styles/rich-content.css";',
+      '@import "./styles/themes-riso.css";',
     ].join("\n"));
     expect(selectorHeaders(read("src/styles/base.css"))).not.toEqual(expect.arrayContaining([expect.stringMatching(/\.[a-z]/)]));
   });

@@ -22,6 +22,25 @@
       }
     </script>
     <div id="app"></div>
+    <!-- Riso theme stencil-cut edge filter. The rules referencing it must
+         live inline (not in an external stylesheet) because url(#...) in
+         external CSS resolves against the stylesheet URL. -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <filter id="riso-rough" x="-5%" y="-5%" width="110%" height="110%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="7" result="t" />
+        <feDisplacementMap in="SourceGraphic" in2="t" scale="3" />
+      </filter>
+    </svg>
+    <style>
+      body[data-theme="riso"] .create-dialog,
+      body[data-theme="riso"] .upload-dialog,
+      body[data-theme="riso"] .file-modal,
+      body[data-theme="riso"] .settings-modal,
+      body[data-theme="riso"] .confirm-dialog,
+      body[data-theme="riso"] .diff-modal {
+        filter: url(#riso-rough);
+      }
+    </style>
     <script src="/vendor/lucide/lucide.min.js"></script>
     <script src="/vendor/diff2html/diff2html.min.js"></script>
     <script src="/vendor/dompurify/purify.min.js"></script>
