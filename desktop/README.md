@@ -12,6 +12,9 @@ serve lock 和桌面状态文件重连。这样后续可以在不替换桌面壳
 ```
 
 `backend/current.json` 指向当前版本，`backend-state.json` 记录由桌面壳启动的后端身份。
+用新版 App 替换旧版后再次启动时，桌面壳会比较包内后端和当前受管后端的 SHA-256；如果不同，
+它会再次核对 state、serve lock、PID 和 endpoint 的所有权，优雅停止旧进程并启动包内版本。
+外部启动的 PUA 不参与这一替换流程。
 如果默认 serve config lock 指向一个健康的现有 PUA，桌面壳只连接它，不把外部进程标记为
 可管理版本。新的空配置不会把 App 的工作目录误加为 Workspace，用户可以在 Web UI 中添加真实
 Workspace。默认地址固定为 `127.0.0.1:4936`，以保持浏览器 origin 和 localStorage 稳定。
@@ -34,5 +37,5 @@ open bin/PUA.app
 - `PUA_DESKTOP_ADDRESS`：覆盖监听地址，测试时应使用独立端口。
 - `PUA_SERVE_CONFIG`：覆盖 PUA serve config，测试时应指向临时目录。
 
-当前版本只实现独立进程启动、版本化安装、健康检查、重连、外部实例识别和桌面窗口生命周期。
+当前版本只实现独立进程启动、版本化安装、随 App 更新受管 bootstrap、健康检查、重连、外部实例识别和桌面窗口生命周期。
 后端升级下载、发布签名校验、活动 Turn 升级策略、失败回滚 UI，以及桌面壳自身升级不在本版范围内。

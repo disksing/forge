@@ -104,7 +104,20 @@ func Ensure(ctx context.Context, options Options) (Result, error) {
 	}
 
 	if result, ok := discoverExisting(ctx, options); ok {
-		return result, nil
+		if !result.Managed {
+			return result, nil
+		}
+		backendPath, digest, err := selectBackend(options)
+		if err != nil {
+			return Result{}, err
+		}
+		if result.Digest == digest {
+			return result, nil
+		}
+		if err := stopManagedBackend(ctx, options, result); err != nil {
+			return Result{}, err
+		}
+		return startBackend(ctx, options, backendPath, digest)
 	}
 
 	backendPath, digest, err := selectBackend(options)
@@ -174,17 +187,35 @@ func selectBackend(options Options) (string, string, error) {
 	if options.BackendPath != "" {
 		return installBackend(options, options.BackendPath)
 	}
-	if current, ok := readJSON[manifest](manifestPath(options)); ok && current.SchemaVersion == manifestVersion {
-		if digest, err := fileDigest(current.Path); err == nil && digest == current.Digest {
-			return current.Path, current.Digest, nil
-		}
-	}
 
 	source, err := bundledBackendPath()
+	if err == nil {
+		return selectBundledBackend(options, source)
+	}
+	if current, ok := validCurrentBackend(options); ok {
+		return current.Path, current.Digest, nil
+	}
+	return "", "", err
+}
+
+func selectBundledBackend(options Options, source string) (string, string, error) {
+	digest, err := fileDigest(source)
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("hash bundled PUA backend: %w", err)
+	}
+	if current, ok := validCurrentBackend(options); ok && current.Digest == digest {
+		return current.Path, current.Digest, nil
 	}
 	return installBackend(options, source)
+}
+
+func validCurrentBackend(options Options) (manifest, bool) {
+	current, ok := readJSON[manifest](manifestPath(options))
+	if !ok || current.SchemaVersion != manifestVersion {
+		return manifest{}, false
+	}
+	digest, err := fileDigest(current.Path)
+	return current, err == nil && digest == current.Digest
 }
 
 func bundledBackendPath() (string, error) {
@@ -304,6 +335,30 @@ func startBackend(ctx context.Context, options Options, backendPath, digest stri
 		case <-ticker.C:
 		}
 	}
+}
+
+func stopManagedBackend(ctx context.Context, options Options, result Result) error {
+	state, stateOK := readJSON[backendState](statePath(options))
+	lock, lockOK := readJSON[serveLock](options.ConfigPath + ".lock")
+	lockEndpoint, lockEndpointErr := endpointForAddress(lock.Address)
+	if !stateOK || state.SchemaVersion != stateVersion || !state.Managed || !lockOK || lockEndpointErr != nil ||
+		state.PID <= 0 || state.PID != result.PID || state.PID != lock.PID || state.Endpoint != result.URL || state.Endpoint != lockEndpoint {
+		return errors.New("refusing to replace PUA backend because managed process ownership changed")
+	}
+	if err := syscall.Kill(state.PID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return fmt.Errorf("stop managed PUA backend: %w", err)
+	}
+
+	ticker := time.NewTicker(defaultStartDelay)
+	defer ticker.Stop()
+	for processAlive(state.PID) {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for managed PUA backend to stop: %w", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+	return nil
 }
 
 func healthy(ctx context.Context, client *http.Client, endpoint string) bool {

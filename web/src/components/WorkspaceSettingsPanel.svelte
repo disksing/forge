@@ -33,6 +33,7 @@
   let nameEditing = $state("");
   let nameDraft = $state("");
   let nameInput = $state<HTMLInputElement | null>(null);
+  const workspaceItems = $derived(workspaces || []);
 
   const workspacePathMissing = $derived(!draft.workspacePath.trim());
 
@@ -121,7 +122,7 @@
   }
 
   function workspaceIcon(id: string): { id: string; label: string; src: string } {
-    const workspace = workspaces.find((item) => item.id === id);
+    const workspace = workspaceItems.find((item) => item.id === id);
     return workspaceIcons.find((item) => item.id === (workspace?.icon || "")) || workspaceIcons[0];
   }
 
@@ -158,7 +159,7 @@
     <button type="submit" disabled={Boolean(pending) || workspacePathMissing}><Icon name="plus" /><span>{draft.createWorkspace ? "Create" : "Add"}</span></button>
   </form>
   <div class="settings-list">
-    {#each workspaces as workspace (workspace.id)}
+    {#each workspaceItems as workspace (workspace.id)}
       {@const shownIcon = workspaceIcon(workspace.id)}
       <div class="settings-workspace-entry">
         <div class="settings-list-row">

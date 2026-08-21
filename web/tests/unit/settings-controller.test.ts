@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createSettingsController, configWithAgentHubCatalog } from "../../src/controllers/settings-controller";
+import { createSettingsController, configWithAgentHubCatalog, normalizeWorkspaceConfig } from "../../src/controllers/settings-controller";
 import type { SettingsControllerDependencies } from "../../src/controllers/settings-controller";
 import type { SettingsModel } from "../../src/components/models";
 import { createSettingsDraft } from "../../src/components/settings-draft";
@@ -127,6 +127,26 @@ describe("SettingsController", () => {
 		expect(merged.agentHubProviders).toEqual([{ id: "openai", name: "OpenAI" }]);
 		expect(merged.agentProfiles).toEqual([{ key: "default", description: "", agentName: "Codex" }]);
 		expect(base.agents).toEqual([]);
+	});
+
+	it("normalizes null arrays from persisted or older server responses", () => {
+		const malformed = {
+			activeId: "",
+			workspaces: null,
+			agents: null,
+			agentProfiles: null,
+		} as unknown as PUASettingsConfig;
+
+		expect(normalizeWorkspaceConfig(malformed)).toMatchObject({
+			workspaces: [],
+			agents: [],
+			agentProfiles: [],
+		});
+		expect(configWithAgentHubCatalog(malformed, {})).toMatchObject({
+			workspaces: [],
+			agents: [],
+			agentProfiles: [],
+		});
 	});
 
 	it("saves workspace names through the workspace endpoint and refreshes the published model", async () => {

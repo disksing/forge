@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -47,7 +48,7 @@ func TestInstallBackendIsVersionedAndReused(t *testing.T) {
 	if err := os.WriteFile(source, []byte("backend-v1"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	options := Options{AppSupportDir: filepath.Join(temporary, "support")}
+	options := Options{AppSupportDir: filepath.Join(temporary, "support"), BackendPath: source}
 
 	installed, digest, err := installBackend(options, source)
 	if err != nil {
@@ -99,6 +100,84 @@ func TestSelectBackendRepairsTamperedInstall(t *testing.T) {
 	}
 	if actualDigest != digest {
 		t.Fatalf("installed digest = %q, want %q", actualDigest, digest)
+	}
+}
+
+func TestSelectBundledBackendReplacesOlderCurrentManifest(t *testing.T) {
+	t.Parallel()
+	temporary := t.TempDir()
+	oldSource := filepath.Join(temporary, "old-pua")
+	newSource := filepath.Join(temporary, "new-pua")
+	if err := os.WriteFile(oldSource, []byte("backend-v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(newSource, []byte("backend-v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	options := Options{AppSupportDir: filepath.Join(temporary, "support")}
+	oldPath, oldDigest, err := installBackend(options, oldSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	selected, selectedDigest, err := selectBundledBackend(options, newSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected == oldPath || selectedDigest == oldDigest {
+		t.Fatalf("selected old backend (%q, %q), want bundled replacement", selected, selectedDigest)
+	}
+	if actual, err := os.ReadFile(selected); err != nil || string(actual) != "backend-v2" {
+		t.Fatalf("selected backend content = %q, %v", actual, err)
+	}
+}
+
+func TestStopManagedBackendRequiresMatchingStateAndLock(t *testing.T) {
+	temporary := t.TempDir()
+	command := exec.Command("sleep", "30")
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	processDone := make(chan error, 1)
+	go func() { processDone <- command.Wait() }()
+	processDoneRead := false
+	t.Cleanup(func() {
+		_ = command.Process.Kill()
+		if !processDoneRead {
+			<-processDone
+		}
+	})
+
+	options := Options{
+		ConfigPath:    filepath.Join(temporary, "serve.json"),
+		AppSupportDir: filepath.Join(temporary, "support"),
+	}
+	endpoint := "http://127.0.0.1:4936"
+	state := backendState{
+		SchemaVersion: stateVersion,
+		PID:           command.Process.Pid,
+		Endpoint:      endpoint,
+		BackendPath:   "/test/pua",
+		Digest:        "old-digest",
+		Managed:       true,
+	}
+	if err := writeJSONAtomic(statePath(options), state); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONAtomic(options.ConfigPath+".lock", serveLock{PID: command.Process.Pid, Address: "127.0.0.1:4936"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := stopManagedBackend(ctx, options, Result{URL: endpoint, Managed: true, PID: command.Process.Pid}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-processDone:
+		processDoneRead = true
+	case <-time.After(time.Second):
+		t.Fatal("managed backend process was not reaped")
 	}
 }
 
@@ -255,5 +334,28 @@ func TestEnsureStartsRealBackend(t *testing.T) {
 	}
 	if !strings.HasPrefix(result.BackendPath, filepath.Join(options.AppSupportDir, "backend", "versions")) {
 		t.Fatalf("backend was not launched from the versioned runtime: %q", result.BackendPath)
+	}
+
+	state, ok := readJSON[backendState](statePath(options))
+	if !ok {
+		t.Fatal("managed backend state was not written")
+	}
+	state.Digest = "outdated-bundled-backend"
+	if err := writeJSONAtomic(statePath(options), state); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := Ensure(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !upgraded.Managed || upgraded.PID <= 0 || upgraded.PID == result.PID {
+		t.Fatalf("managed backend was not replaced: before=%+v after=%+v", result, upgraded)
+	}
+	expectedDigest, err := fileDigest(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.Digest != expectedDigest {
+		t.Fatalf("upgraded digest = %q, want %q", upgraded.Digest, expectedDigest)
 	}
 }
