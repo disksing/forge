@@ -28,9 +28,9 @@
 }
 
 .primary-button:disabled {
-  border-color: var(--line);
-  background: var(--line);
-  color: var(--faint);
+  border-color: var(--disabled-bg);
+  background: var(--disabled-bg);
+  color: var(--disabled-text);
   cursor: default;
 }
 

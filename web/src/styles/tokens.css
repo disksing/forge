@@ -41,6 +41,9 @@
   /* Stronger secondary text/icon color, between --text and --muted. */
   --muted-strong: #4a5560;
   --faint: #8a97a5;
+  /* Disabled controls: filled gray, readable muted label. */
+  --disabled-bg: var(--line);
+  --disabled-text: var(--faint);
 
   /* ---- 2. hue ramps ---- */
   /* Accent (brand red). Doubles as the danger color in the default theme;

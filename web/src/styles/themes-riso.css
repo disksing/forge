@@ -18,6 +18,10 @@ body[data-theme="riso"] {
   --muted: #5a5344;
   --muted-strong: #403a2e;
   --faint: #8d8471;
+  /* Disabled controls: paper-gray fill, warm muted label (the Riso --line
+     is black ink and must not be used as a disabled fill). */
+  --disabled-bg: var(--line-soft);
+  --disabled-text: var(--muted);
 
   /* hot pink spot ink (accent / danger) */
   --accent: #ff4da6;
