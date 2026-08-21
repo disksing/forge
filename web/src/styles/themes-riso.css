@@ -301,6 +301,15 @@
   color: #1a1a1a;
 }
 
+/* settings navigation: the component fills the active tab with --line,
+   which is black ink in this theme — print the active tab as a solid ink
+   pass with paper text instead of black on black */
+:root[data-theme="riso"] [data-component-owner="settings-navigation"] .settings-tab.active,
+:root[data-theme="riso"] [data-component-owner="settings-navigation"] .settings-tab:hover {
+  background: #1a1a1a;
+  color: #f6f1e7;
+}
+
 /* segmented switchers (mobile Details/Chat, two-column view tabs): one ink
    frame split into passes, the active pass printed in sunflower */
 :root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher,
