@@ -115,7 +115,7 @@ Current runtime-backed daemon instances advertise:
 | `session.strict-stopped` | `stopped` is published only after provider exit is confirmed. |
 | `events.lossless-replay` | Durable exclusive cursors, paginated REST catch-up and gap-free SSE replay. |
 | `events.delta-merge` | Consecutive same-message text deltas are folded into one durable source Event; SSE delivers live folds as SemanticFrame append patches (`mode: "append"`) under the same cursor and re-sends the full replace frame on reconnect. |
-| `events.backward-pagination` | JSON event pages can also read the log backwards with `latest=true` or an exclusive `before` cursor. |
+| `events.backward-pagination` | JSON frame pages can also read the source log backwards with `latest=true` or an exclusive `before` cursor. |
 | `events.semantic-v1` | `/events` JSON, range and SSE expose only provider-neutral `agenthub.semantic-events.v1` frames. |
 | `event.raw-v1` | Singular `/event/{sourceEventId}` returns one exact raw source Event together with its normalized frame for diagnostics. |
 | `activity.global-sse` | Best-effort one-second activity frames across all Sessions, with no historical beep replay. |
@@ -196,57 +196,29 @@ source Event looks like:
 `id` is a durable, per-session, monotonically increasing integer cursor. A
 committed id is never reused, including across daemon restarts. `turnId` is
 present on Events that belong to a Turn. These source payloads are storage and
-diagnostic records, not the public timeline contract: `/events` always
-normalizes them into SemanticFrames, and only singular `/event/{id}` returns
-one exact source Event.
+  diagnostic records, not the public timeline contract: `/events` always
+  normalizes them into SemanticFrames, and only singular
+  `/event/{sourceEventId}` returns one exact source Event.
 
 Consecutive `message.assistant.delta` or `message.reasoning.delta` fragments
 of one provider message (same type, turn, and provider method) are folded
-into a single durable source Event instead of one Event per fragment: the Event
-keeps its original id, its `text` accumulates, its `time` tracks the newest
-fragment, and its optional `startTime` records the first fragment time.
-`startTime` is present once a delta has been folded and is omitted from
-events that contain only one fragment. Folding stops at a 32 KiB accumulated
-payload, so one long message may span several Events. REST pages and stream
-replays always serve the full accumulated semantic Event; live streams deliver
-only the new fragment in a `mode: "append"` frame under the folded cursor. See SSE
-mode below. This holds for backward pages too, so a client paging up that
-already saw a newer copy of an id (for example a live append patch) treats
-the repeated id as a full replacement, never as an append. Core event types:
+into a single durable source Event instead of one Event per fragment. The
+source Event keeps its original id, accumulates `text`, moves `time` to the
+newest fragment, and records the first fragment in optional `startTime`.
+Folding stops at a 32 KiB accumulated payload, so one long message may span
+several source Events. Public REST and replay responses always contain a full
+`mode: "replace"` SemanticFrame; only a live folded fragment uses
+`mode: "append"` under the same cursor. See the `/events` contract below.
 
-| Type | `data` payload | Meaning |
-| --- | --- | --- |
-| `session.created` | session object | The initial session snapshot, including caller-supplied `source` when present. |
-| `session.state` | `{"state": "...", "reason": "..."}` | Session state transition. `reason` is present on new `stopped` events; consumers must also accept old events without it. |
-| `session.provider` | `{"agentName", "provider", "providerSessionId"}` | The provider-native session/thread id was established; used for resume. |
-| `provider.process.started` | `{"pid", "processGroupId"}` | Internal process-group evidence used to clean up after daemon crashes. |
-| `session.agent` | `{"agentName"}` | The configured agent was renamed; the session now references the new name. |
-| `session.launch-environment` | `{"environment": {...}}` | The session's launch environment was overlaid at resume; the payload is the full merged map, replacing the projected environment. |
-| `session.archived` | — | The session was archived (moved to the archive store). |
-| `message.input` | v2: `{"schemaVersion":2,"text","payload?","steer","messageId?"}`; legacy: `{"text","role","sender?",...}` | The canonical inbound message. AgentHub treats v2 payload as opaque JSON and forwards v2 text unchanged; legacy provenance fields remain readable. |
-| `message.user` | `{"text"}` | Legacy user input event. Readers must project it as `message.input` with `role: "user"`; new writes never use this type. |
-| `message.user.steer` | `{"text"}` | Legacy steer input event. Readers must project it as `message.input` with `role: "user", "steer": true`; new writes never use this type. |
-| `turn.started` | `{}` | A turn began. This is lifecycle-only; message text and provenance come from `message.input`. |
-| `turn.completed` | `{}` | The active turn finished successfully. |
-| `turn.failed` | `{"error"}` | The active turn failed. |
-| `turn.cancelled` | `{"reason"}` | The active turn was interrupted. |
-| `approval.requested` | `{"approvalId", "method", "params"}` | The provider asks for approval; resolve it through the approvals endpoint. ACP elicitation requests carry the question in `params.toolCall` and the selectable answers in `params.options`. |
-| `approval.resolved` | `{"approvalId", "decision", "optionId?", "text?"}` | An approval was answered. `optionId` records an explicit option selection; decision `text` records a custom free-text reply. |
-| `message.assistant.delta` | `{"text"}` | Assistant output chunk. |
-| `message.reasoning.delta` | `{"text"}` | Reasoning/thinking chunk. |
-| `tool.call` | provider-neutral canonical fields plus an optional diagnostic `raw` sidecar | Tool call lifecycle (start, update, finish). Public `/events` responses always remove `raw`. |
-| `tool.event` | provider-specific legacy payload | Read-only compatibility for existing `events.jsonl`; projected as public `tool.call`. New writes never use this type. |
-| `provider.event` | `{"method", "raw"}` | Raw provider notification kept for transparency. |
-| `provider.error` | `{"message", "details"?, "willRetry"?}` | Provider process or protocol error. A Codex event with `willRetry: true` is recoverable and does not close the active turn; clients must wait for a canonical `turn.*` terminal event. |
-| `provider.stderr` | `{"text"}` | Provider stderr output. |
-| `provider.warning` | `{"message", ...}` | Non-fatal provider problem. |
-
-Providers may emit additional types over time. Consumers must ignore event
-types they do not recognize. The three `turn.*` terminal events above are
-the only canonical turn terminal signals. A preceding provider-native event
-such as `provider.turn.completed` is diagnostic only: clients must not use it
-to close a turn, and its private payload is never copied into the canonical
-terminal event.
+Source Event `type` and `data` are intentionally not a versioned public
+payload contract. Current writers persist provider-neutral `tool.call`
+records and may retain Provider input in a diagnostic `raw` sidecar. Existing
+logs can still contain provider-specific `tool.event`, legacy `message.user`
+and `message.user.steer`, and other private Provider records. AgentHub
+normalizes those records on read without rewriting `events.jsonl`; clients
+must consume the SemanticEvents contract rather than reproduce this adapter
+logic. The singular `/event/{sourceEventId}` endpoint is the only API that
+exposes one exact source payload for diagnostics.
 
 ## Endpoints
 
@@ -266,11 +238,13 @@ Daemon status, effective data paths and runtime summary.
     "events.backward-pagination",
     "events.semantic-v1",
     "event.raw-v1",
+    "activity.global-sse",
     "session.source",
     "session.source-metadata",
     "session.idempotent-create",
     "session.input-capabilities",
     "messages.idempotent",
+    "messages.at-least-once",
     "messages.opaque-payload-v2",
     "turns.stable-index",
     "turns.materialized",
@@ -680,23 +654,23 @@ curl -s -X DELETE "$BASE/v1/sessions/$SESSION" \
 Plain requests return a JSON snapshot of the log after a cursor.
 
 - **Query parameters:**
-  - `after=<event-id>` — only events with an id greater than this cursor
+  - `after=<event-id>` — only source frames with a cursor greater than this id
     (default `0`, i.e. from the beginning).
-  - `before=<event-id>` — backward pagination: the last `limit` events with
-    an id smaller than this exclusive cursor. A `before` value past the
+  - `before=<event-id>` — backward pagination: the last `limit` source frames
+    with a cursor smaller than this exclusive id. A `before` value past the
     durable head is clamped to `latestCursor+1` instead of rejected, so a
-    tail read can never silently skip future events. Mutually exclusive
+    tail read can never silently skip future frames. Mutually exclusive
     with `after` and `latest`.
   - `latest=true` — equivalent to `before=<latestCursor+1>`: returns the
-    last `limit` events of the log. Mutually exclusive with `after` and
+    last `limit` source frames of the log. Mutually exclusive with `after` and
     `before`.
-  - `limit=<n>` — maximum number of events returned (default `500`,
+  - `limit=<n>` — maximum number of source frames returned (default `500`,
     values above `1000` are clamped to the page size).
   - `start=<event-id>&end=<event-id>` — inclusive stable Event bounds for
     expanding one compact Turn item. Both are required together; paginate
     within the range with the normal exclusive `after` cursor. Ranges do not
     support backward reads or SSE.
-- **Success `200`:** events are in ascending id order in both directions.
+- **Success `200`:** frames are in ascending cursor order in both directions.
   `after` and `nextAfter` are exclusive cursors; `latestCursor` is the
   durable head captured for this response.
 
@@ -716,7 +690,7 @@ Plain requests return a JSON snapshot of the log after a cursor.
 
   Page forward with `page.nextAfter` while `page.hasMore` is true. Clients
   that need a stable catch-up target should retain the first response's
-  `latestCursor`; events appended later can be consumed by a subsequent
+  `latestCursor`; frames appended later can be consumed by a subsequent
   request or SSE.
 
   Backward pages (requested with `before` or `latest`) additionally carry
@@ -752,6 +726,66 @@ Plain requests return a JSON snapshot of the log after a cursor.
 
 每条持久化 source Event 对应一个 frame，`frame.cursor` 等于 source Event ID。`frame.events` 可以为空、包含一条或多条 semantic events；空 frame 仍推进 cursor。REST 和 reconnect replay 返回 `mode: "replace"`，live folded delta 使用 `mode: "append"` 且不推进 cursor。
 
+#### SemanticFrame 与 SemanticEvent
+
+`agenthub.semantic-events.v1` 的稳定 envelope 如下。未知字段必须忽略；
+`id` 是 opaque stable ID，client 不得解析其格式：
+
+```text
+SemanticFrame {
+  schema: "agenthub.semantic-events.v1"
+  cursor: integer
+  mode: "replace" | "append"
+  source: {eventId, type, sessionId, turnId?, time, startTime?}
+  events: SemanticEvent[]
+}
+
+SemanticEvent {
+  id: string
+  sourceEventId: integer
+  index: integer
+  time: string
+  startTime?: string
+  type: string
+  sessionId: string
+  turnId?: string
+  data?: object
+}
+```
+
+`source` 只提供 cursor 来源和诊断元数据，不包含 source Event 的 `data`。
+同一 source Event 可以投影为零个、一个或多个 semantic facts；因此 client
+必须保存空 frame 以推进 cursor，并以 semantic `id`（而不是 cursor）区分
+同一 frame 内的 facts。`mode` 描述整个 source frame 的 revision：重复 cursor
+的 `replace` 完整替换已有 frame，`append` 只合并实时增量。
+
+稳定 semantic types 与 `data`：
+
+| Type | Stable `data` fields |
+| --- | --- |
+| `message.input` | `role`, `text`, `steer`, optional opaque `payload`, `sender`, `messageId`, `replyTo`, `correlationId` |
+| `message.assistant.delta`, `message.reasoning.delta` | `text` |
+| `tool.call` | `schemaVersion: 1`, `callId`, `operation`, optional `toolKind`, `name`, `summary`, `status`, `output`, `error` |
+| `approval.requested` | `approvalId`, `kind`, `title`, `detail`, `question`, `options[]` |
+| `approval.resolved` | `approvalId`, `decision`, optional `optionId`, `text`, `reason` |
+| `provider.error` | optional `message`, `details`, `reason`, `code`, `retryable` |
+| `turn.started`, `turn.completed`, `turn.failed`, `turn.cancelled` | lifecycle fields such as `error`, `message`, or `reason` when applicable |
+| `session.created`, `session.provider`, `session.state`, `session.archived`, `session.agent`, `session.launch-environment` | provider-neutral Session lifecycle fields |
+| `unknown` | `sourceType`, `reason`, optional `code` |
+
+`tool.call.operation` 是 `start | update | finish`；`status` 是
+`running | completed | failed`。省略字段表示保留此前同一 `(turnId, callId)`
+的值，显式 `null` 表示清除。`output` 为
+`{mode: "append" | "replace", text, truncated?}`，这里的 mode 只控制工具
+输出文本合并，与外层 SemanticFrame `mode` 相互独立；`error` 只包含稳定的
+`message` 和可选 `code`。Provider `rawInput`、私有 method/notification、
+完整工具参数和 raw approval params 都不属于该协议。
+
+Provider 噪声和重复 envelope 投影为空 frame；无法识别但可能有诊断价值的
+source type 投影为脱敏 `unknown`。client 必须安全忽略未知 semantic type。
+Turn 只由 `turn.completed`、`turn.failed` 或 `turn.cancelled` 结束，不能使用
+`provider.turn.completed` 等 source type 推断终态。
+
 ```bash
 curl -s "$BASE/v1/sessions/$SESSION/events"
 curl -s "$BASE/v1/sessions/$SESSION/events?after=100&limit=200"
@@ -762,7 +796,7 @@ curl -s "$BASE/v1/sessions/$SESSION/events?before=931&limit=100"
 #### SSE mode
 
 Send `Accept: text/event-stream` (or append `?stream=true`) to keep the
-connection open and receive events as they happen. Backward pagination is
+connection open and receive frames as they happen. Backward pagination is
 a JSON-mode feature: streams reject `before` and `latest` with
 `400 invalid_event_cursor`.
 
@@ -772,7 +806,7 @@ a JSON-mode feature: streams reject `before` and `latest` with
 - **Connection lifecycle:**
   1. The daemon installs the live subscription and captures a durable
      high-water mark.
-  2. It pages through **all** stored events after the exclusive cursor up to
+  2. It pages through **all** stored source Events after the exclusive cursor up to
      that high-water mark, with no 1000-event backlog limit.
   3. It then consumes the live subscription. When a text delta folds into
      the tail source Event, the live SemanticFrame is an append patch: it
@@ -791,7 +825,7 @@ a JSON-mode feature: streams reject `before` and `latest` with
   contiguous frame processed. The replay first re-sends that cursor frame
   with its current durable content — append patches never move the cursor,
   so this heals fragments that folded into the tail event while the client
-  was disconnected — and then continues with events after it, replayed from
+  was disconnected — and then continues with frames after it, replayed from
   `events.jsonl` rather than the in-memory subscriber queue, so overflow
   and daemon restart are recoverable. A frame whose `cursor` is at or below
   the last processed cursor is either an append patch (`mode: "append"`) or
@@ -1086,7 +1120,7 @@ event and the session enters `waiting_approval` with the id in
     - `cancel` — cancel the operation that asked for approval.
   - `{"optionId": "..."}` — select one specific option offered by the
     request (the `optionId` values come from
-    `approval.requested` → `params.options`). Unknown option ids are
+    `approval.requested` → `data.options`). Unknown option ids are
     rejected and the approval stays pending.
   - `{"text": "..."}` — answer a question with custom free text. Provider
     protocols cannot carry free text inside an approval response, so the
@@ -1151,8 +1185,12 @@ and resumes the session. Shell snippets use `jq` for brevity:
 ```bash
 STATUS=$(curl -fsS "$BASE/v1/status")
 test "$(jq -r .apiVersion <<<"$STATUS")" = "1"
-for capability in session.source session.launch-environment \
-  session.strict-stopped events.lossless-replay \
+for capability in session.source session.source-metadata \
+  session.idempotent-create session.input-capabilities \
+  session.launch-environment session.launch-environment-update \
+  session.strict-stopped messages.idempotent messages.at-least-once \
+  messages.opaque-payload-v2 turns.stable-index turns.materialized \
+  events.lossless-replay events.semantic-v1 event.raw-v1 \
   events.canonical-turn-terminals recovery.closed-turns; do
   jq -e --arg c "$capability" '.capabilities | index($c) != null' \
     <<<"$STATUS" >/dev/null
@@ -1164,7 +1202,8 @@ CREATED=$(curl -fsS -X POST "$BASE/v1/sessions" \
     \"title\":\"PUA task\",
     \"cwd\":\"$PWD\",
     \"agentName\":\"Codex\",
-    \"source\":{\"app\":\"pua\",\"instanceId\":\"mac-mini\",\"externalId\":\"project7.task30\"},
+    \"idempotencyKey\":\"project7.task30:generation-1\",
+    \"source\":{\"app\":\"pua\",\"instanceId\":\"mac-mini\",\"externalId\":\"project7.task30\",\"metadata\":{\"generationId\":\"generation-1\"}},
     \"launchEnvironment\":{\"SESSION_CONTEXT_ID\":\"context-123\"}
   }")
 SESSION=$(jq -r .session.id <<<"$CREATED")
@@ -1174,11 +1213,11 @@ CURSOR=$(jq -r .page.nextAfter <<<"$PAGE")
 
 curl -fsS -X POST "$BASE/v1/sessions/$SESSION/messages" \
   -H "Content-Type: application/json" \
-  -d '{"text":"Implement the requested change."}'
+  -d '{"schemaVersion":2,"text":"Implement the requested change.","messageId":"msg-example","payload":{"source":"example-client"}}'
 
-# Reconnect with Last-Event-ID=$CURSOR. Process each adjacent id, extend
-# events on append patches, swap in full replacements for repeated ids, and
-# ignore unknown types. If approval.requested arrives, resolve its
+# Reconnect with Last-Event-ID=$CURSOR. Process each adjacent frame cursor,
+# merge append patches, swap in full replacements for repeated cursors, and
+# ignore unknown semantic types. If approval.requested arrives, resolve its
 # approvalId:
 curl -fsS -X POST "$BASE/v1/sessions/$SESSION/approvals/approval-1" \
   -H "Content-Type: application/json" \
