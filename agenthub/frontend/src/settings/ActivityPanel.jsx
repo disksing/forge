@@ -1,15 +1,24 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Play } from "@phosphor-icons/react";
 import { COMPLETION_SOUNDS, TonePlayer } from "../companion/audio.js";
 import { BEEP_PROGRESSIONS } from "../companion/chords.js";
-import { quotaVisibilityKey } from "../companion/model.js";
+import { applyBalanceTotals, DEFAULT_BALANCE_TOTAL, quotaVisibilityKey } from "../companion/model.js";
 import { Toggle } from "./fields.jsx";
 
 export function ActivityPanel({ value, mutate, quota }) {
   const player = useRef(new TonePlayer());
   const update = (field, nextValue) => mutate((next) => { next[field] = nextValue; });
-  const quotaEntries = (quota?.providers || []).flatMap((provider) => (
+  // Balance-style quotas are re-derived against per-provider balance totals so
+  // the visibility list and percentages reflect the configured denominators.
+  const effectiveQuota = useMemo(
+    () => applyBalanceTotals(quota, value.balanceTotals),
+    [quota, value.balanceTotals],
+  );
+  const quotaEntries = (effectiveQuota?.providers || []).flatMap((provider) => (
     (provider.quotas || []).map((item) => ({ provider, item, key: quotaVisibilityKey(provider, item) }))
+  ));
+  const balanceProviders = (quota?.providers || []).filter((provider) => (
+    (provider.quotas || []).some((item) => item.kind === "balance")
   ));
   const hiddenQuotas = new Set(value.hiddenQuotaKeys || []);
   const toggleQuota = (key, visible) => mutate((next) => {
@@ -18,6 +27,18 @@ export function ActivityPanel({ value, mutate, quota }) {
     else hidden.add(key);
     next.hiddenQuotaKeys = [...hidden].sort();
   });
+  const setBalanceTotal = (providerId, raw) => mutate((next) => {
+    const totals = { ...(next.balanceTotals || {}) };
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric) && numeric > 0) totals[providerId] = numeric;
+    else delete totals[providerId];
+    next.balanceTotals = totals;
+  });
+  const balanceTotalFor = (providerId) => {
+    const raw = value.balanceTotals?.[providerId];
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : DEFAULT_BALANCE_TOTAL;
+  };
   const previewCompletion = async () => {
     if (await player.current.resume()) player.current.completion(value.completionSound, value.beepVolume);
   };
@@ -72,6 +93,25 @@ export function ActivityPanel({ value, mutate, quota }) {
         })}
         {!quotaEntries.length ? <div className="settings-empty">{quota?.error || "No current quota data."}</div> : null}
       </section>
+      {balanceProviders.length ? (
+        <section className="settings-card">
+          <div className="settings-card-heading"><div><h3>Balance totals</h3><p>Set the denominator for balance-style quotas (e.g. DeepSeek credit balance): remaining = current balance / balance total.</p></div></div>
+          {balanceProviders.map((provider) => {
+            const quotaItem = (provider.quotas || []).find((item) => item.kind === "balance");
+            const total = balanceTotalFor(provider.provider);
+            const remaining = quotaItem?.value != null ? Math.round((100 * quotaItem.value) / total) : 0;
+            const providerLabel = provider.label || provider.provider;
+            const quotaLabel = quotaItem?.label || "Balance";
+            return (
+              <label className="settings-field" key={provider.provider}>
+                <span>{providerLabel} / {quotaLabel} <output>{remaining}% remaining</output></span>
+                <input type="number" min="0" step="any" value={value.balanceTotals?.[provider.provider] ?? DEFAULT_BALANCE_TOTAL} onChange={(event) => setBalanceTotal(provider.provider, event.target.value)} />
+                <small>Current balance {quotaItem?.value != null ? Number(quotaItem.value).toFixed(2) : "—"} out of {total}. Clear to reset to {DEFAULT_BALANCE_TOTAL}.</small>
+              </label>
+            );
+          })}
+        </section>
+      ) : null}
     </div>
   );
 }

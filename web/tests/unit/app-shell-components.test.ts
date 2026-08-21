@@ -108,6 +108,19 @@ describe("AppShell responsibility components", () => {
     expect(target.querySelector("#workspaceMenu")).toBeNull();
   });
 
+  it("WorkspaceSwitcher renders an empty state when a legacy response contains null workspaces", async () => {
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(WorkspaceSwitcher, { target, props: {
+      identity: "no-workspace", mobileSidebarOpen: false, activeWorkspaceId: "",
+      workspaces: null as never,
+      onSwitch: vi.fn(async () => undefined), onOpen: vi.fn(async () => undefined), onAdd: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector("#workspaceOpen")?.textContent).toContain("Workspace");
+  });
+
   it("WorkspaceSwitcher exposes the full workspace name and path on menu options", async () => {
     const name = "workspace-title-that-is-intentionally-very-long-for-ellipsis-validation-task415";
     const path = "/Users/disksing/projects/pua-test/workspaces/workspace-title-that-is-intentionally-very-long-for-ellipsis-validation-task415";

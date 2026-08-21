@@ -3,6 +3,7 @@ package companion
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -64,6 +65,82 @@ func TestSnapshotNormalizesProviderSchemasAndCaches(t *testing.T) {
 	_ = service.Snapshot(context.Background(), settings)
 	if calls.Load() != 5 {
 		t.Fatalf("cached request made %d upstream calls, want 5", calls.Load())
+	}
+}
+
+func TestSnapshotNormalizesBalanceProvider(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/providers":
+			_, _ = w.Write([]byte(`{"providers":["deepseek"],"provider_labels":{"deepseek":"DeepSeek"}}`))
+		case "/api/current":
+			capturedAt := time.Now().UTC().Add(-30 * time.Second).Format(time.RFC3339)
+			_, _ = w.Write([]byte(`{"capturedAt":"` + capturedAt + `","balance":{"name":"Balance","available":true,"currency":"CNY","total":91.61,"granted":0,"toppedUp":91.61,"rate":1.7,"status":"healthy","totalTracked":0.13}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	settings := config.Defaults().OnWatch
+	settings.Enabled = true
+	settings.ServerURL = upstream.URL
+	service := NewService(upstream.Client())
+
+	result := service.Snapshot(context.Background(), settings)
+	if !result.Connected || len(result.Providers) != 1 {
+		t.Fatalf("snapshot = %+v", result)
+	}
+	provider := result.Providers[0]
+	if provider.Provider != "deepseek" || provider.Label != "DeepSeek" {
+		t.Fatalf("provider = %+v", provider)
+	}
+	if len(provider.Quotas) != 1 {
+		t.Fatalf("quotas = %+v", provider.Quotas)
+	}
+	quota := provider.Quotas[0]
+	if quota.Kind != "balance" || quota.Label != "Balance" || quota.Status != "healthy" {
+		t.Fatalf("quota = %+v", quota)
+	}
+	// The default display total is 100: 91.61 / 100 = 91.61% remaining. The
+	// raw balance is exposed through Value so the browser can re-derive
+	// percentages against a user-configured total.
+	if math.Abs(quota.RemainingPercent-91.61) > 1e-9 || math.Abs(quota.UsedPercent-8.39) > 1e-9 {
+		t.Fatalf("balance quota percents = %+v", quota)
+	}
+	if quota.Used == nil || quota.Limit == nil || math.Abs(*quota.Used-8.39) > 1e-9 || *quota.Limit != 100 {
+		t.Fatalf("balance quota amounts = %+v", quota)
+	}
+	if quota.Value == nil || math.Abs(*quota.Value-91.61) > 1e-9 {
+		t.Fatalf("balance quota value = %+v", quota)
+	}
+	if quota.CurrentRate == nil || *quota.CurrentRate != 1.7 {
+		t.Fatalf("balance quota rate = %+v", quota)
+	}
+
+	// The snapshot is cached until expiry; a second read does not refetch.
+	_ = service.Snapshot(context.Background(), settings)
+	if calls.Load() != 2 {
+		t.Fatalf("upstream calls = %d, want 2 (catalog + provider)", calls.Load())
+	}
+}
+
+func TestNormalizeBalanceExposesRawValue(t *testing.T) {
+	quota := normalizeBalance(upstreamBalance{Name: "Balance", Available: true, Total: 25, Status: "exhausted"})
+	if quota.Kind != "balance" || quota.Status != "exhausted" {
+		t.Fatalf("quota = %+v", quota)
+	}
+	if quota.Limit == nil || *quota.Limit != 100 || math.Abs(quota.RemainingPercent-25) > 1e-9 {
+		t.Fatalf("quota = %+v", quota)
+	}
+	if quota.Value == nil || *quota.Value != 25 {
+		t.Fatalf("quota value = %+v", quota)
+	}
+	quota = normalizeBalance(upstreamBalance{Name: "Balance", Available: false, Total: 10})
+	if quota.Status != "unavailable" || math.Abs(quota.RemainingPercent-10) > 1e-9 {
+		t.Fatalf("unavailable quota = %+v", quota)
 	}
 }
 

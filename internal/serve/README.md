@@ -55,6 +55,7 @@ POST /api/workspaces/{workspaceId}/resources/{resourceId}/messages
 GET  /api/workspaces/{workspaceId}/messages/{messageId}
 POST /api/workspaces/{workspaceId}/messages/{messageId}/steer
 GET  /api/workspaces/{workspaceId}/resources/{resourceId}/history/turns
+GET  /api/workspaces/{workspaceId}/resources/{resourceId}/history/turns/by-id?generationId={generationId}&turnId={turnId}
 GET  /api/workspaces/{workspaceId}/resources/{resourceId}/history/turns/{turnRef}
 GET  /api/workspaces/{workspaceId}/resources/{resourceId}/history/events/{eventRef}
 GET  /api/workspaces/{workspaceId}/resources/{resourceId}/events

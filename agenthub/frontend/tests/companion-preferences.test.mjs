@@ -34,6 +34,7 @@ test("companion preferences normalize invalid browser-local values", () => {
     beepProgression: "canon-in-c",
     completionSound: "smile",
     hiddenQuotaKeys: ["a", "b"],
+    balanceTotals: {},
   });
   assert.deepEqual(normalizeCompanionPreferences({
     beepVolume: 2,
@@ -59,6 +60,19 @@ test("companion preferences persist only through the supplied browser storage", 
 
   const broken = memoryStorage({ [COMPANION_PREFERENCES_STORAGE_KEY]: "{" });
   assert.deepEqual(loadCompanionPreferences(broken), DEFAULT_COMPANION_PREFERENCES);
+});
+
+test("companion preferences normalize and persist per-provider balance totals", () => {
+  assert.deepEqual(normalizeCompanionPreferences({ balanceTotals: { deepseek: 200, kimi: "bad", empty: "", zero: 0, negative: -5 } }).balanceTotals, {
+    deepseek: 200,
+  });
+  const storage = memoryStorage();
+  const saved = saveCompanionPreferences({ ...DEFAULT_COMPANION_PREFERENCES, balanceTotals: { deepseek: 250 } }, storage);
+  assert.deepEqual(loadCompanionPreferences(storage).balanceTotals, { deepseek: 250 });
+  assert.deepEqual(loadCompanionPreferences(storage), saved);
+  // Clearing a total removes the entry and falls back to the default.
+  const cleared = normalizeCompanionPreferences({ balanceTotals: { deepseek: "" } });
+  assert.deepEqual(cleared.balanceTotals, {});
 });
 
 test("companion preference validation reports unsupported draft values", () => {

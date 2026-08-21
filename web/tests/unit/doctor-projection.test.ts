@@ -37,4 +37,19 @@ describe("Doctor projection", () => {
       workspaces: [],
     });
   });
+
+  it("treats a legacy null Workspace list as empty", () => {
+    const snapshot = {
+      checking: false,
+      complete: true,
+      summary: { errors: 0, warnings: 0 },
+      workspaces: null,
+    } as unknown as DoctorSnapshotModel;
+
+    expect(doctorSnapshotForWorkspace(snapshot, "")).toMatchObject({
+      complete: true,
+      summary: { errors: 0, warnings: 0 },
+      workspaces: [],
+    });
+  });
 });

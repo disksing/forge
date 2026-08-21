@@ -187,6 +187,20 @@ describe("CSS ownership", () => {
     expect(css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1)).toContain("width: auto;");
   });
 
+  it("keeps Wiki file preview actions at a 44px mobile touch size", () => {
+    const previewCss = read("src/components/FilePreviewModal.css");
+    const previewMobileStart = previewCss.indexOf("@media (max-width:980px)");
+    expect(previewMobileStart).toBeGreaterThanOrEqual(0);
+    const previewMobileCss = previewCss.slice(previewMobileStart);
+    expect(previewMobileCss).toContain(".file-modal-actions > .secondary-button {\n    min-height: 44px;");
+    expect(previewMobileCss).toContain(".file-modal-actions > .icon-button {\n    flex: 0 0 44px;\n    width: 44px;\n    height: 44px;");
+
+    const browserCss = read("src/components/FileBrowser.css");
+    const browserMobileStart = browserCss.indexOf("@media (max-width: 980px)");
+    expect(browserMobileStart).toBeGreaterThanOrEqual(0);
+    expect(browserCss.slice(browserMobileStart)).toContain(".artifact-download {\n    flex: 0 0 44px;\n    width: 44px;\n    height: 44px;");
+  });
+
   it("keeps the System Settings close control at the mobile touch target size", () => {
     const css = read("src/components/SettingsModal.css");
     const selector = ':where([data-component-owner="settings"]) .settings-close';
@@ -260,6 +274,26 @@ describe("CSS ownership", () => {
     expect(doctor).toContain("height: 44px;");
   });
 
+  it("keeps mobile Projects title actions at a 44px touch size", () => {
+    const css = read("src/components/ProjectTree.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+
+    const body = (selector: string) => {
+      const start = css.lastIndexOf(selector);
+      expect(start, selector).toBeGreaterThan(mobileStart);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    const title = body(':where([data-component-owner="project-tree"]) .section-title {');
+    expect(title).toContain("min-height: 44px;");
+
+    const actions = body(':where([data-component-owner="project-tree"]) .section-title button {');
+    expect(actions).toContain("flex: 0 0 44px;");
+    expect(actions).toContain("width: 44px;");
+    expect(actions).toContain("height: 44px;");
+  });
+
   it("keeps resource detail tabs at a mobile touch target size", () => {
     const css = read("src/components/DetailPanel.css");
     const selector = ':where([data-component-owner="detail-panel"]) .details-tab';
@@ -295,6 +329,24 @@ describe("CSS ownership", () => {
     );
     expect(mobileCss).toContain(
       ':where([data-component-owner="workspace-switcher"]) .workspace-switcher-menu-button {\n    height: 44px;\n  }',
+    );
+  });
+
+  it("keeps mobile file-browser rows at a 44px touch size", () => {
+    const css = read("src/components/FileBrowser.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    expect(css.slice(mobileStart)).toContain(
+      ':where([data-component-owner="file-browser"]) .artifact-row {\n    min-height: 44px;\n  }',
+    );
+  });
+
+  it("keeps mobile ProjectTree resource rows at a 44px touch size", () => {
+    const css = read("src/components/ProjectTree.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+    expect(css.slice(mobileStart)).toContain(
+      ':where([data-component-owner="project-tree"]) .tree-item {\n    min-height: 44px;\n  }',
     );
   });
 
@@ -493,6 +545,24 @@ describe("CSS ownership", () => {
       expect(fieldStart, fieldSelector).toBeGreaterThan(mobileStart);
       const fieldRule = css.slice(css.indexOf("{", fieldStart), css.indexOf("}", fieldStart) + 1);
       expect(fieldRule).toContain("min-height: 44px;");
+    }
+  });
+
+  it("keeps Scheduler Settings controls at a mobile touch size", () => {
+    const css = read("src/components/ResourceSettingsPanel.css");
+    const mobileStart = css.indexOf("@media (max-width: 980px)");
+    expect(mobileStart).toBeGreaterThanOrEqual(0);
+
+    const selectors = [
+      ':where([data-component-owner="resource-settings-panel"]) .resource-settings-scheduler-agent .agent-binding-button',
+      ':where([data-component-owner="resource-settings-panel"]) .resource-settings-interval input',
+      ':where([data-component-owner="resource-settings-panel"]) .resource-settings-interval .secondary-button',
+    ];
+    for (const selector of selectors) {
+      const start = css.indexOf(selector, mobileStart);
+      expect(start, selector).toBeGreaterThan(mobileStart);
+      const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+      expect(rule).toContain("min-height: 44px;");
     }
   });
 

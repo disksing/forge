@@ -61,7 +61,17 @@ export interface SettingsControllerDependencies {
 	toast(message: string): void;
 }
 
+export function normalizeWorkspaceConfig(base: PUASettingsConfig): PUASettingsConfig {
+	return {
+		...base,
+		workspaces: base.workspaces || [],
+		agents: base.agents || [],
+		agentProfiles: base.agentProfiles || []
+	};
+}
+
 export function configWithAgentHubCatalog(base: PUASettingsConfig, agentHub: AgentHubData): PUASettingsConfig {
+	const normalized = normalizeWorkspaceConfig(base);
 	const catalog = agentHub?.catalog || {};
 	// AgentHub is the source of truth for Agent definitions. PUA's workspace
 	// settings endpoint only contains workspaces and profile routes, so there
@@ -71,7 +81,7 @@ export function configWithAgentHubCatalog(base: PUASettingsConfig, agentHub: Age
 		id: agent.name
 	}));
 	return {
-		...base,
+		...normalized,
 		agents,
 		agentHubProviders: catalog.providers || [],
 		agentProfiles: agentHub.config?.agentProfiles || []
@@ -255,7 +265,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		state.workspacePath = "";
 		state.createWorkspace = false;
 		state.workspaceLanguage = "en";
-		dependencies.setConfig(await dependencies.request("/api/workspaces"));
+		dependencies.setConfig(normalizeWorkspaceConfig(await dependencies.request("/api/workspaces")));
 		dependencies.setActiveWorkspaceId(workspace.id);
 		dependencies.resetAgentState();
 		dependencies.renderWorkspace();
@@ -269,7 +279,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		if (!id) return;
 		dependencies.flushDraft();
 		await dependencies.request(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
-		const config = await dependencies.request<PUASettingsConfig>("/api/workspaces");
+		const config = normalizeWorkspaceConfig(await dependencies.request<PUASettingsConfig>("/api/workspaces"));
 		dependencies.setConfig(config);
 		if (dependencies.activeWorkspaceId() === id) {
 			const nextId = config.activeId || config.workspaces[0]?.id || "";

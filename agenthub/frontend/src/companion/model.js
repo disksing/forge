@@ -60,6 +60,37 @@ export function quotaVisibilityKey(provider, quota) {
   ]);
 }
 
+// DEFAULT_BALANCE_TOTAL is the denominator used to display balance-style
+// quotas (e.g. a DeepSeek credit balance) until a per-provider total is
+// configured in the Activity settings.
+export const DEFAULT_BALANCE_TOTAL = 100;
+
+// applyBalanceTotals re-derives the percentages of balance-style quotas
+// against per-provider balance totals from companion preferences. The daemon
+// reports balance quotas with a raw Value and a remaining share computed
+// against a default total of 100; this normalizes them for display without
+// mutating the source snapshot.
+export function applyBalanceTotals(snapshot, balanceTotals = {}) {
+  const totals = {};
+  for (const [provider, total] of Object.entries(balanceTotals || {})) {
+    const numeric = Number(total);
+    if (provider && Number.isFinite(numeric) && numeric > 0) totals[String(provider)] = numeric;
+  }
+  return {
+    ...(snapshot || {}),
+    providers: (snapshot?.providers || []).map((provider) => {
+      const total = totals[provider.provider] ?? DEFAULT_BALANCE_TOTAL;
+      const quotas = (provider.quotas || []).map((quota) => {
+        if (quota.kind !== "balance" || quota.value == null) return quota;
+        const remaining = Math.min(100, Math.max(0, (100 * quota.value) / total));
+        const used = Math.min(total, Math.max(0, total - quota.value));
+        return { ...quota, remainingPercent: remaining, usedPercent: 100 - remaining, used, limit: total };
+      });
+      return { ...provider, quotas };
+    }),
+  };
+}
+
 export function filterQuotaSnapshot(snapshot, hiddenQuotaKeys = []) {
   const hidden = new Set((hiddenQuotaKeys || []).map(String));
   return {

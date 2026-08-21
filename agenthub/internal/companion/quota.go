@@ -34,6 +34,10 @@ type Quota struct {
 	CurrentRate           *float64 `json:"currentRate,omitempty"`
 	ProjectedUtil         *float64 `json:"projectedUtil,omitempty"`
 	Stale                 bool     `json:"stale,omitempty"`
+	// Value is the raw underlying amount of a balance-style quota (e.g. a
+	// provider credit balance) before any display normalization. Clients use
+	// it to re-derive percentages against their own balance total.
+	Value *float64 `json:"value,omitempty"`
 }
 
 type ProviderQuota struct {
@@ -238,29 +242,51 @@ type upstreamQuota struct {
 	AgeSeconds            *int64   `json:"ageSeconds"`
 }
 
+// upstreamBalance mirrors the "balance" payload OnWatch serves for
+// balance-tracked providers (e.g. DeepSeek credit balance), as an alternative
+// to the "quotas" array other providers return.
+type upstreamBalance struct {
+	Name         string  `json:"name"`
+	Description  string  `json:"description"`
+	Available    bool    `json:"available"`
+	Currency     string  `json:"currency"`
+	Total        float64 `json:"total"`
+	Granted      float64 `json:"granted"`
+	ToppedUp     float64 `json:"toppedUp"`
+	Rate         float64 `json:"rate"`
+	Status       string  `json:"status"`
+	TotalTracked float64 `json:"totalTracked"`
+}
+
 func (s *Service) fetchProvider(ctx context.Context, settings config.OnWatch, id, label string, now time.Time) (ProviderQuota, error) {
 	var upstream struct {
-		CapturedAt  string          `json:"capturedAt"`
-		PlanType    string          `json:"planType"`
-		PlanName    string          `json:"planName"`
-		Membership  string          `json:"membership"`
-		LoginMethod string          `json:"login_method"`
-		Quotas      []upstreamQuota `json:"quotas"`
+		CapturedAt  string           `json:"capturedAt"`
+		PlanType    string           `json:"planType"`
+		PlanName    string           `json:"planName"`
+		Membership  string           `json:"membership"`
+		LoginMethod string           `json:"login_method"`
+		Quotas      []upstreamQuota  `json:"quotas"`
+		Balance     *upstreamBalance `json:"balance"`
 	}
 	if err := s.getJSON(ctx, settings, "/api/current", url.Values{"provider": []string{id}}, &upstream); err != nil {
 		return ProviderQuota{}, err
 	}
 	provider := ProviderQuota{
 		Provider: id, Label: providerLabel(id, label), PlanLabel: firstNonEmpty(upstream.PlanName, upstream.PlanType, upstream.Membership, upstream.LoginMethod),
-		CapturedAt: upstream.CapturedAt, Status: "healthy", Quotas: make([]Quota, 0, len(upstream.Quotas)),
+		CapturedAt: upstream.CapturedAt, Status: "healthy", Quotas: make([]Quota, 0, len(upstream.Quotas)+1),
 	}
-	for _, value := range upstream.Quotas {
-		quota := normalizeQuota(value, now, settings.RefreshIntervalSeconds)
+	absorb := func(quota Quota) {
 		provider.Quotas = append(provider.Quotas, quota)
 		if statusRank(quota.Status) > statusRank(provider.Status) {
 			provider.Status = quota.Status
 		}
 		provider.Stale = provider.Stale || quota.Stale
+	}
+	for _, value := range upstream.Quotas {
+		absorb(normalizeQuota(value, now, settings.RefreshIntervalSeconds))
+	}
+	if value := upstream.Balance; value != nil {
+		absorb(normalizeBalance(*value))
 	}
 	if capturedAt, err := time.Parse(time.RFC3339, upstream.CapturedAt); err == nil && now.Sub(capturedAt) > time.Duration(settings.RefreshIntervalSeconds*2)*time.Second {
 		provider.Stale = true
@@ -302,6 +328,31 @@ func normalizeQuota(value upstreamQuota, now time.Time, refreshInterval int) Quo
 		ResetInSeconds: resetSeconds, ResetsAt: value.ResetsAt, WindowPositionPercent: windowPosition,
 		Status: status, Used: value.Used, Limit: value.Limit, CurrentRate: value.CurrentRate,
 		ProjectedUtil: value.ProjectedUtil, Stale: stale,
+	}
+}
+
+// normalizeBalance converts a balance payload into a single quota row. The
+// remaining share is computed against a default balance total of 100 so the
+// API stays self-consistent without a configured denominator; the raw current
+// balance is exposed through Value so browsers can re-derive percentages
+// against their own per-provider balance total.
+func normalizeBalance(value upstreamBalance) Quota {
+	limit := float64(100)
+	remaining := clamp(100*value.Total/limit, 0, 100)
+	used := clamp(limit-value.Total, 0, limit)
+	status := strings.ToLower(strings.TrimSpace(value.Status))
+	if status == "" {
+		if value.Available {
+			status = "healthy"
+		} else {
+			status = "unavailable"
+		}
+	}
+	return Quota{
+		Kind: "balance", Label: firstNonEmpty(value.Name, "Balance"),
+		RemainingPercent: remaining, UsedPercent: clamp(100-remaining, 0, 100),
+		Status: status, Used: &used, Limit: &limit, CurrentRate: &value.Rate,
+		Value: &value.Total,
 	}
 }
 

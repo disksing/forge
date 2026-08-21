@@ -319,14 +319,18 @@ describe("resource conversation controller", () => {
   it("coalesces repeated terminal events while the canonical Turn is materializing", async () => {
     const open = turn(3, "turn-a", 5, 7, false);
     const closed = turn(3, "turn-a", 5, 8);
-    const terminalHead = deferredResponse();
+    const terminalDetail = deferredResponse();
     let historyCalls = 0;
+    let targetedCalls = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);
+      if (path.includes("/history/turns/by-id?")) {
+        targetedCalls++;
+        return terminalDetail.promise;
+      }
       if (path.includes("/history/turns/ref-")) return response(detail(closed));
       historyCalls++;
-      if (historyCalls === 1) return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
-      return terminalHead.promise;
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
     let latest = {} as ChatContextSnapshot;
@@ -337,12 +341,12 @@ describe("resource conversation controller", () => {
     const terminal = { id: 8, type: "turn.completed", turnId: "turn-a", sessionId: "session-3" };
     FakeEventSource.instances[0].emit(terminal);
     FakeEventSource.instances[0].emit(terminal);
-    await vi.waitFor(() => expect(historyCalls).toBe(2));
-    terminalHead.resolve(response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [closed] }], page: { limit: 20, hasMore: false } }));
+    await vi.waitFor(() => expect(targetedCalls).toBe(1));
+    terminalDetail.resolve(response(detail(closed)));
 
     await vi.waitFor(() => expect(latest.blocks[0].items?.find((item) => item.kind === "message")?.text).toBe("detail turn-a"));
-    expect(historyCalls).toBe(2);
-    expect(fetchImpl.mock.calls.filter(([url]) => String(url).includes("/history/turns/ref-")).length).toBe(1);
+    expect(historyCalls).toBe(1);
+    expect(targetedCalls).toBe(1);
     expect(latest.error).toBe("");
   });
 
@@ -369,14 +373,18 @@ describe("resource conversation controller", () => {
   it("retries terminal materialization while the projection lags, without an error", async () => {
     const open = turn(3, "turn-a", 5, 7, false);
     const closed = turn(3, "turn-a", 5, 8);
-    let headCalls = 0;
+    let historyCalls = 0;
+    let targetedCalls = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);
-      if (path.includes("/history/turns/ref-")) return response(detail(closed));
-      headCalls++;
-      // Initial load and the first terminal retry still show the open
-      // projection; the second retry observes the closed one.
-      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [headCalls >= 3 ? closed : open] }], page: { limit: 20, hasMore: false } });
+      if (path.includes("/history/turns/by-id?")) {
+        targetedCalls++;
+        // The first two targeted reads still show the open projection; the
+        // third observes the closed one.
+        return response(detail(targetedCalls >= 3 ? closed : open));
+      }
+      historyCalls++;
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl, { streamBatchWindowMs: 0, terminalRetryDelaysMs: [1, 1, 1, 1, 1] });
     let latest = {} as ChatContextSnapshot;
@@ -388,7 +396,8 @@ describe("resource conversation controller", () => {
 
     await vi.waitFor(() => expect(latest.blocks[0].items?.find((item) => item.kind === "message")?.text).toBe("detail turn-a"));
     expect(latest.error).toBe("");
-    expect(headCalls).toBe(3);
+    expect(historyCalls).toBe(1);
+    expect(targetedCalls).toBe(3);
   });
 
   it("heals an exhausted terminal materialization on a later status sync and clears the error", async () => {
@@ -398,7 +407,7 @@ describe("resource conversation controller", () => {
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);
       if (path.endsWith("/status")) return response(status());
-      if (path.includes("/history/turns/ref-")) return response(detail(closed));
+      if (path.includes("/history/turns/by-id?")) return response(detail(lagging ? open : closed));
       return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [lagging ? open : closed] }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl, { streamBatchWindowMs: 0, statusSyncIntervalMs: 10, terminalRetryDelaysMs: [1, 1, 1, 1, 1] });
@@ -418,11 +427,10 @@ describe("resource conversation controller", () => {
   });
 
   it("reports an upstream history gap instead of blaming the Turn projection", async () => {
-    const open = turn(3, "turn-a", 5, 7, false);
-    let historyCalls = 0;
-    const fetchImpl = vi.fn<typeof fetch>(async () => {
-      historyCalls++;
-      if (historyCalls === 1) return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).includes("/history/turns/by-id?")) {
+        return new Response(JSON.stringify({ error: "timeout" }), { status: 503, headers: { "content-type": "application/json" } });
+      }
       return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [], gap: { code: "agenthub_unavailable", message: "timeout", retryable: true } }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl, { streamBatchWindowMs: 0, statusSyncIntervalMs: 60000, terminalRetryDelaysMs: [1, 1, 1, 1, 1] });
@@ -435,6 +443,35 @@ describe("resource conversation controller", () => {
 
     await vi.waitFor(() => expect(latest.error).toContain("temporarily unavailable"));
     expect(latest.error).not.toContain("not closed");
+  });
+
+  it("materializes a terminal Turn that has fallen out of the History head", async () => {
+    const old = turn(3, "turn-old", 1, 2);
+    const newer = [
+      turn(3, "turn-1", 3, 4), turn(3, "turn-2", 5, 6), turn(3, "turn-3", 7, 8),
+      turn(3, "turn-4", 9, 10), turn(3, "turn-5", 11, 12),
+    ];
+    let targetedCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/by-id?")) {
+        targetedCalls++;
+        return response(detail(old));
+      }
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: newer }], page: { limit: 5, nextCursor: "older", hasMore: true } });
+    });
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0, terminalRetryDelaysMs: [1] });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    FakeEventSource.instances[0].emit({ id: 2, type: "turn.completed", turnId: "turn-old", sessionId: "session-3" });
+
+    await vi.waitFor(() => expect(latest.blocks.find((block) => block.turn?.turnId === "turn-old")?.items?.find((item) => item.kind === "message")?.text).toBe("detail turn-old"));
+    expect(latest.error).toBe("");
+    expect(targetedCalls).toBe(1);
+    expect(fetchImpl.mock.calls.find(([url]) => String(url).includes("/history/turns/by-id?"))?.[0].toString()).toContain("generationId=gen-3&turnId=turn-old");
   });
 
   it("invalidates the old resource immediately and closes its stream", async () => {
@@ -774,12 +811,11 @@ describe("resource conversation controller", () => {
   it("streams an open non-user turn live and folds it into a summary card when it closes", async () => {
     const open = { ...turn(3, "turn-a", 5, 7, false), triggerRole: "system" };
     const closed = { ...turn(3, "turn-a", 5, 8), triggerRole: "system", finalReplyPreview: "done" };
-    let historyCalls = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);
+      if (path.includes("/history/turns/by-id?")) return response(detail(closed));
       if (path.includes("/history/turns/ref-")) return response(detail(closed));
-      historyCalls++;
-      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [historyCalls === 1 ? open : closed] }], page: { limit: 20, hasMore: false } });
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
     });
     const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
     let latest = {} as ChatContextSnapshot;

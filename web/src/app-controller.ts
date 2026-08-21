@@ -2064,13 +2064,13 @@ function parseRoute(pathname = window.location.pathname): ReturnType<typeof rout
 	return routeController.parse(pathname);
 }
 function workspaceExists(id: string | undefined): boolean {
-	return Boolean(id && controllerState.config?.workspaces.some((workspace) => workspace.id === id));
+	return Boolean(id && (controllerState.config?.workspaces || []).some((workspace) => workspace.id === id));
 }
 function syncURL(options: { replace?: boolean } = {}): void {
 	routeController.project(controllerState.activeWorkspaceId, controllerState.selectedId, options);
 }
 function workspaceName(): string {
-	return controllerState.config?.workspaces.find((w) => w.id === controllerState.activeWorkspaceId)?.name || "Workspace";
+	return (controllerState.config?.workspaces || []).find((w) => w.id === controllerState.activeWorkspaceId)?.name || "Workspace";
 }
 function applyAgentConfig(): void {
 	const agents = enabledAgentConfigs();

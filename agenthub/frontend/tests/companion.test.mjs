@@ -28,6 +28,7 @@ import {
 	companionPositionPixels,
 	filterQuotaSnapshot,
 	formatDuration,
+	applyBalanceTotals,
 	normalizeCompanionSize,
 	pruneActivityPulses,
 	quotaCycleItems,
@@ -49,6 +50,27 @@ test("quota cycle keeps provider order and skips empty providers", () => {
 	assert.deepEqual(items.map((item) => item.provider), ["Codex", "Grok"]);
 	assert.equal(items[1].value, 22);
 	assert.equal(items[1].label, "credits");
+});
+
+test("balance totals re-derive balance quota percentages per provider", () => {
+	const snapshot = { connected: true, providers: [
+		{ provider: "deepseek", label: "DeepSeek", quotas: [{ kind: "balance", label: "Balance", value: 91.61, remainingPercent: 91.61 }] },
+		{ provider: "codex", label: "Codex", quotas: [{ kind: "7d", label: "Weekly", remainingPercent: 60 }] },
+	] };
+	// Default total of 100 keeps the daemon-reported percentages.
+	const defaults = applyBalanceTotals(snapshot, {});
+	assert.equal(defaults.providers[0].quotas[0].remainingPercent, 91.61);
+	assert.equal(defaults.providers[0].quotas[0].usedPercent, 8.39);
+	assert.equal(defaults.providers[0].quotas[0].limit, 100);
+	// A configured total re-derives the share: 91.61 / 200 = 45.805%.
+	const custom = applyBalanceTotals(snapshot, { deepseek: 200 });
+	assert.equal(Math.abs(custom.providers[0].quotas[0].remainingPercent - 45.805) < 1e-9, true);
+	assert.equal(custom.providers[0].quotas[0].limit, 200);
+	assert.equal(custom.providers[0].quotas[0].used, 108.39);
+	// Non-balance quotas are untouched and the source snapshot is not mutated.
+	assert.equal(custom.providers[1].quotas[0].remainingPercent, 60);
+	assert.equal(snapshot.providers[0].quotas[0].remainingPercent, 91.61);
+	assert.deepEqual(applyBalanceTotals(snapshot, { deepseek: "bad", codex: -1 }).providers[0].quotas[0].limit, 100);
 });
 
 test("quota visibility filters individual rows before card rendering and rotation", () => {

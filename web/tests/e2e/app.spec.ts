@@ -308,7 +308,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
         projects: [projectSnapshot, ...(createdProject ? [{ ...createdProject, userState: resourceStates[createdProject.id] }] : [])],
         activity,
-        wiki: { exists: true, entries: [{ name: "index.md", path: "wiki/index.md", type: "file", size: 28 }] },
+        wiki: { exists: true, entries: [
+          { name: "index.md", path: "wiki/index.md", type: "file", size: 28 },
+          { name: "link-preview.md", path: "wiki/link-preview.md", type: "file", size: 28 },
+        ] },
       });
     }
     const readMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/read$/);
@@ -571,7 +574,13 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     "ws-b": {
       root: "/tmp/ws-b",
       projects: [{ id: "project2", type: "project", title: "Second workspace project", path: "project2", archived: false, children: [{ id: "project2.task1", type: "task", title: "Second workspace task", path: "project2/task1", archived: false }] }],
-      wiki: { exists: false, entries: [] },
+      wiki: {
+        exists: true,
+        entries: [
+          { name: "index.md", path: "wiki/index.md", type: "file", size: 147 },
+          { name: "link-preview.md", path: "wiki/link-preview.md", type: "file", size: 102 },
+        ],
+      },
     },
   };
   await page.route("**/api/**", async (route) => {
@@ -626,7 +635,13 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
         artifacts: [], repos: [], templates: [],
       });
     }
-    if (/^\/api\/workspaces\/ws-[ab]\/files$/.test(path)) return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
+    if (/^\/api\/workspaces\/ws-[ab]\/files$/.test(path)) {
+      const filePath = url.searchParams.get("path") || "";
+      if (filePath.startsWith("wiki/")) {
+        return json(route, { path: filePath, name: filePath.split("/").pop(), content: "# Workspace Wiki\n\nStable wiki content.", contentHash: "wiki-v1" });
+      }
+      return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
+    }
     return json(route, { error: `Unhandled shell request: ${method} ${path}` }, 500);
   });
   return { uiStateBodies, failNextUIStateSave: () => { failNextSave = true; } };
@@ -973,6 +988,78 @@ test("keeps Workspace Agent binding selectors at a mobile touch size without ove
   expect(documentOverflow).toBeLessThanOrEqual(1);
 });
 
+test("keeps Wiki file preview controls at a 44px touch size without overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page, "workspace");
+  await page.goto("/w/ws-test");
+
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("tab", { name: "Wiki", exact: true }).click();
+  const fileRow = panel.getByRole("button", { name: /link-preview\.md/ });
+  await expect(fileRow).toBeVisible();
+  await expect(fileRow).toHaveAttribute("type", "button");
+  await fileRow.hover();
+
+  const download = panel.getByRole("link", { name: "Download link-preview.md", exact: true });
+  await expect(download).toBeVisible();
+  await expect(download).toHaveAttribute("download", "link-preview.md");
+  await expect(download).toHaveAttribute("title", "Download link-preview.md");
+  await expect(download).toHaveAttribute("aria-label", "Download link-preview.md");
+  await expect(download).toHaveAttribute("href", /download=1/);
+  const downloadBox = (await download.boundingBox())!;
+  expect(downloadBox.width).toBeGreaterThanOrEqual(44);
+  expect(downloadBox.height).toBeGreaterThanOrEqual(44);
+  expect(downloadBox.x).toBeGreaterThanOrEqual(0);
+  expect(downloadBox.x + downloadBox.width).toBeLessThanOrEqual(440);
+  const contentSize = await panel.locator("#detailsContent").evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  expect(contentSize.scrollWidth).toBeLessThanOrEqual(contentSize.clientWidth);
+
+  await fileRow.click();
+  const dialog = page.getByRole("dialog", { name: "File preview" });
+  await expect(dialog).toContainText("link-preview.md");
+  const fullScreen = dialog.getByRole("button", { name: "Open file full screen" });
+  const close = dialog.getByRole("button", { name: "Close", exact: true });
+  for (const button of [fullScreen, close]) {
+    await expect(button).toHaveAttribute("type", "button");
+    await expect.poll(async () => (await button.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(44);
+    await expect.poll(async () => (await button.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    const box = (await button.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(440);
+  }
+  await expect(fullScreen).toHaveAttribute("title", "Open file full screen");
+  await expect(fullScreen).toHaveAttribute("aria-label", "Open file full screen");
+  await expect(close).toHaveAttribute("title", "Close");
+  await expect(close).toHaveAttribute("aria-label", "Close");
+
+  const dialogGeometry = await dialog.evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+  }));
+  expect(dialogGeometry.scrollWidth).toBeLessThanOrEqual(dialogGeometry.clientWidth);
+  expect(dialogGeometry.scrollHeight).toBeLessThanOrEqual(dialogGeometry.clientHeight);
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await close.click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test("navigates to a newly created project", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");
@@ -1197,6 +1284,81 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
     target: "project1.task1",
   });
   expect(harness.schedulerBodies[1].body).toMatchObject({ wakeIntervalMinutes: 45 });
+});
+
+test("keeps Scheduler schedules content inside a 440px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page);
+  await page.goto("/w/ws-test/r/scheduler");
+
+  const measureSchedulerOverflow = async () => page.locator("#detailsContent").evaluate((root) => [
+    { name: "details-content", element: root },
+    ...Array.from(root.querySelectorAll<HTMLElement>(".schedule-editor, .schedule-list, .schedule-list > *"))
+      .map((element) => ({ name: element.className || element.tagName.toLowerCase(), element })),
+  ].map(({ name, element }) => ({ name, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth })));
+  const expectNoSchedulerOverflow = async () => {
+    const dimensions = await measureSchedulerOverflow();
+    for (const dimension of dimensions) {
+      expect(dimension.scrollWidth - dimension.clientWidth, dimension.name).toBeLessThanOrEqual(1);
+    }
+    const documentSize = await page.evaluate(() => ({
+      bodyClient: document.body.clientWidth,
+      bodyScroll: document.body.scrollWidth,
+      htmlClient: document.documentElement.clientWidth,
+      htmlScroll: document.documentElement.scrollWidth,
+    }));
+    expect(documentSize).toEqual({ bodyClient: 440, bodyScroll: 440, htmlClient: 440, htmlScroll: 440 });
+  };
+
+  await expect(page.getByText("No schedules. The Server will not create empty Scheduler Turns.")).toBeVisible();
+  await expectNoSchedulerOverflow();
+
+  await page.getByLabel("Description").fill("Notify when the release is ready");
+  await page.getByLabel("Condition").fill("When the release branch is green after 09:00 Shanghai time and the deployment checklist is complete");
+  await page.getByRole("button", { name: "Add schedule", exact: true }).click();
+  await expect(page.locator(".schedule-list article")).toContainText("Notify when the release is ready");
+  await expectNoSchedulerOverflow();
+});
+
+test("keeps Scheduler schedule controls at a 44px touch size on a 440px viewport", async ({ page }) => {
+  const harness = await installMockApi(page);
+  await page.setViewportSize({ width: 440, height: 844 });
+  await page.goto("/w/ws-test/r/scheduler");
+
+  const editor = page.locator(".schedule-editor");
+  const description = page.getByRole("textbox", { name: "Description", exact: true });
+  const condition = page.getByRole("textbox", { name: "Condition", exact: true });
+  const target = page.getByRole("textbox", { name: "Target resource ID", exact: true });
+  const addSchedule = page.getByRole("button", { name: "Add schedule", exact: true });
+
+  await expect(description).toHaveAttribute("placeholder", "What should the Scheduler understand?");
+  await expect(condition).toHaveAttribute("placeholder", "For example: when the release branch is green after 09:00 Shanghai time");
+  await expect(condition).toHaveAttribute("rows", "3");
+  await expect(target).toHaveAttribute("placeholder", "workspace, scheduler, project1, or project1.task1");
+  await expect(addSchedule).toHaveAttribute("type", "button");
+  await expect(addSchedule).toBeDisabled();
+
+  const editorBox = await editor.boundingBox();
+  expect(editorBox).not.toBeNull();
+  for (const control of [description, condition, target, addSchedule]) {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(editorBox!.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(editorBox!.x + editorBox!.width + 1);
+  }
+
+  await description.fill("Notify when the release is ready");
+  await condition.fill("When the release branch is green after 09:00 Shanghai time");
+  await target.fill("project1.task1");
+  await expect(addSchedule).toBeEnabled();
+  await addSchedule.click();
+  await expect.poll(() => harness.schedulerBodies.length).toBe(1);
+  expect(harness.schedulerBodies[0].body).toEqual({
+    description: "Notify when the release is ready",
+    condition: "When the release branch is green after 09:00 Shanghai time",
+    target: "project1.task1",
+  });
 });
 
 test("keeps Svelte Detail documents, History, previews, diffs, and edits stable during refresh", async ({ page }) => {
@@ -1829,6 +1991,208 @@ test("keeps the 440px workspace drawer controls at a 44px touch size", async ({ 
   await expect(page).toHaveURL(/\/w\/ws-b$/);
 });
 
+test("keeps the Scheduler navigation drawer entry at a 44px touch size", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installMockApi(page);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+
+  const drawer = page.locator("#mobileSidebar");
+  const scheduler = page.locator('[data-component-owner="scheduler-nav"] > button');
+  await expect(scheduler).toBeVisible();
+  await expect(scheduler).toBeEnabled();
+  await expect(scheduler).toHaveAttribute("title", "Workspace Scheduler");
+  await expect(scheduler).toHaveAttribute("type", "button");
+  await expect(scheduler).toHaveAccessibleName("Scheduler Natural-language schedules");
+
+  // The drawer slides in, so wait for its transform to settle before comparing
+  // the entry's geometry with the drawer bounds.
+  await expect.poll(async () => (await drawer.boundingBox())?.x ?? -1).toBe(0);
+  const drawerBox = (await drawer.boundingBox())!;
+  const schedulerBox = (await scheduler.boundingBox())!;
+  expect(schedulerBox.height).toBeGreaterThanOrEqual(44);
+  expect(schedulerBox.x).toBeGreaterThanOrEqual(drawerBox.x);
+  expect(schedulerBox.x + schedulerBox.width).toBeLessThanOrEqual(drawerBox.x + drawerBox.width + 1);
+
+  const documentSize = await page.evaluate(() => ({
+    bodyClient: document.body.clientWidth,
+    bodyScroll: document.body.scrollWidth,
+    htmlClient: document.documentElement.clientWidth,
+    htmlScroll: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize).toEqual({ bodyClient: 440, bodyScroll: 440, htmlClient: 440, htmlScroll: 440 });
+
+  await scheduler.click();
+  await expect(page).toHaveURL(/\/w\/ws-test\/r\/scheduler$/);
+});
+
+test("keeps the 440px Projects actions at a 44px touch size", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-b");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+
+  const tree = page.locator('[data-component-owner="project-tree"]');
+  const title = tree.locator(".section-title");
+  const label = title.locator(".section-label");
+  const edit = tree.locator("#treeEditButton");
+  const create = tree.locator("#newProjectButton");
+  await expect.poll(async () => (await tree.boundingBox())?.x ?? -1).toBeGreaterThanOrEqual(0);
+  await expect(label).toHaveText("Projects");
+  await expect(edit).toHaveAttribute("type", "button");
+  await expect(edit).toHaveAttribute("title", "Edit projects");
+  await expect(edit).toHaveAttribute("aria-pressed", "false");
+  await expect(create).toHaveAttribute("type", "button");
+  await expect(create).toHaveAttribute("title", "New project");
+
+  const titleBox = (await title.boundingBox())!;
+  const firstProject = tree.locator("#projectTree > .tree-item").first();
+  const firstProjectBox = (await firstProject.boundingBox())!;
+  expect(titleBox.height).toBeGreaterThanOrEqual(44);
+  for (const button of [edit, create]) {
+    const box = (await button.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(titleBox.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(titleBox.x + titleBox.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(firstProjectBox.y);
+  }
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await edit.click();
+  await expect(edit).toHaveAttribute("title", "Done editing");
+  await expect(edit).toHaveAttribute("aria-pressed", "true");
+  await expect(tree).toHaveClass(/editing/);
+  await edit.click();
+  await expect(edit).toHaveAttribute("title", "Edit projects");
+
+  await create.click();
+  await expect(page.getByRole("dialog", { name: "Create project" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Create project" }).getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog", { name: "Create project" })).toHaveCount(0);
+});
+
+test("keeps 440px Projects resource rows at a 44px touch size without changing tree semantics", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+
+  const projectRow = page.locator("#projectTree > .tree-item").first();
+  const taskRows = page.locator("#projectTree .task-item");
+  await expect.poll(async () => (await projectRow.boundingBox())?.x ?? -1).toBeGreaterThanOrEqual(0);
+  await expect(projectRow).toHaveAttribute("type", "button");
+  await expect(projectRow).toHaveAttribute("aria-label", /Open tasks: 2 tasks; 0 working/);
+  await expect(taskRows).toHaveCount(2);
+  await expect(taskRows.first()).toHaveAttribute("type", "button");
+  await expect(taskRows.first()).toHaveAttribute("aria-label", /Infrastructure task.*Not started/);
+  await expect(taskRows.nth(1)).toHaveAttribute("aria-label", /Follow-up task.*Not started/);
+
+  const projectBox = await projectRow.boundingBox();
+  expect(projectBox).not.toBeNull();
+  for (const row of [projectRow, taskRows.first(), taskRows.nth(1)]) {
+    const box = await row.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(440);
+    await expect(row.locator('[role="checkbox"]')).toHaveAttribute("aria-checked", "false");
+  }
+
+  const taskBox = await taskRows.first().boundingBox();
+  expect(taskBox).not.toBeNull();
+  expect(taskBox!.x).toBeGreaterThan(projectBox!.x);
+  await expect(taskRows.first().locator(".task-state-icon")).toHaveCount(1);
+
+  const treeSection = page.locator("#mobileSidebar .tree-section");
+  await expect(treeSection).toBeVisible();
+  expect(await treeSection.evaluate((node) => getComputedStyle(node).overflowY)).toBe("auto");
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await taskRows.nth(1).click();
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task2$/);
+  await expect(page.locator("#projectTree .tree-item.active")).toContainText("Follow-up task");
+});
+
+test("keeps Workspace Wiki file rows at a 44px touch size without overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 440, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-b");
+
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("tab", { name: "Wiki", exact: true }).click();
+  const browser = panel.locator('[data-component-owner="file-browser"]');
+  const rows = browser.locator("button.artifact-row.file");
+  await expect(rows).toHaveCount(2);
+
+  for (const name of ["index.md", "link-preview.md"]) {
+    const row = rows.filter({ hasText: name });
+    await expect(row).toHaveCount(1);
+    await expect(row).toHaveAttribute("type", "button");
+    await expect(row).toHaveAccessibleName(new RegExp(`${name} \\d+ B`));
+    const box = await row.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(440);
+
+    const download = row.locator("a.artifact-download");
+    await expect(download).toHaveAttribute("download", name);
+    await expect(download).toHaveAttribute("aria-label", `Download ${name}`);
+    await expect(download).toHaveAttribute("href", new RegExp(`path=wiki%2F${name}&download=1$`));
+  }
+
+  const previewRow = rows.filter({ hasText: "link-preview.md" });
+  await previewRow.click();
+  await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");
+  await expect(previewRow).toHaveClass(/active/);
+  const activeBox = await previewRow.boundingBox();
+  expect(activeBox).not.toBeNull();
+  expect(activeBox!.height).toBeGreaterThanOrEqual(44);
+
+  const detailsSize = await page.locator("#detailsContent").evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  expect(detailsSize.scrollWidth).toBeLessThanOrEqual(detailsSize.clientWidth);
+
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
+
+  await page.getByRole("dialog", { name: "File preview" }).getByRole("button", { name: "Close" }).click();
+});
+
 test("merges details and chat into one tabbed column in the two-column layout", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 800 });
   await installShellMockApi(page);
@@ -2058,6 +2422,70 @@ test("keeps the Workspace Generation lifecycle Save target at 44px in a 440px vi
   expect(overflow).toBeLessThanOrEqual(1);
   const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(documentOverflow).toBeLessThanOrEqual(1);
+});
+
+test("keeps Scheduler Settings controls at a 44px touch size in a 440px viewport", async ({ page }) => {
+  const harness = await installMockApi(page);
+  await page.setViewportSize({ width: 440, height: 844 });
+  await page.goto("/w/ws-test/r/scheduler");
+
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("tab", { name: "Settings", exact: true }).click();
+
+  const content = panel.locator("#detailsContent");
+  const contentBox = (await content.boundingBox())!;
+  const binding = panel.getByRole("button", { name: "Scheduler Agent binding", exact: true });
+  const interval = panel.getByRole("spinbutton", { name: "Scheduler wake interval in minutes" });
+  const save = panel.locator(".resource-settings-interval").getByRole("button", { name: "Save", exact: true });
+
+  await expect(binding).toHaveAttribute("type", "button");
+  await expect(binding).toHaveAttribute("aria-haspopup", "listbox");
+  await expect(binding).toHaveAttribute("aria-expanded", "false");
+  await expect(interval).toHaveAttribute("type", "number");
+  await expect(interval).toHaveAttribute("aria-label", "Scheduler wake interval in minutes");
+  await expect(save).toHaveAttribute("type", "button");
+  await expect(save).toBeDisabled();
+
+  for (const control of [binding, interval, save]) {
+    const box = await control.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x).toBeGreaterThanOrEqual(contentBox.x);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
+  }
+
+  await binding.click();
+  const menu = page.getByRole("listbox", { name: "Scheduler Agent binding", exact: true });
+  await expect(menu).toBeVisible();
+  await expect(binding).toHaveAttribute("aria-expanded", "true");
+  await expect(menu.getByRole("option")).toHaveCount(5);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(binding).toHaveAttribute("aria-expanded", "false");
+
+  await interval.fill("45");
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect.poll(() => harness.schedulerBodies.length).toBe(1);
+  expect(harness.schedulerBodies[0]).toMatchObject({
+    method: "PUT",
+    path: "/api/workspaces/ws-test/scheduler/settings",
+    body: { agentBinding: { kind: "profile", name: "fast" }, wakeIntervalMinutes: 45 },
+  });
+  await expect(interval).toHaveValue("45");
+  await expect(save).toBeDisabled();
+
+  const detailsSize = await content.evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth }));
+  expect(detailsSize.scrollWidth).toBeLessThanOrEqual(detailsSize.clientWidth);
+  const documentSize = await page.evaluate(() => ({
+    body: document.body.getBoundingClientRect().width,
+    html: document.documentElement.getBoundingClientRect().width,
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(documentSize.body).toBe(440);
+  expect(documentSize.html).toBe(440);
+  expect(documentSize.scrollWidth).toBeLessThanOrEqual(documentSize.clientWidth);
 });
 
 test("keeps every System Settings tab reachable without horizontal scrolling in a 390px mobile viewport", async ({ page }) => {

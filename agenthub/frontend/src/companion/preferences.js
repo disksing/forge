@@ -15,6 +15,7 @@ export const DEFAULT_COMPANION_PREFERENCES = Object.freeze({
   beepProgression: DEFAULT_BEEP_PROGRESSION,
   completionSound: "completed-voice",
   hiddenQuotaKeys: [],
+  balanceTotals: {},
 });
 
 export function normalizeCompanionPreferences(value = {}) {
@@ -26,6 +27,11 @@ export function normalizeCompanionPreferences(value = {}) {
       .map((key) => String(key || ""))
       .filter(Boolean),
   )].sort();
+  const balanceTotals = {};
+  for (const [provider, total] of Object.entries(value?.balanceTotals || {})) {
+    const numeric = Number(total);
+    if (provider && Number.isFinite(numeric) && numeric > 0) balanceTotals[String(provider)] = numeric;
+  }
   return {
     showActivity: value?.showActivity == null ? DEFAULT_COMPANION_PREFERENCES.showActivity : Boolean(value.showActivity),
     enableBeeping: value?.enableBeeping == null ? DEFAULT_COMPANION_PREFERENCES.enableBeeping : Boolean(value.enableBeeping),
@@ -33,6 +39,7 @@ export function normalizeCompanionPreferences(value = {}) {
     beepProgression: BEEP_PROGRESSIONS.some((option) => option.value === beepProgression) ? beepProgression : DEFAULT_COMPANION_PREFERENCES.beepProgression,
     completionSound: COMPLETION_SOUNDS.some((option) => option.value === completionSound) ? completionSound : DEFAULT_COMPANION_PREFERENCES.completionSound,
     hiddenQuotaKeys,
+    balanceTotals,
   };
 }
 
@@ -47,6 +54,11 @@ export function validateCompanionPreferences(value) {
   }
   if (!COMPLETION_SOUNDS.some((option) => option.value === value?.completionSound)) {
     push("completionSound", "Select a supported completion sound");
+  }
+  for (const [provider, total] of Object.entries(value?.balanceTotals || {})) {
+    if (!Number.isFinite(Number(total)) || Number(total) < 0) {
+      push("balanceTotals", `Balance total for "${provider}" must be a non-negative number`);
+    }
   }
   return errors;
 }

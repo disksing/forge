@@ -48,3 +48,9 @@
 [data-component-owner="scheduler-nav"] small { color: rgb(220 228 239 / 50%); font-size: calc(10px * var(--sidebar-font-scale, 1)); }
 [data-component-owner="scheduler-nav"] .scheduler-nav-icon { color: #91c8ff; width: 14px; height: 14px; }
 [data-component-owner="scheduler-nav"] .scheduler-nav-chevron { opacity: .45; width: 13px; height: 13px; }
+
+@media (max-width: 980px) {
+  [data-component-owner="scheduler-nav"] > button {
+    min-height: 44px;
+  }
+}

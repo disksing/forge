@@ -83,7 +83,7 @@ func (m *doctorMonitor) snapshot() doctorSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	result := m.current
-	result.Workspaces = append([]doctorWorkspaceReport(nil), m.current.Workspaces...)
+	result.Workspaces = append([]doctorWorkspaceReport{}, m.current.Workspaces...)
 	return result
 }
 
