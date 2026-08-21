@@ -2617,7 +2617,7 @@ test("keeps Profiles settings cards inside the 390px mobile viewport without hor
       expect(box!.x).toBeGreaterThanOrEqual(contentBox.x);
       expect(box!.x + box!.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);
     }
-    for (const action of await settings.locator(".settings-profile-card .settings-danger-button").all()) {
+    for (const action of await settings.locator(".settings-profile-card .icon-button.danger").all()) {
       const box = await action.boundingBox();
       expect(box).not.toBeNull();
       expect(box!.x + box!.width).toBeLessThanOrEqual(contentBox.x + contentBox.width + 1);

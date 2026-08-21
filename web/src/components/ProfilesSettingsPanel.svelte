@@ -224,7 +224,7 @@
           {#if system}
             <span class="settings-profile-system-label">System</span>
           {:else}
-            <button type="button" class="settings-danger-button" title="Delete Profile" aria-label={`Delete profile ${profile.key || "Unnamed profile"}`} onclick={() => removeProfile(index)}><Icon name="trash-2" /></button>
+            <button type="button" class="icon-button danger" title="Delete Profile" aria-label={`Delete profile ${profile.key || "Unnamed profile"}`} onclick={() => removeProfile(index)}><Icon name="trash-2" /></button>
           {/if}
         </div>
         {#if open}
@@ -250,5 +250,5 @@
     {/each}
     <button type="button" class="settings-profile-add" onclick={addProfile} disabled={!agents.length} title={agents.length ? "" : "Add an AgentHub agent first"}><Icon name="plus" /><span>Add profile</span></button>
   </section>
-  <div class="settings-form-actions settings-save-bar"><span class:visible={draft.dirty} class="settings-save-hint">{draft.dirty ? "Unsaved changes" : ""}</span><button type="button" disabled={!draft.dirty || Boolean(pending) || hasProfileKeyErrors} onclick={saveAgentHub}><Icon name="save" /><span>Save All</span></button></div>
+  <div class="settings-form-actions settings-save-bar"><span class:visible={draft.dirty} class="settings-save-hint">{draft.dirty ? "Unsaved changes" : ""}</span><button type="button" class="primary-button" disabled={!draft.dirty || Boolean(pending) || hasProfileKeyErrors} onclick={saveAgentHub}><Icon name="save" /><span>Save All</span></button></div>
 </div>

@@ -49,7 +49,7 @@
       <div class="confirm-dialog-content"><p>{model.message}</p></div>
       <footer class="confirm-dialog-footer">
         <button type="button" class="secondary-button" onclick={() => model.onResult(false)}>{model.cancelLabel}</button>
-        <button bind:this={confirmButton} type="button" class="confirm-dialog-confirm" class:confirm-dialog-confirm-danger={model.danger} onclick={() => model.onResult(true)}>{model.confirmLabel}</button>
+        <button bind:this={confirmButton} type="button" class="primary-button" class:danger-button={model.danger} onclick={() => model.onResult(true)}>{model.confirmLabel}</button>
       </footer>
     </div>
   </div>

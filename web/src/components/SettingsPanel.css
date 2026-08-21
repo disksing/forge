@@ -50,33 +50,15 @@
 }
 
 :where([data-component-owner][data-settings-panel]) .settings-path-form button,
-:where([data-component-owner][data-settings-panel]) .settings-service-row button,
-:where([data-component-owner][data-settings-panel]) .settings-profile-new button,
 :where([data-component-owner][data-settings-panel]) .settings-form-actions button {
   height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: var(--panel);
   padding: 0 14px;
-  font-weight: 700;
 }
 
 :where([data-component-owner][data-settings-panel]) .settings-path-form button svg,
-:where([data-component-owner][data-settings-panel]) .settings-service-row button svg,
-:where([data-component-owner][data-settings-panel]) .settings-profile-new button svg,
 :where([data-component-owner][data-settings-panel]) .settings-form-actions button svg {
   width: 16px;
   height: 16px;
-}
-
-:where([data-component-owner][data-settings-panel]) .settings-form-actions button:disabled,
-:where([data-component-owner][data-settings-panel]) .settings-profile-new button:disabled {
-  background: var(--line);
-  color: var(--faint);
 }
 
 :where([data-component-owner][data-settings-panel]) .settings-pill {
@@ -86,25 +68,6 @@
   padding: 3px 8px;
   font-size: 11px;
   font-weight: 700;
-}
-
-:where([data-component-owner][data-settings-panel]) .settings-danger-button {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  background: var(--accent-soft);
-  color: var(--accent-deep);
-}
-
-:where([data-component-owner][data-settings-panel]) .settings-danger-button:hover {
-  background: var(--accent-line);
-}
-
-:where([data-component-owner][data-settings-panel]) .settings-danger-button:disabled {
-  cursor: wait;
-  opacity: 0.55;
 }
 
 :where([data-component-owner][data-settings-panel]) .settings-empty {

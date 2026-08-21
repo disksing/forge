@@ -24,23 +24,13 @@
 :where([data-component-owner="event-timeline"]) .approval-actions button,
 :where([data-component-owner="event-timeline"]) .approval-options button,
 :where([data-component-owner="event-timeline"]) .approval-reply button {
-  min-height: 30px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--ink);
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--panel);
-  padding: 0 11px;
   font-size: calc(13px * var(--chat-font-scale, 1));
-  font-weight: 700;
 }
 
 :where([data-component-owner="event-timeline"]) .approval-actions { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 8px; }
 
 :where([data-component-owner="event-timeline"]) .approval-actions .secondary-button,
-:where([data-component-owner="event-timeline"]) .approval-options .secondary-button { border: 1px solid var(--line); background: transparent; color: var(--muted-strong); }
+:where([data-component-owner="event-timeline"]) .approval-options .secondary-button { background: transparent; color: var(--muted-strong); font-size: calc(13px * var(--chat-font-scale, 1)); }
 
 :where([data-component-owner="event-timeline"]) .agent-event.approval .approval-question { color: var(--text); font-family: inherit; font-size: calc(13px * var(--chat-font-scale, 1)); }
 :where([data-component-owner="event-timeline"]) .approval-options { margin-top: 9px; display: grid; gap: 7px; }

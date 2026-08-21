@@ -82,17 +82,6 @@
 :where([data-component-owner="confirm-dialog"]) .confirm-dialog-footer button {
   min-width: 82px;
   min-height: 34px;
-  border-radius: 6px;
-  font-weight: 700;
-}
-
-:where([data-component-owner="confirm-dialog"]) .confirm-dialog-confirm {
-  background: var(--blue);
-  color: var(--panel);
-}
-
-:where([data-component-owner="confirm-dialog"]) .confirm-dialog-confirm-danger {
-  background: var(--accent);
 }
 
 @media (max-width:980px) {

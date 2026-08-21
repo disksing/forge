@@ -173,7 +173,7 @@
         {:else if model.canEndGeneration}
           <button type="button" id="agentEndGenerationButton" class="chat-composer-action chat-end-generation-button" class:busy={model.endingGeneration} disabled={model.endingGeneration} title="End current generation" aria-label="End current generation" onclick={model.onEndGeneration}><span class="chat-composer-icon chat-composer-icon-idle"><Icon name="archive" /></span><span class="chat-composer-icon chat-composer-icon-busy"><Icon name="loader-circle" /></span></button>
         {/if}
-        <button type="submit" class="chat-send-button" class:busy={sending} title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={sendDisabled}><span class="chat-composer-icon chat-composer-icon-idle"><Icon name="send" /></span><span class="chat-composer-icon chat-composer-icon-busy"><Icon name="loader-circle" /></span></button>
+        <button type="submit" class="chat-send-button ghost-button" class:busy={sending} title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={sendDisabled}><span class="chat-composer-icon chat-composer-icon-idle"><Icon name="send" /></span><span class="chat-composer-icon chat-composer-icon-busy"><Icon name="loader-circle" /></span></button>
       </div>
     </div>
   </form>

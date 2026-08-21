@@ -67,9 +67,9 @@ describe("ConfirmDialog", () => {
     await vi.waitFor(() => expect(document.querySelector(".confirm-dialog")).not.toBeNull());
     expect(document.querySelector(".confirm-dialog-header strong")?.textContent).toBe("Remove schedule");
     expect(document.querySelector(".confirm-dialog-content p")?.textContent).toBe("Remove schedule s1?");
-    const confirm = document.querySelector<HTMLButtonElement>(".confirm-dialog-confirm");
+    const confirm = document.querySelector<HTMLButtonElement>(".confirm-dialog-footer .primary-button");
     expect(confirm?.textContent).toBe("Remove");
-    expect(confirm?.classList.contains("confirm-dialog-confirm-danger")).toBe(true);
+    expect(confirm?.classList.contains("danger-button")).toBe(true);
     confirm?.click();
     await expect(pending).resolves.toBe(true);
     await vi.waitFor(() => expect(document.querySelector(".confirm-dialog")).toBeNull());

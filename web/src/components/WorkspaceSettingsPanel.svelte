@@ -182,7 +182,7 @@
               <Icon name="chevron-down" />
             </button>
             <button type="button" class="settings-workspace-rename-button" title="Rename workspace" aria-label={`Rename ${workspace.name}`} disabled={Boolean(pending)} onclick={() => startNameEdit(workspace)}><Icon name="pencil" /></button>
-            <button type="button" class="settings-danger-button" title="Remove workspace" disabled={Boolean(pending)} onclick={() => removeWorkspace(workspace.id)}><Icon name="trash-2" /></button>
+            <button type="button" class="icon-button danger" title="Remove workspace" disabled={Boolean(pending)} onclick={() => removeWorkspace(workspace.id)}><Icon name="trash-2" /></button>
           </div>
         </div>
         {#if nameEditing === workspace.id}

@@ -77,8 +77,8 @@
           <form id="createDialogForm" class="details-form create-dialog-form" onsubmit={submit}>
             <ProjectCreateForm {draft} />
             <div class="form-actions">
-              <button type="submit" disabled={model.submitting || projectDescriptionMissing || projectSlugInvalid}>{model.submitting ? "Creating..." : "Create"}</button>
-              <button type="button" class="secondary" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
+              <button type="submit" class="primary-button" disabled={model.submitting || projectDescriptionMissing || projectSlugInvalid}>{model.submitting ? "Creating..." : "Create"}</button>
+              <button type="button" class="secondary-button" disabled={model.submitting} onclick={model.onClose}>Cancel</button>
             </div>
           </form>
         {/if}

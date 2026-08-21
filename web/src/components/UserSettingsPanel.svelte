@@ -49,6 +49,6 @@
       <input id="settingsUserName" value={userName} oninput={updateUserNameInput} maxlength="80" pattern="[A-Za-z0-9_-]+" placeholder="User" />
       <small>Use letters, numbers, underscores, or hyphens. Other characters are removed as you type. Leave blank to use User. The selection is stored in this browser and registered in the active Workspace.</small>
     </label>
-    <div class="settings-form-actions"><button type="submit" disabled={pending === "user"}><Icon name="save" /><span>Save</span></button></div>
+    <div class="settings-form-actions"><button type="submit" class="primary-button" disabled={pending === "user"}><Icon name="save" /><span>Save</span></button></div>
   </form>
 </div>

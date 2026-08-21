@@ -53,11 +53,11 @@
   {#if item.detail}<p>{item.detail}</p>{/if}
   {#if item.status === "pending"}
     {#if item.options?.length}
-      <div class="approval-options">{#each item.options as option (option.optionId)}<button class:secondary-button={String(option.kind || "").startsWith("reject")} disabled={pending} onclick={() => approve({ optionId: option.optionId })}>{optionLabel(option)}</button>{/each}</div>
+      <div class="approval-options">{#each item.options as option (option.optionId)}<button class="primary-button" class:secondary-button={String(option.kind || "").startsWith("reject")} disabled={pending} onclick={() => approve({ optionId: option.optionId })}>{optionLabel(option)}</button>{/each}</div>
     {:else}
-      <div class="approval-actions"><button disabled={pending} onclick={() => approve({ decision: "accept" })}><Icon name="check" /><span>Allow once</span></button><button class="secondary-button" disabled={pending} onclick={() => approve({ decision: "decline" })}><Icon name="x" /><span>Decline</span></button></div>
+      <div class="approval-actions"><button class="primary-button" disabled={pending} onclick={() => approve({ decision: "accept" })}><Icon name="check" /><span>Allow once</span></button><button class="secondary-button" disabled={pending} onclick={() => approve({ decision: "decline" })}><Icon name="x" /><span>Decline</span></button></div>
     {/if}
-    {#if item.question}<form class="approval-reply" onsubmit={(event) => { event.preventDefault(); if (draft.trim()) void approve({ text: draft.trim() }); }}><input bind:value={draft} placeholder="Reply with a custom answer…" aria-label="Custom reply"><button type="submit" disabled={!draft.trim() || pending}>Send</button></form>{/if}
+    {#if item.question}<form class="approval-reply" onsubmit={(event) => { event.preventDefault(); if (draft.trim()) void approve({ text: draft.trim() }); }}><input bind:value={draft} placeholder="Reply with a custom answer…" aria-label="Custom reply"><button type="submit" class="primary-button" disabled={!draft.trim() || pending}>Send</button></form>{/if}
   {:else}
     <p>{item.decision || (item.status === "accepted" ? "Allowed" : "Declined")}{item.reply ? `: ${item.reply}` : ""}</p>
   {/if}
