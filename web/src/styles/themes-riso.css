@@ -232,6 +232,144 @@
   border-radius: 4px;
 }
 
+/* ---- demo chrome parity: tree selection, pills, tabs, switchers, composer ---- */
+
+/* tree rows: stencil frames; the selected row is a pink ink pass with a
+   flat registration ghost, hover is a bare ink outline on paper */
+:root[data-theme="riso"] [data-component-owner="project-tree"] .tree-item {
+  border: 1.5px solid transparent;
+  border-radius: 2px;
+}
+
+:root[data-theme="riso"] [data-component-owner="project-tree"] .tree-item:hover {
+  border-color: #1a1a1a;
+  background: var(--panel);
+}
+
+:root[data-theme="riso"] [data-component-owner="project-tree"] .tree-item.active,
+:root[data-theme="riso"] [data-component-owner="project-tree"] .tree-item.active:hover {
+  background: var(--accent);
+  border-color: #1a1a1a;
+  box-shadow: 2px 2px 0 rgba(26, 26, 26, 0.22);
+  color: #1a1a1a;
+}
+
+/* count pills: black capsules printed in sunflower ink */
+:root[data-theme="riso"] [data-component-owner="project-tree"] .unread-badge,
+:root[data-theme="riso"] [data-component-owner="project-tree"] .folder-item .folder-count,
+:root[data-theme="riso"] [data-component-owner="project-tree"] .project-task-summary-count {
+  background: #1a1a1a;
+  color: var(--amber-bright);
+  border: 1.5px solid #1a1a1a;
+  border-radius: 2px;
+  font-family: "Arial Black", "Helvetica Neue", Inter, sans-serif;
+}
+
+/* detail tabs: a row of stencil-cut passes split by ink rules; the active
+   tab is a solid ink pass with a paper-ghost misregistration */
+:root[data-theme="riso"] [data-component-owner="detail-panel"] .details-tabs {
+  gap: 0;
+  border-bottom: 2.5px solid #1a1a1a;
+}
+
+:root[data-theme="riso"] [data-component-owner="detail-panel"] .details-tab {
+  border-bottom: 0;
+  border-right: 2.5px solid #1a1a1a;
+  border-radius: 0;
+  font-family: "Arial Black", "Helvetica Neue", Inter, sans-serif;
+  letter-spacing: 0.05em;
+}
+
+:root[data-theme="riso"] [data-component-owner="detail-panel"] .details-tab:hover {
+  background: var(--blue);
+  color: #1a1a1a;
+}
+
+:root[data-theme="riso"] [data-component-owner="detail-panel"] .details-tab.active {
+  background: #1a1a1a;
+  color: #f6f1e7;
+  text-shadow: 1.5px 1px 0 rgba(246, 241, 231, 0.25);
+}
+
+:root[data-theme="riso"] [data-component-owner="detail-panel"] .details-tab-count {
+  border-radius: 2px;
+}
+
+:root[data-theme="riso"] [data-component-owner="detail-panel"] .details-tab.active .details-tab-count {
+  background: var(--amber-bright);
+  border-color: #1a1a1a;
+  color: #1a1a1a;
+}
+
+/* segmented switchers (mobile Details/Chat, two-column view tabs): one ink
+   frame split into passes, the active pass printed in sunflower */
+:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher,
+:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher {
+  padding: 0;
+  border: 2.5px solid #1a1a1a;
+  border-radius: 2px;
+  background: transparent;
+}
+
+:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher button,
+:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher button {
+  border-radius: 0;
+  color: #1a1a1a;
+  font-family: "Arial Black", "Helvetica Neue", Inter, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher button + button,
+:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher button + button {
+  border-left: 2.5px solid #1a1a1a;
+}
+
+:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher button[aria-selected="true"],
+:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher button[aria-selected="true"] {
+  background: var(--amber-bright);
+  color: #1a1a1a;
+}
+
+/* composer: an ink-ruled channel on dimmed paper; the bar actions keep
+   their 44px hit areas, so the stencil frames are painted inside them via
+   outline + content-box fill (overlapping hit boxes cannot clash). Send is
+   the pink pass, hover passes print in sunflower. */
+:root[data-theme="riso"] [data-component-owner="app-shell"] .chat-composer {
+  border-top: 2.5px solid #1a1a1a;
+  background: var(--panel-sunken);
+}
+
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-upload-button,
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-composer-action,
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-send-button {
+  border-radius: 2px;
+  outline: 2px solid #1a1a1a;
+  outline-offset: -8px;
+  color: #1a1a1a;
+}
+
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-upload-button:hover,
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-composer-action:hover:not(:disabled) {
+  background-clip: content-box;
+  padding: 8px;
+  background-color: var(--amber-bright);
+}
+
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-send-button:not(:disabled) {
+  background-clip: content-box;
+  padding: 8px;
+  background-color: var(--accent);
+}
+
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-send-button:not(:disabled):hover {
+  background-color: var(--accent-deep);
+}
+
+:root[data-theme="riso"] [data-component-owner="chat-composer"] .chat-send-button:disabled {
+  outline-color: var(--disabled-text);
+  color: var(--disabled-text);
+}
+
 /* collapsed digests and rich content square off to match the stencil edges */
 :root[data-theme="riso"] [data-component-owner="event-timeline"] .turn-collapsed-digest {
   border-radius: 2px;
