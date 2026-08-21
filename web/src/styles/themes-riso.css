@@ -217,3 +217,17 @@ body[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-m
 body[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-row.user .agent-message-main {
   margin-left: auto;
 }
+
+/* collapsed digests and rich content square off to match the stencil edges */
+body[data-theme="riso"] [data-component-owner="event-timeline"] .turn-collapsed-digest {
+  border-radius: 2px;
+}
+
+body[data-theme="riso"] .markdown-rendered pre,
+body[data-theme="riso"] .markdown-rendered code {
+  border-radius: 2px;
+}
+
+body[data-theme="riso"] .markdown-rendered pre {
+  border-width: 2px;
+}
