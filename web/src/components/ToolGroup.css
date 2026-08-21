@@ -8,7 +8,7 @@
   max-width: 100%;
   margin: 4px 0 4px 26px;
   border: 0;
-  border-left: 2px solid var(--line-soft);
+  border-left: var(--chat-activity-rail-width) solid var(--chat-activity-rail);
   padding-left: 12px;
   border-radius: 0;
   background: transparent;

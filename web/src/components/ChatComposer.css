@@ -191,15 +191,15 @@
   gap: 4px;
   margin: 10px 12px;
   padding: 8px 10px 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--bg);
-  box-shadow: 0 1px 3px var(--ink-shadow);
+  border: var(--chat-composer-border-width) solid var(--chat-composer-border-color);
+  border-radius: var(--chat-composer-radius);
+  background: var(--chat-composer-bg);
+  box-shadow: var(--chat-composer-shadow);
   transition: border-color 0.16s ease;
 }
 
 :where([data-component-owner="chat-composer"]) .chat-input:focus-within {
-  border-color: var(--accent);
+  border-color: var(--chat-composer-focus);
 }
 
 :where([data-component-owner="chat-composer"]) .chat-input textarea {
@@ -214,7 +214,7 @@
   resize: none;
   font-size: calc(13px * var(--chat-font-scale, 1));
   line-height: 20px;
-  color: var(--ink);
+  color: var(--chat-composer-text);
 }
 
 :where([data-component-owner="chat-composer"]) .chat-composer-bar {

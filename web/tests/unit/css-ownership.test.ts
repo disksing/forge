@@ -612,6 +612,41 @@ describe("CSS ownership", () => {
     expect(body(':where([data-component-owner="event-timeline"]) .agent-message-content {')).toContain("overflow-wrap: break-word;");
   });
 
+  it("keeps chat surfaces on the chat region tokens", () => {
+    const body = (path: string, selector: string) => {
+      const css = read(path);
+      const start = css.indexOf(selector);
+      expect(start, selector).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+
+    // Message bubbles take their frame, rail and fill from the region
+    // tokens so a theme can restyle the conversation column from its own
+    // stylesheet without touching component CSS.
+    const bubble = body("src/components/TimelineMessage.css", ':where([data-component-owner="event-timeline"]) .agent-message-bubble {');
+    expect(bubble).toContain("var(--chat-bubble-border-width)");
+    expect(bubble).toContain("var(--chat-rail-width)");
+    expect(bubble).toContain("var(--chat-bubble-bg)");
+
+    const userBubble = body("src/components/TimelineMessage.css", ':where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-bubble {');
+    expect(userBubble).toContain("var(--chat-user-bg)");
+    expect(userBubble).toContain("var(--chat-role-user)");
+
+    const composer = body("src/components/ChatComposer.css", ':where([data-component-owner="chat-composer"]) .chat-input {');
+    expect(composer).toContain("var(--chat-composer-border-color)");
+    expect(composer).toContain("var(--chat-composer-radius)");
+
+    const approval = body("src/components/ApprovalCard.css", ':where([data-component-owner="event-timeline"]) .agent-event.approval {');
+    expect(approval).toContain("var(--chat-event-rail-approval)");
+
+    const notice = body("src/components/TimelineNotice.css", ':where([data-component-owner="event-timeline"]) .timeline-notice {');
+    expect(notice).toContain("var(--chat-event-rail-width)");
+
+    const toolOutput = body("src/components/ToolItem.css", ':where([data-component-owner="event-timeline"]) .agent-tool-item pre {');
+    expect(toolOutput).toContain("var(--chat-output-bg)");
+    expect(toolOutput).toContain("var(--chat-output-text)");
+  });
+
   it("marks nested component roots with the same owner used by their CSS", () => {
 	    for (const component of ["AgentPanelHeader", "ActivityGroup", "AppearanceSettingsPanel", "ActivityPanel", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskWizard", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);

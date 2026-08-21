@@ -1,10 +1,12 @@
 :where([data-component-owner="event-timeline"]) .agent-event.approval {
   margin: 14px 0;
-  padding: 4px 0 4px 12px;
-  border: 0;
-  border-left: 3px solid var(--amber);
-  border-radius: 0;
-  background: transparent;
+  padding: var(--chat-event-padding);
+  border: var(--chat-event-border-width) solid var(--chat-event-border-color);
+  border-left-width: var(--chat-event-rail-width);
+  border-left-color: var(--chat-event-rail-approval);
+  border-radius: var(--chat-event-radius);
+  background: var(--chat-event-bg);
+  box-shadow: var(--chat-event-shadow);
   color: var(--text);
 }
 

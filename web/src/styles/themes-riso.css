@@ -161,3 +161,59 @@ body[data-theme="riso"] [data-component-owner="project-tree"] .section-title but
   border: 2px solid #1a1a1a;
   border-radius: 2px;
 }
+
+/* chat region: messages become framed ink passes with flat registration
+   ghosts. Role coding stays on the meta row and the colored left edge of
+   each frame (the default role tokens resolve to the Riso spot inks), the
+   user message gets the cyan fill with black ink text, and bubbles hug
+   alternating edges like the demo instead of spanning the column. */
+body[data-theme="riso"] {
+  --chat-bubble-bg: var(--panel);
+  --chat-bubble-border-width: 2.5px;
+  --chat-bubble-border-color: #1a1a1a;
+  --chat-bubble-radius: 2px;
+  --chat-bubble-shadow: 3px 3px 0 rgba(26, 26, 26, 0.18);
+  --chat-bubble-padding: 10px 14px;
+  --chat-rail-width: 2.5px;
+  --chat-user-bg: var(--blue);
+  --chat-user-text: #1a1a1a;
+  --chat-user-padding: 10px 14px;
+  --chat-user-radius: 2px;
+  --chat-user-shadow: -3px 3px 0 rgba(26, 26, 26, 0.25);
+  --chat-meta-font: "Arial Black", "Helvetica Neue", Inter, sans-serif;
+  --chat-tag-bg: var(--panel-sunken);
+  --chat-tag-radius: 2px;
+  /* inline event cards: black stencil frame; the approval card keeps its
+     sunflower rail as the one spot-color edge */
+  --chat-event-bg: var(--panel);
+  --chat-event-border-width: 2px;
+  --chat-event-border-color: #1a1a1a;
+  --chat-event-radius: 2px;
+  --chat-event-shadow: 3px 3px 0 rgba(26, 26, 26, 0.15);
+  --chat-event-padding: 10px 12px;
+  --chat-event-rail-width: 2px;
+  --chat-event-rail: #1a1a1a;
+  --chat-activity-rail: #1a1a1a;
+  /* output blocks are solid black ink passes with paper text (the default
+     token pair resolves to black on black under this palette) */
+  --chat-output-bg: #1a1a1a;
+  --chat-output-text: #f6f1e7;
+  --chat-output-radius: 2px;
+  /* composer card */
+  --chat-composer-bg: var(--panel);
+  --chat-composer-text: #1a1a1a;
+  --chat-composer-border-width: 2px;
+  --chat-composer-border-color: #1a1a1a;
+  --chat-composer-radius: 2px;
+  --chat-composer-shadow: 3px 3px 0 rgba(26, 26, 26, 0.18);
+}
+
+/* demo-style staggered bubbles: user messages hug the right edge, agent
+   messages the left, neither spans the full column */
+body[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-main {
+  max-width: 92%;
+}
+
+body[data-theme="riso"] [data-component-owner="event-timeline"] .agent-message-row.user .agent-message-main {
+  margin-left: auto;
+}

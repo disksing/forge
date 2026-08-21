@@ -1,9 +1,12 @@
 /* Linear-minimal messages use role rails instead of bordered bubbles.
-   The rail sits on the message body so the sender name outdents to its left.
-   Role colors reuse the existing page palette: user = green, the bound
-   assistant = ink, other agents = blue, system = gray. Only the turn's final
-   assistant message keeps the ink rail; mid-turn progress updates fall back
-   to the muted base gray so the last message of a turn stands out. */
+   The rail sits on the message body so the sender name outdents to its
+   left. Role colors come from the --chat-role-* region tokens: user =
+   green, the bound assistant = ink, other agents = blue, system = gray.
+   Only the turn's final assistant message keeps the assistant rail;
+   mid-turn progress updates fall back to the muted base rail so the last
+   message of a turn stands out. Bubble geometry (frame, radius, shadow,
+   padding) comes from the --chat-bubble-* tokens, so a theme can turn the
+   bare rails into framed bubbles without touching this file. */
 :where([data-component-owner="event-timeline"]) .agent-message-row {
   display: flex;
   min-width: 0;
@@ -20,6 +23,7 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 3px;
+  font-family: var(--chat-meta-font);
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-meta strong {
@@ -27,11 +31,11 @@
   overflow-wrap: anywhere;
   font-size: calc(13.5px * var(--chat-font-scale, 1));
   font-weight: 700;
-  color: var(--text);
+  color: var(--chat-name-color);
 }
-:where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-meta strong { color: var(--green-deep); }
-:where([data-component-owner="event-timeline"]) .agent-message-row.assistant .agent-message-meta strong { color: var(--ink); }
-:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-meta strong { color: var(--blue); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-meta strong { color: var(--chat-role-user-deep); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.assistant .agent-message-meta strong { color: var(--chat-role-assistant); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-meta strong { color: var(--chat-role-agent); }
 :where([data-component-owner="event-timeline"]) .agent-message-meta span { color: var(--faint); font-size: calc(11px * var(--chat-font-scale, 1)); }
 
 /* A run header labels a stretch of agent activity (reasoning, tool calls,
@@ -51,7 +55,7 @@
 :where([data-component-owner="event-timeline"]) .agent-run-header strong {
   font-size: calc(13.5px * var(--chat-font-scale, 1));
   font-weight: 700;
-  color: var(--ink);
+  color: var(--chat-role-assistant);
 }
 
 :where([data-component-owner="event-timeline"]) .agent-run-header span {
@@ -69,42 +73,48 @@
   font-weight: 600;
 }
 
-/* Role tags are uniform gray pills; only the text carries the role color. */
+/* Role tags are uniform pills; only the text carries the role color. */
 :where([data-component-owner="event-timeline"]) .agent-message-meta .agent-message-role-tag {
   padding: 0 7px;
-  border-radius: 99px;
-  background: var(--line-soft);
+  border-radius: var(--chat-tag-radius);
+  background: var(--chat-tag-bg);
   line-height: 16px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-:where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-role-tag { color: var(--green-deep); }
-:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-role-tag { color: var(--blue); }
-:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-role-tag { color: var(--faint); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-role-tag { color: var(--chat-role-user-deep); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-role-tag { color: var(--chat-role-agent); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-role-tag { color: var(--chat-role-system-deep); }
 
 :where([data-component-owner="event-timeline"]) .agent-message-bubble {
   min-width: 0;
   max-width: 100%;
   margin-left: 0;
-  padding-left: 12px;
-  border-left: 3px solid var(--line-strong);
-  color: var(--text);
-  background: transparent;
+  padding: var(--chat-bubble-padding);
+  border: var(--chat-bubble-border-width) solid var(--chat-bubble-border-color);
+  border-left-width: var(--chat-rail-width);
+  border-left-color: var(--chat-rail);
+  border-radius: var(--chat-bubble-radius);
+  color: var(--chat-bubble-text);
+  background: var(--chat-bubble-bg);
+  box-shadow: var(--chat-bubble-shadow);
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-bubble {
-  padding: 6px 12px;
-  border-left-color: var(--green);
-  border-radius: 0 8px 8px 0;
-  background: var(--bg);
+  padding: var(--chat-user-padding);
+  border-left-color: var(--chat-role-user);
+  border-radius: var(--chat-user-radius);
+  background: var(--chat-user-bg);
+  color: var(--chat-user-text);
+  box-shadow: var(--chat-user-shadow);
 }
-:where([data-component-owner="event-timeline"]) .agent-message-row.assistant.final .agent-message-bubble { border-left-color: var(--ink); }
-:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-bubble { border-left-color: var(--blue); }
-:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble { border-left-color: var(--line-soft); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.assistant.final .agent-message-bubble { border-left-color: var(--chat-role-assistant); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-bubble { border-left-color: var(--chat-role-agent); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble { border-left-color: var(--chat-role-system); }
 
 :where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble p { color: var(--muted); font-size: calc(12px * var(--chat-font-scale, 1)); }
 
-:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-meta strong { color: var(--faint); font-weight: 600; }
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-meta strong { color: var(--chat-role-system-deep); font-weight: 600; }
 
 :where([data-component-owner="event-timeline"]) .agent-message-source {
   max-width: 220px;

@@ -24,9 +24,9 @@
   margin: 0 0 8px;
   overflow: auto;
   padding: 9px;
-  border-radius: 4px;
-  background: var(--text);
-  color: var(--line);
+  border-radius: var(--chat-output-radius);
+  background: var(--chat-output-bg);
+  color: var(--chat-output-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: calc(11px * var(--chat-font-scale, 1));
   line-height: 1.5;

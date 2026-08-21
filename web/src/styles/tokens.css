@@ -21,12 +21,13 @@
       without touching light ones. Text or lines painted on dark chrome
       must use the `*-on-dark` tokens, never the neutral light-surface
       tokens.
-   3b. Regions (`--sidebar-*`) — per-module color roles. Components in a
-      region reference region tokens, so a theme decides per module whether
-      it is dark chrome or another light surface. Layout metrics below may
-      also be overridden per theme; a theme stylesheet may additionally
-      scope structural overrides (borders, spacing, even grid templates)
-      under `body[data-theme="<id>"]` as long as functionality is unchanged.
+   3b. Regions (`--sidebar-*`, `--chat-*`) — per-module color roles.
+      Components in a region reference region tokens, so a theme decides
+      per module whether it is dark chrome or another light surface. Layout
+      metrics below may also be overridden per theme; a theme stylesheet
+      may additionally scope structural overrides (borders, spacing, even
+      grid templates) under `body[data-theme="<id>"]` as long as
+      functionality is unchanged.
    4. Effects (`--backdrop*`, `--accent-ring`, shadows) — overlays, focus
       rings and the rare shadow. */
 
@@ -119,6 +120,74 @@
   --sidebar-line-strong: var(--line-strong);
   --sidebar-text: var(--text);
   --sidebar-muted: var(--muted);
+
+  /* ---- region: chat ----
+     The conversation column is a region: message bubbles, role coding,
+     inline event cards (notices and approvals), the activity rail, output
+     blocks, and the composer card all consume these aliases. The default
+     look is Linear-minimal — messages are bare left rails with no box; a
+     theme turns them into framed bubbles by setting the border, radius,
+     shadow and padding tokens. --chat-font-scale (applied at runtime)
+     stays the user's text-size control and is independent of this layer. */
+  /* Message bubble geometry. The rail is the left edge of the bubble box;
+     with a full frame a theme usually matches the rail width to the frame
+     and lets the role color sit on top of the frame color. */
+  --chat-bubble-bg: transparent;
+  --chat-bubble-text: var(--text);
+  --chat-bubble-border-width: 0;
+  --chat-bubble-border-color: transparent;
+  --chat-bubble-radius: 0;
+  --chat-bubble-shadow: none;
+  --chat-bubble-padding: 0 0 0 12px;
+  --chat-rail-width: 3px;
+  --chat-rail: var(--line-strong);
+  /* Role coding: each role has a rail color plus a legible "-deep" text
+     color for the sender name and role tag. */
+  --chat-role-user: var(--green);
+  --chat-role-user-deep: var(--green-deep);
+  --chat-role-assistant: var(--ink);
+  --chat-role-agent: var(--blue);
+  --chat-role-system: var(--line-soft);
+  --chat-role-system-deep: var(--faint);
+  /* The user message is the one boxed bubble in the default look. */
+  --chat-user-bg: var(--bg);
+  --chat-user-text: var(--chat-bubble-text);
+  --chat-user-padding: 6px 12px;
+  --chat-user-radius: 0 8px 8px 0;
+  --chat-user-shadow: none;
+  /* Meta row above each message (sender name, role tag, timestamp). */
+  --chat-meta-font: inherit;
+  --chat-name-color: var(--text);
+  --chat-tag-bg: var(--line-soft);
+  --chat-tag-radius: 99px;
+  /* Inline event cards (timeline notices, approvals). */
+  --chat-event-bg: transparent;
+  --chat-event-border-width: 0;
+  --chat-event-border-color: transparent;
+  --chat-event-radius: 0;
+  --chat-event-shadow: none;
+  --chat-event-padding: 4px 0 4px 12px;
+  --chat-event-rail-width: 3px;
+  --chat-event-rail: var(--line-soft);
+  --chat-event-rail-error: var(--red);
+  --chat-event-rail-approval: var(--amber);
+  /* Thinking/tool activity rail. */
+  --chat-activity-rail-width: 2px;
+  --chat-activity-rail: var(--line-soft);
+  /* Inset output blocks (tool output, raw event payloads). The default
+     reuses the neutral text/line pair; a theme with a dark --line must
+     override both tokens to keep the block readable. */
+  --chat-output-bg: var(--text);
+  --chat-output-text: var(--line);
+  --chat-output-radius: 4px;
+  /* Composer card. */
+  --chat-composer-bg: var(--bg);
+  --chat-composer-text: var(--ink);
+  --chat-composer-border-width: 1px;
+  --chat-composer-border-color: var(--line-strong);
+  --chat-composer-radius: 6px;
+  --chat-composer-shadow: 0 1px 3px var(--ink-shadow);
+  --chat-composer-focus: var(--accent);
 
   /* ---- 4. effects ---- */
   --backdrop: rgba(34, 49, 63, 0.48);
