@@ -108,7 +108,7 @@ body[data-theme="riso"] :is(.primary-button, .secondary-button, .danger-button, 
   box-shadow: none;
 }
 
-body[data-theme="riso"] .primary-button {
+body[data-theme="riso"] .primary-button:not(:disabled) {
   color: #1a1a1a;
 }
 
