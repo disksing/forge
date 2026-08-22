@@ -5,11 +5,11 @@
 
 // BUILTIN_PROVIDERS lists the four user-recognizable built-in integrations in
 // display order. The ids match the canonical provider ids of the daemon
-// config; the pi runtime is presented under its user-facing Grok product.
+// config; Pi can connect to multiple model providers through its runtime.
 export const BUILTIN_PROVIDERS = [
   { id: "codex", name: "Codex", description: "OpenAI Codex app-server integration." },
   { id: "kimi", name: "Kimi", description: "Kimi Code CLI over the ACP protocol." },
-  { id: "pi", name: "Grok (Pi)", description: "Pi Coding Agent runtime with Grok models over JSON-RPC." },
+  { id: "pi", name: "Pi", description: "Pi Coding Agent runtime supporting multiple providers over JSON-RPC." },
   { id: "opencode", name: "OpenCode", description: "OpenCode CLI over the ACP protocol." },
 ];
 

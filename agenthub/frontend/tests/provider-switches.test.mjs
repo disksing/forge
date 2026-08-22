@@ -30,8 +30,11 @@ test("exactly four built-in providers in product order", () => {
   );
   assert.deepEqual(
     BUILTIN_PROVIDERS.map((provider) => provider.name),
-    ["Codex", "Kimi", "Grok (Pi)", "OpenCode"],
+    ["Codex", "Kimi", "Pi", "OpenCode"],
   );
+  const pi = BUILTIN_PROVIDERS.find((provider) => provider.id === "pi");
+  assert.equal(pi.description, "Pi Coding Agent runtime supporting multiple providers over JSON-RPC.");
+  assert.doesNotMatch(pi.description, /grok/i);
   for (const provider of BUILTIN_PROVIDERS) {
     assert.ok(provider.description.length > 0, `${provider.id} needs a one-line description`);
   }
