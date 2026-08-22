@@ -191,10 +191,17 @@ function activityToolCallCount(item: TimelineItem): number {
 }
 
 // formatClock renders the short wall-clock label shared by message meta
-// rows and agent run headers.
-export function formatClock(value?: string): string {
+// rows and agent run headers. Timestamps from the current local day keep
+// the bare hour/minute form; older ones also carry the date so distant
+// history stays unambiguous. The date layout follows the existing UI
+// convention (two-digit month/day plus hour/minute).
+export function formatClock(value?: string, now?: Date): string {
   const date = new Date(value || "");
-  return Number.isNaN(date.valueOf()) ? "" : date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  if (Number.isNaN(date.valueOf())) return "";
+  const reference = now || new Date();
+  const sameDay = date.getFullYear() === reference.getFullYear() && date.getMonth() === reference.getMonth() && date.getDate() === reference.getDate();
+  if (sameDay) return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {

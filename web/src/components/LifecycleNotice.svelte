@@ -3,13 +3,13 @@
 
   import Icon from "./Icon.svelte";
   import type { TimelineItem } from "./models";
+  import { formatClock } from "./timeline-events";
 
   let { item }: { item: TimelineItem } = $props();
   let iconName = $derived(item.tone === "ok" ? "check-circle" : item.tone === "danger" ? "triangle-alert" : item.tone === "info" ? "info" : "clock");
 
   function clock(): string {
-    const date = new Date(item.time || "");
-    return Number.isNaN(date.valueOf()) ? "" : date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    return formatClock(item.time);
   }
 </script>
 
