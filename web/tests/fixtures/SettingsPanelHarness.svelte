@@ -14,6 +14,8 @@
   let draft = $state<SettingsDraft>({
     ...initialDraft,
     profiles: initialDraft.profiles.map((profile) => ({ ...profile })),
+    agentProviders: initialDraft.agentProviders.map((provider) => ({ ...provider })),
+    agentConfigs: initialDraft.agentConfigs.map((agent) => ({ ...agent, options: agent.options ? { ...agent.options } : undefined, environment: agent.environment ? { ...agent.environment } : undefined })),
   });
   let pending = $state("");
 
@@ -29,7 +31,7 @@
 {:else if panel === "appearance"}
   <AppearanceSettingsPanel appearance={model.appearance} onLayoutPreference={model.onLayoutPreference} onFontScale={model.onFontScale} onResetFontScales={model.onResetFontScales} onThemePreference={model.onThemePreference} />
 {:else if panel === "agenthub"}
-  <AgentHubSettingsPanel agentHub={model.agentHub} bind:draft bind:pending onDirty={markDirty} onSaveAgentHub={model.onSaveAgentHub} onToast={model.onToast} />
+  <AgentHubSettingsPanel agentHub={model.agentHub} bind:draft bind:pending onDirty={markDirty} onSaveAgentHub={model.onSaveAgentHub} onToggleProvider={model.onToggleProvider} onToast={model.onToast} />
 {:else if panel === "profiles"}
   <ProfilesSettingsPanel agents={model.agents} bind:draft bind:pending onDirty={markDirty} onSaveAgentHub={model.onSaveAgentHub} onToast={model.onToast} />
 {:else}

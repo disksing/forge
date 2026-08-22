@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -28,6 +29,15 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if path == "agenthub" {
 		s.handleAgentHubSettings(w, r)
+		return
+	}
+	if strings.HasPrefix(path, "agenthub/providers/") {
+		providerID, err := url.PathUnescape(strings.TrimPrefix(path, "agenthub/providers/"))
+		if err != nil || strings.TrimSpace(providerID) == "" || strings.Contains(providerID, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		s.handleAgentHubProviderSettings(w, r, providerID)
 		return
 	}
 	if path == "revision" {

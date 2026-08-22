@@ -23,8 +23,52 @@ export interface AgentHubSettings {
   apiVersion: string;
   version: string;
   capabilities: string[];
-  providers: Array<{ id: string; name?: string }>;
-  agents: Array<{ name: string; providerId?: string; available?: boolean; unavailableReason?: string }>;
+  providers: AgentHubProviderInfo[];
+  agents: AgentHubAgentInfo[];
+  probes: AgentHubProbeInfo[];
+  agentConfig?: {
+    providers: AgentHubConfigProvider[];
+    agents: AgentHubConfigAgent[];
+  };
+}
+
+export interface AgentHubProviderInfo {
+  id: string;
+  name?: string;
+  type?: string;
+  enabled?: boolean;
+  command?: string;
+}
+
+export interface AgentHubAgentInfo {
+  name: string;
+  providerId?: string;
+  options?: Record<string, string>;
+  environment?: Record<string, string>;
+  available?: boolean;
+  unavailableReason?: string;
+}
+
+export interface AgentHubProbeInfo {
+  providerId: string;
+  type?: string;
+  command?: string;
+  available?: boolean;
+}
+
+export interface AgentHubConfigProvider {
+  id: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+  command?: string;
+}
+
+export interface AgentHubConfigAgent {
+  name: string;
+  providerId: string;
+  options?: Record<string, string>;
+  environment?: Record<string, string>;
 }
 
 export interface ThemeOption {
@@ -48,6 +92,8 @@ export interface SettingsDraft {
   userName: string;
   endpoint: string;
   profiles: ProfileDraft[];
+  agentProviders: AgentHubConfigProvider[];
+  agentConfigs: AgentHubConfigAgent[];
   dirty: boolean;
 }
 
@@ -77,6 +123,7 @@ export interface SettingsModel {
   onResetFontScales: () => void;
   onThemePreference: (theme: string) => void;
   onSaveAgentHub: (draft: SettingsDraft) => Promise<void>;
+  onToggleProvider: (providerId: string, enabled: boolean) => Promise<AgentHubConfigProvider>;
   onBrowserNotifications: (enabled: boolean) => void;
   onCompletionSound: (enabled: boolean) => void;
   onToast: (message: string) => void;
