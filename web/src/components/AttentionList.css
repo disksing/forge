@@ -42,10 +42,19 @@
   text-overflow: ellipsis;
 }
 
-:where([data-component-owner="attention-list"]) .activity-tabs button:hover,
-:where([data-component-owner="attention-list"]) .activity-tabs button.active {
+:where([data-component-owner="attention-list"]) .activity-tabs button:hover {
   background: var(--sidebar-row);
   color: var(--sidebar-text);
+}
+
+/* The active tab reads as a raised card on the track; the plain row tint
+   was nearly indistinguishable from the track on light sidebars. */
+:where([data-component-owner="attention-list"]) .activity-tabs button.active,
+:where([data-component-owner="attention-list"]) .activity-tabs button.active:hover {
+  background: var(--sidebar-tab-active-bg);
+  color: var(--sidebar-text);
+  font-weight: 700;
+  box-shadow: 0 1px 2px var(--ink-shadow);
 }
 
 :where([data-component-owner="attention-list"]) .activity-tab-icon {

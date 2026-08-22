@@ -131,6 +131,9 @@
      stay legible on the sidebar surface; dark sidebars raise these. */
   --sidebar-attention: var(--amber-deep);
   --sidebar-attention-soft: var(--amber);
+  /* Raised card for the active segmented tab on the sidebar; dark
+     sidebars pick a lighter chrome card instead of the white page panel. */
+  --sidebar-tab-active-bg: var(--panel);
 
   /* ---- region: chat ----
      The conversation column is a region: message bubbles, role coding,

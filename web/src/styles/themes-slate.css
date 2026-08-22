@@ -29,4 +29,5 @@
   /* status accents must stay legible on the dark sidebar */
   --sidebar-attention: var(--amber-bright);
   --sidebar-attention-soft: var(--amber);
+  --sidebar-tab-active-bg: var(--ink-row);
 }
