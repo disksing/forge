@@ -82,6 +82,25 @@ describe("timeline rendering components", () => {
     expect(delegated.querySelector(".agent-message-meta strong")?.textContent).toBe("Builder");
   });
 
+  it("dates older messages while same-day messages keep the bare clock", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-22T17:30:00"));
+
+      const sameDay = mounted(TimelineMessage, { item: { kind: "message", role: "user", text: "today", time: "2026-08-22T09:05:00", sender: { name: "disksing" } }, agentName: "Codex" });
+      expect(sameDay.querySelector(".agent-message-meta span:last-child")?.textContent).toBe(
+        new Date("2026-08-22T09:05:00").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+      );
+
+      const older = mounted(TimelineMessage, { item: { kind: "message", role: "user", text: "last week", time: "2026-08-10T09:05:00", sender: { name: "disksing" } }, agentName: "Codex" });
+      expect(older.querySelector(".agent-message-meta span:last-child")?.textContent).toBe(
+        new Date("2026-08-10T09:05:00").toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders active and completed thinking duration states", () => {
     const active = mounted(ThinkingBlock, { item: { kind: "thinking", active: true, text: "working" } });
     expect(active.querySelector("details")?.open).toBe(true);

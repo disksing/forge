@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTimeline } from "../../src/components/timeline-projector";
 import type { AgentEvent, TimelineItem } from "../../src/components/models";
-import { compactTimelineEvents, groupTimelineActivities, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, projectConversationEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
+import { compactTimelineEvents, formatClock, groupTimelineActivities, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, projectConversationEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
@@ -259,5 +259,44 @@ describe("timeline event algorithms", () => {
 
     expect(marked[0]).toBe(items[0]);
     expect(marked[1]).toBe(items[1]);
+  });
+});
+
+describe("formatClock", () => {
+  const now = new Date("2026-08-22T17:30:00");
+
+  it("returns an empty label for missing or invalid timestamps", () => {
+    expect(formatClock()).toBe("");
+    expect(formatClock("not-a-date")).toBe("");
+    expect(formatClock("", now)).toBe("");
+  });
+
+  it("shows only the time for messages from the same local day", () => {
+    const label = formatClock("2026-08-22T09:05:00", now);
+    expect(label).toBe(new Date("2026-08-22T09:05:00").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }));
+    expect(label).not.toMatch(/\d{2}\/\d{2}/);
+  });
+
+  it("shows the date and time for messages from an earlier day", () => {
+    const date = new Date("2026-08-10T09:05:00");
+    const label = formatClock("2026-08-10T09:05:00", now);
+    expect(label).toBe(
+      date.toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+    );
+    // The label must carry the date on top of the bare clock.
+    expect(label).toContain("08");
+    expect(label).toContain("10");
+    expect(label).not.toBe(date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }));
+  });
+
+  it("treats the cross-day boundary by local calendar day", () => {
+    // 23:59 the previous day already carries a date, while 00:00 on the
+    // reference day keeps the bare clock even at the day boundary.
+    const previous = formatClock("2026-08-21T23:59:00", now);
+    expect(previous).toBe(
+      new Date("2026-08-21T23:59:00").toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+    );
+    const midnight = formatClock("2026-08-22T00:00:00", now);
+    expect(midnight).toBe(new Date("2026-08-22T00:00:00").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }));
   });
 });
