@@ -318,6 +318,8 @@ describe("settings domain panels", () => {
     expect(target.textContent).toContain("Codex");
     expect(target.textContent).toContain("1 providers · switches save immediately");
     expect(target.textContent).toContain("1 agents");
+    expect(target.textContent).not.toContain("API v1 · AgentHub 1.2.3");
+    expect(target.querySelector(".settings-capability-list")).toBeNull();
 
     input(target.querySelector<HTMLInputElement>("#settingsAgentHubEndpoint")!, "http://127.0.0.1:5656");
     await tick();

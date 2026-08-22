@@ -138,8 +138,8 @@ describe("SettingsModal coordination", () => {
     await tick();
 
     const tabs = [...target.querySelectorAll<HTMLButtonElement>(".settings-tab")];
-    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Workspace", "User", "Appearance", "AgentHub", "Profiles", "Notifications"]);
-    tabs.find((tab) => tab.textContent?.includes("AgentHub"))!.click();
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Workspace", "User", "Appearance", "Agents", "Profiles", "Notifications"]);
+    tabs.find((tab) => tab.textContent?.includes("Agents"))!.click();
     await tick();
 
     const endpoint = target.querySelector<HTMLInputElement>("#settingsAgentHubEndpoint")!;

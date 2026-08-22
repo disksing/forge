@@ -1812,13 +1812,12 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   await name.fill("Migration-User");
   await expect(name).toHaveValue("Migration-User");
   await settings.getByRole("button", { name: "Save" }).click();
-  await settings.getByRole("button", { name: "AgentHub" }).click();
-  await expect(settings.getByLabel("Endpoint")).toHaveValue("http://127.0.0.1:4936/agenthub");
-  await expect(settings.getByLabel("Endpoint")).toHaveAttribute("readonly");
-  await expect(settings).toContainText("Mode: embedded");
+  await settings.getByRole("button", { name: "Agents" }).click();
+  await expect(settings.getByLabel("Endpoint")).toHaveCount(0);
+  await expect(settings).not.toContainText("API unknown · AgentHub unknown");
   await settings.getByRole("button", { name: "Profiles" }).click();
-  await settings.getByRole("button", { name: "AgentHub" }).click();
-  await expect(settings.getByLabel("Endpoint")).toHaveValue("http://127.0.0.1:4936/agenthub");
+  await settings.getByRole("button", { name: "Agents" }).click();
+  await expect(settings.getByLabel("Endpoint")).toHaveCount(0);
   await expect(settings.locator(".settings-save-hint")).toBeHidden();
   await settings.getByRole("button", { name: "Close" }).click();
 
@@ -2558,13 +2557,13 @@ test("keeps every System Settings tab reachable without horizontal scrolling in 
   const settings = page.getByRole("dialog", { name: "System Settings" });
   const tabs = settings.locator(".settings-tabs");
   await expect(tabs).toBeVisible();
-  await expect(tabs.locator(".settings-tab")).toHaveText(["Workspace", "User", "Appearance", "AgentHub", "Profiles", "Notifications"]);
+  await expect(tabs.locator(".settings-tab")).toHaveText(["Workspace", "User", "Appearance", "Agents", "Profiles", "Notifications"]);
 
   // The tab strip itself must not overflow the modal horizontally.
   const tabStrip = await tabs.evaluate((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }));
   expect(tabStrip.scroll).toBeLessThanOrEqual(tabStrip.client);
 
-  // Every tab, including the trailing AgentHub/Profiles/Notifications tabs, stays inside the viewport.
+  // Every tab, including the trailing Agents/Profiles/Notifications tabs, stays inside the viewport.
   for (const tab of await tabs.locator(".settings-tab").all()) {
     const box = await tab.boundingBox();
     expect(box).not.toBeNull();

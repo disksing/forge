@@ -35,12 +35,6 @@
   padding: 9px 10px;
 }
 
-:where([data-component-owner="agenthub-settings-panel"]) .settings-capability-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 :where([data-component-owner="agenthub-settings-panel"]) .settings-provider-list,
 :where([data-component-owner="agenthub-settings-panel"]) .settings-agent-list {
   display: grid;
