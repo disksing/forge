@@ -337,15 +337,6 @@ describe("CSS ownership", () => {
     expect(rule).toContain("min-height: 44px;");
   });
 
-  it("keeps the mobile Workspace view tabs at a 44px touch size", () => {
-    const css = read("src/components/MobileToolbar.css");
-    const selector = ':where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button';
-    const start = css.indexOf(selector);
-    expect(start, selector).toBeGreaterThanOrEqual(0);
-    const rule = css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
-    expect(rule).toContain("min-height: 44px;");
-  });
-
   it("keeps WorkspaceSwitcher controls at a 44px mobile touch size without growing its header", () => {
     const css = read("src/components/WorkspaceSwitcher.css");
     const mobileStart = css.indexOf("@media (max-width: 980px)");

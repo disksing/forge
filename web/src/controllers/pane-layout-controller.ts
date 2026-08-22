@@ -18,7 +18,6 @@ export interface PaneSizes {
 
 export interface MobilePaneState {
 	sidebarOpen: boolean;
-	view: "details" | "chat";
 }
 
 export type LayoutPreference = "auto" | "three" | "two" | "split";
@@ -112,7 +111,7 @@ export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): P
 
 export function createPaneLayoutController(onChange: () => void, storage: Storage | null = window.localStorage) {
 	let paneSizes = { ...PANE_DEFAULTS };
-	let mobile: MobilePaneState = { sidebarOpen: false, view: "details" };
+	let mobile: MobilePaneState = { sidebarOpen: false };
 	let layoutPreference: LayoutPreference = "auto";
 	let fontScales: FontScales = normalizeFontScales(null);
 	const mobileQuery = window.matchMedia("(max-width: 980px)");
@@ -262,12 +261,6 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		onChange();
 	}
 
-	function setMobileView(view: string): void {
-		mobile.view = view === "chat" ? "chat" : "details";
-		document.body.classList.toggle("mobile-chat-active", mobile.view === "chat");
-		onChange();
-	}
-
 	return {
 		initialize,
 		previewPane: setPaneSize,
@@ -277,7 +270,6 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		setFontScale,
 		resetFontScales,
 		setMobileSidebar,
-		setMobileView,
 		snapshot: () => ({ paneSizes: { ...paneSizes }, mobile: { ...mobile }, layout: { preference: layoutPreference, effective: effectiveLayout() }, fontScales: { ...fontScales } })
 	};
 }

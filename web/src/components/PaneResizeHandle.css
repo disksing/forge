@@ -120,4 +120,14 @@ body[data-layout="split"] :where([data-component-owner="pane-resize-handle"]).de
   :where([data-component-owner="pane-resize-handle"]).resize-handle {
     display: none;
   }
+
+  /* Single-column mode stacks details above chat, so the horizontal divider
+     remains visible and draggable on mobile. */
+  :where([data-component-owner="pane-resize-handle"]).resize-handle.details-resize-y {
+    display: block;
+    grid-column: 1;
+    grid-row: 2;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
 }

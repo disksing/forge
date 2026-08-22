@@ -48,29 +48,6 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
     color: var(--text);
   }
 
-  :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher {
-    grid-column: 2;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding: 3px;
-    border-radius: 6px;
-    background: var(--line-soft);
-  }
-
-  :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button {
-    min-height: 44px;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--muted);
-    font-size: 13px;
-    font-weight: 700;
-  }
-
-  :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button[aria-selected="true"] {
-    background: var(--panel);
-    color: var(--accent);
-  }
-
   :where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {
     position: fixed;
     z-index: 55;

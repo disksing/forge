@@ -60,19 +60,18 @@ function pointerEvent(type: string, clientX: number, clientY: number): Event {
 }
 
 describe("AppShell responsibility components", () => {
-  it("MobileToolbar owns mobile view, navigation, and backdrop actions", async () => {
+  it("MobileToolbar owns navigation and backdrop actions", async () => {
     const onSidebar = vi.fn();
-    const onView = vi.fn();
     const target = document.body.appendChild(document.createElement("div"));
-    const component = mount(MobileToolbar, { target, props: { sidebarOpen: false, view: "details", onSidebar, onView } });
+    const component = mount(MobileToolbar, { target, props: { sidebarOpen: false, onSidebar } });
     cleanups.push(() => unmount(component));
 
     target.querySelector<HTMLButtonElement>("#mobileMenuButton")!.click();
-    target.querySelector<HTMLButtonElement>("#mobileChatButton")!.click();
     target.querySelector<HTMLButtonElement>("#mobileSidebarBackdrop")!.click();
 
     expect(onSidebar.mock.calls).toEqual([[true], [false]]);
-    expect(onView).toHaveBeenCalledWith("chat");
+    // The stacked single-column layout no longer switches views through tabs.
+    expect(target.querySelector("#mobileChatButton")).toBeNull();
   });
 
   it("WorkspaceSwitcher owns menu dismissal, pending deduplication, and errors", async () => {

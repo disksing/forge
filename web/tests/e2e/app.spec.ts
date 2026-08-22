@@ -1915,7 +1915,7 @@ test("keeps canonical navigation synchronized across history, workspace restore,
   expect(harness.uiStateBodies.some((entry) => entry.workspaceId === "ws-a" && Object.keys((entry.body.taskOrder as Record<string, unknown>) || {}).length > 0)).toBe(true);
 });
 
-test("keeps mobile navigation and view selection in the Svelte app shell", async ({ page }) => {
+test("keeps mobile navigation in the Svelte app shell and stacks both panes with a draggable divider", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installShellMockApi(page);
   await page.goto("/w/ws-a/r/project1.task1");
@@ -1924,14 +1924,29 @@ test("keeps mobile navigation and view selection in the Svelte app shell", async
   await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
   await page.locator("#mobileSidebarBackdrop").click();
   await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
-  await page.locator("#mobileChatButton").click();
-  await expect(page.locator("body")).toHaveClass(/mobile-chat-active/);
-  await expect(page.locator("#agentPanel")).toBeVisible();
 
-  await page.reload();
-  await page.locator("#mobileDetailsButton").click();
-  await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
+  // Single-column mode stacks details above chat; both stay visible.
   await expect(page.locator("#detailsPanel")).toBeVisible();
+  await expect(page.locator("#agentPanel")).toBeVisible();
+  await expect(page.locator("#mobileChatButton")).toHaveCount(0);
+  const divider = page.locator("#detailsResizeY");
+  await expect(divider).toBeVisible();
+
+  // The divider drags with touch pointers and keeps both header bands visible.
+  const panelHeight = async (selector: string) => (await page.locator(selector).boundingBox())!.height;
+  const chatBefore = await panelHeight("#agentPanel");
+  const box = (await divider.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 120, { steps: 5 });
+  await page.mouse.up();
+  expect(await panelHeight("#agentPanel")).toBeGreaterThan(chatBefore + 80);
+
+  // The stacked panes and the chosen height persist across reloads.
+  await page.reload();
+  await expect(page.locator("#detailsPanel")).toBeVisible();
+  await expect(page.locator("#agentPanel")).toBeVisible();
+  expect(await panelHeight("#agentPanel")).toBeGreaterThan(chatBefore + 80);
 });
 
 test("closes the 440px navigation drawer without changing the selected resource", async ({ page }) => {
@@ -1950,12 +1965,6 @@ test("closes the 440px navigation drawer without changing the selected resource"
   expect(menuBox!.height).toBe(44);
   expect(toolbarBox!.height).toBe(52);
   expect(detailsBox!.y).toBe(52);
-
-  for (const tab of await page.locator('.mobile-view-switcher [role="tab"]').all()) {
-    const tabBox = await tab.boundingBox();
-    expect(tabBox).not.toBeNull();
-    expect(tabBox!.height).toBeGreaterThanOrEqual(44);
-  }
 
   const documentSize = await page.evaluate(() => ({
     body: document.body.getBoundingClientRect().width,

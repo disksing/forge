@@ -99,13 +99,12 @@
       viewport?.removeEventListener("scroll", syncViewport);
       mobileQuery.removeEventListener?.("change", resize);
       clearViewportTimers();
-      document.body.classList.remove("mobile-sidebar-open", "mobile-chat-active", "resizing-x", "resizing-y");
+      document.body.classList.remove("mobile-sidebar-open", "resizing-x", "resizing-y");
     };
   });
 
   $effect(() => {
     document.body.classList.toggle("mobile-sidebar-open", model.mobile.sidebarOpen);
-    document.body.classList.toggle("mobile-chat-active", model.mobile.view === "chat");
   });
 
   $effect(() => {
@@ -118,7 +117,7 @@
 </script>
 
 <div data-component-owner="app-shell" class="app-shell">
-<MobileToolbar sidebarOpen={model.mobile.sidebarOpen} view={model.mobile.view} onSidebar={model.onMobileSidebar} onView={model.onMobileView} />
+<MobileToolbar sidebarOpen={model.mobile.sidebarOpen} onSidebar={model.onMobileSidebar} />
 <aside id="mobileSidebar" class="sidebar">
   <div class="brand-band"><div class="brand-mark">P</div><div class="brand-copy"><strong>PUA</strong><span>{model.version}</span></div>{#if model.doctor.summary.errors + model.doctor.summary.warnings > 0 || model.doctor.error}<button id="doctorButton" class:has-errors={model.doctor.summary.errors > 0} class="brand-doctor" type="button" title="Workspace problems" aria-label={`${model.doctor.summary.errors} errors and ${model.doctor.summary.warnings} warnings`} onclick={() => { model.onMobileSidebar(false); doctorOpen = true; }}><Icon name={model.doctor.summary.errors > 0 ? "circle-alert" : "triangle-alert"} /><span>{model.doctor.summary.errors + model.doctor.summary.warnings}</span></button>{/if}<button id="systemSettingsButton" class="brand-settings" type="button" title="Settings" aria-label="Settings" onclick={() => { model.onMobileSidebar(false); model.onOpenSettings(); }}><Icon name="settings" /></button></div>
   <div class="workspace-card">

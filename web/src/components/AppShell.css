@@ -346,22 +346,21 @@ body[data-layout="split"] :where([data-component-owner="app-shell"]) .agent-pane
   :where([data-component-owner="app-shell"]) .workspace-panel {
     grid-row: 2;
     min-height: 0;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    /* Single-column mode stacks details above chat with the same draggable
+       horizontal divider as the two-column layout. */
+    grid-template-rows: minmax(var(--details-min-height), 1fr) var(--pane-handle-width)
+    minmax(var(--chat-min-height), min(var(--chat-height), calc(100% - var(--details-min-height) - var(--pane-handle-width))));
     overflow: hidden;
   }
   :where([data-component-owner="app-shell"]) .details-panel {
     grid-column: 1;
+    grid-row: 1;
     overflow: hidden;
   }
   :where([data-component-owner="app-shell"]) .agent-panel {
-    display: none;
-  }
-  :where(body).mobile-chat-active :where([data-component-owner="app-shell"]) .details-panel {
-    display: none;
-  }
-  :where(body).mobile-chat-active :where([data-component-owner="app-shell"]) .agent-panel {
     grid-column: 1;
-    display: flex;
+    grid-row: 3;
     min-height: 0;
   }
   :where([data-component-owner="app-shell"]) .chat-composer {

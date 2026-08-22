@@ -130,7 +130,7 @@ export interface AppShellModel {
   inbox: ShellInboxMessage[];
   doctor: DoctorSnapshotModel;
   paneSizes: { sidebarWidth: number; chatWidth: number; chatHeight: number; sidebarAttentionHeight: number };
-  mobile: { sidebarOpen: boolean; view: "details" | "chat" };
+  mobile: { sidebarOpen: boolean };
   layout: { preference: "auto" | "three" | "two" | "split"; effective: "three" | "two" | "split" | "single" };
   route: { path: string; revision: number; replace: boolean };
   onSwitchWorkspace: (id: string) => Promise<void>;
@@ -155,7 +155,6 @@ export interface AppShellModel {
   onPaneCommit: (name: keyof AppShellModel["paneSizes"]) => void;
   onPaneViewport: () => void;
   onMobileSidebar: (open: boolean) => void;
-  onMobileView: (view: "details" | "chat") => void;
   onHistoryNavigation: (pathname: string) => Promise<void>;
   onToast: (message: string) => void;
 }

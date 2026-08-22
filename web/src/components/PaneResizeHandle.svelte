@@ -20,7 +20,8 @@
   onDestroy(() => resizeCleanup?.());
 
   function beginResize(event: PointerEvent): void {
-    if (window.matchMedia("(max-width: 980px)").matches) return;
+    // On mobile only the stacked details/chat divider stays draggable.
+    if (kind !== "chatHeight" && window.matchMedia("(max-width: 980px)").matches) return;
     event.preventDefault();
     resizeCleanup?.();
     const handle = event.currentTarget as HTMLElement;

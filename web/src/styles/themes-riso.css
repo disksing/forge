@@ -312,10 +312,8 @@
   color: #f6f1e7;
 }
 
-/* segmented switchers (mobile Details/Chat, two-column view tabs): one ink
-   frame split into passes, the active pass printed in sunflower */
-:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher,
-:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher,
+/* segmented activity tabs: one ink frame split into passes, the active pass
+   printed in sunflower */
 :root[data-theme="riso"] [data-component-owner="attention-list"] .activity-tabs {
   padding: 0;
   border: 2.5px solid #1a1a1a;
@@ -324,8 +322,6 @@
   overflow: hidden;
 }
 
-:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher button,
-:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher button,
 :root[data-theme="riso"] [data-component-owner="attention-list"] .activity-tabs button {
   border-radius: 0;
   color: #1a1a1a;
@@ -333,14 +329,10 @@
   letter-spacing: 0.04em;
 }
 
-:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher button + button,
-:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher button + button,
 :root[data-theme="riso"] [data-component-owner="attention-list"] .activity-tabs button + button {
   border-left: 2.5px solid #1a1a1a;
 }
 
-:root[data-theme="riso"] [data-component-owner="mobile-toolbar"] .mobile-view-switcher button[aria-selected="true"],
-:root[data-theme="riso"] [data-component-owner="app-shell"] .workspace-view-switcher button[aria-selected="true"],
 :root[data-theme="riso"] [data-component-owner="attention-list"] .activity-tabs button.active,
 :root[data-theme="riso"] [data-component-owner="attention-list"] .activity-tabs button.active:hover {
   background: var(--amber-bright);

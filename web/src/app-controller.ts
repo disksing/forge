@@ -1026,7 +1026,6 @@ function renderAppShell() {
 		onPaneCommit: (name) => savePaneSize(name),
 		onPaneViewport: () => syncPaneViewport(),
 		onMobileSidebar: (open) => setMobileSidebar(open),
-		onMobileView: (view) => setMobileView(view),
 		onHistoryNavigation: (pathname) => handleHistoryNavigation(pathname),
 		onToast: toast
 	});
@@ -2145,9 +2144,6 @@ function syncPaneViewport(): void {
 }
 function setMobileSidebar(open: boolean): void {
 	paneLayoutController.setMobileSidebar(open);
-}
-function setMobileView(view: AppShellModel["mobile"]["view"]): void {
-	paneLayoutController.setMobileView(view);
 }
 function installControllerListeners(): void {
 	lifecycle?.listen(document, "selectionchange", () => {
