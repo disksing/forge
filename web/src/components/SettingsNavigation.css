@@ -55,7 +55,7 @@
   :where([data-component-owner="settings-navigation"]) {
     flex-direction: row;
     /* Narrow viewports cannot fit every tab in one row. Wrap the overflow
-       onto extra rows so trailing tabs (AgentHub, Profiles, Notifications)
+       onto extra rows so trailing tabs (Agents, Profiles, Notifications)
        stay discoverable instead of hiding behind horizontal scrolling.
        When the tabs do fit, wrapping leaves the single-row layout unchanged. */
     flex-wrap: wrap;

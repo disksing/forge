@@ -201,8 +201,7 @@
     {:else}
       <small class="settings-embedded-note">Embedded AgentHub is managed by PUA. The AgentHub address setting is not applicable in this mode.</small>
     {/if}
-    <small>{agentHub.error || `API ${agentHub.apiVersion || "unknown"} · AgentHub ${agentHub.version || "unknown"}`}</small>
-    {#if agentHub.capabilities.length}<div class="settings-capability-list">{#each agentHub.capabilities as capability}<span class="settings-pill pill-muted">{capability}</span>{/each}</div>{/if}
+    {#if agentHub.error}<small>{agentHub.error}</small>{/if}
   </section>
 
   <section class="settings-agent-section">
