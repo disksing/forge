@@ -122,6 +122,94 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	}
 }
 
+func TestAgentHubSettingsRoundTripsAgentHubConfigAndProviderToggle(t *testing.T) {
+	var catalog agentHubCatalog
+	readJSONFixture(t, "agenthub-catalog.json", &catalog)
+	configured := agentHubConfiguredConfig{
+		Version:        1,
+		AgentProviders: []agentHubConfiguredProvider{{ID: "codex", Name: "Codex", Type: "codex", Enabled: true, Command: "codex"}},
+		Agents:         []agentHubConfiguredAgent{{Name: "Default", ProviderID: "codex", Options: map[string]string{"model": "gpt-test"}, Environment: map[string]string{"MODE": "test"}}},
+		OnWatch:        agentHubConfiguredOnWatch{ServerURL: "http://127.0.0.1:9211", AuthMode: "trusted_proxy", RefreshIntervalSeconds: 60},
+	}
+	var saved agentHubConfiguredConfig
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/status":
+			writeFakeAgentHubJSON(t, w, map[string]any{"apiVersion": "1", "capabilities": requiredAgentHubCapabilities, "version": "test"})
+		case "/v1/agents":
+			writeFakeAgentHubJSON(t, w, catalog)
+		case "/v1/config":
+			if r.Method == http.MethodGet {
+				writeFakeAgentHubJSON(t, w, map[string]any{"config": configured})
+				return
+			}
+			var envelope struct {
+				Config agentHubConfiguredConfig `json:"config"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
+				t.Errorf("decode AgentHub config: %v", err)
+			}
+			saved = envelope.Config
+			configured = saved
+			writeFakeAgentHubJSON(t, w, map[string]any{"config": saved})
+		case "/v1/config/providers/codex":
+			var request struct {
+				Enabled bool `json:"enabled"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode provider toggle: %v", err)
+			}
+			configured.AgentProviders[0].Enabled = request.Enabled
+			writeFakeAgentHubJSON(t, w, map[string]any{"provider": configured.AgentProviders[0]})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer fake.Close()
+
+	path := filepath.Join(t.TempDir(), "serve.json")
+	server := &server{config: path}
+	request := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub", strings.NewReader(`{
+		"endpoint":`+strconv.Quote(fake.URL)+`,
+		"agentProfiles":[],
+		"agentProviders":[{"id":"codex","name":"Codex","type":"codex","enabled":false,"command":"/opt/homebrew/bin/codex"}],
+		"agents":[{"name":"Worker","providerId":"codex","options":{"model":"gpt-worker"},"environment":{"MODE":"ci"}}]
+	}`))
+	recorder := httptest.NewRecorder()
+	server.handleAgentHubSettings(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("save returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response agentHubSettingsResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.AgentConfig.Agents) != 1 || response.AgentConfig.Agents[0].Name != "Worker" {
+		t.Fatalf("save response did not project AgentHub config: %+v", response.AgentConfig)
+	}
+	if len(saved.Agents) != 1 || saved.Agents[0].Name != "Worker" || saved.AgentProviders[0].Enabled || saved.AgentProviders[0].Command != "/opt/homebrew/bin/codex" {
+		t.Fatalf("PUA did not save AgentHub config through the API: %+v", saved)
+	}
+
+	toggle := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub/providers/codex", strings.NewReader(`{"enabled":false}`))
+	toggleRecorder := httptest.NewRecorder()
+	server.handleSettings(toggleRecorder, toggle)
+	if toggleRecorder.Code != http.StatusOK {
+		t.Fatalf("provider toggle returned %d: %s", toggleRecorder.Code, toggleRecorder.Body.String())
+	}
+	var toggleResponse struct {
+		Provider agentHubConfiguredProvider `json:"provider"`
+	}
+	if err := json.Unmarshal(toggleRecorder.Body.Bytes(), &toggleResponse); err != nil {
+		t.Fatal(err)
+	}
+	if toggleResponse.Provider.ID != "codex" || toggleResponse.Provider.Enabled {
+		t.Fatalf("unexpected provider toggle response: %+v", toggleResponse.Provider)
+	}
+}
+
 func TestAgentHubSettingsSaveAllowsUnavailableProfileTarget(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)

@@ -114,6 +114,42 @@ type agentHubCatalog struct {
 	Probes    []agentHubProbe    `json:"probes"`
 }
 
+// agentHubConfiguredProvider and agentHubConfiguredAgent mirror the editable
+// part of AgentHub's /v1/config contract. They deliberately live in the PUA
+// client package so the PUA settings endpoint never invents a second source
+// of truth for provider or agent definitions.
+type agentHubConfiguredProvider struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
+	Command string `json:"command,omitempty"`
+}
+
+type agentHubConfiguredAgent struct {
+	Name        string            `json:"name"`
+	ProviderID  string            `json:"providerId"`
+	Options     map[string]string `json:"options,omitempty"`
+	Environment map[string]string `json:"environment,omitempty"`
+}
+
+type agentHubConfiguredOnWatch struct {
+	Enabled                bool   `json:"enabled"`
+	ServerURL              string `json:"serverUrl"`
+	AuthMode               string `json:"authMode"`
+	Username               string `json:"username,omitempty"`
+	Password               string `json:"password"`
+	RefreshIntervalSeconds int    `json:"refreshIntervalSeconds"`
+}
+
+type agentHubConfiguredConfig struct {
+	Version         int                          `json:"version"`
+	AgentProviders  []agentHubConfiguredProvider `json:"agentProviders"`
+	Agents          []agentHubConfiguredAgent    `json:"agents"`
+	OnWatch         agentHubConfiguredOnWatch    `json:"onWatch"`
+	LegacyCompanion json.RawMessage              `json:"companion,omitempty"`
+}
+
 type agentHubSource struct {
 	App        string            `json:"app,omitempty"`
 	InstanceID string            `json:"instanceId,omitempty"`
@@ -362,6 +398,34 @@ func (c *agentHubClient) Agents(ctx context.Context) (agentHubCatalog, error) {
 	var response agentHubCatalog
 	err := c.doJSON(ctx, http.MethodGet, "/v1/agents", nil, &response)
 	return response, err
+}
+
+func (c *agentHubClient) Config(ctx context.Context) (agentHubConfiguredConfig, error) {
+	var response struct {
+		Config agentHubConfiguredConfig `json:"config"`
+	}
+	err := c.doJSON(ctx, http.MethodGet, "/v1/config", nil, &response)
+	return response.Config, err
+}
+
+func (c *agentHubClient) SaveConfig(ctx context.Context, config agentHubConfiguredConfig) (agentHubConfiguredConfig, error) {
+	var response struct {
+		Config agentHubConfiguredConfig `json:"config"`
+	}
+	err := c.doJSON(ctx, http.MethodPut, "/v1/config", struct {
+		Config agentHubConfiguredConfig `json:"config"`
+	}{Config: config}, &response)
+	return response.Config, err
+}
+
+func (c *agentHubClient) SetProviderEnabled(ctx context.Context, id string, enabled bool) (agentHubConfiguredProvider, error) {
+	var response struct {
+		Provider agentHubConfiguredProvider `json:"provider"`
+	}
+	err := c.doJSON(ctx, http.MethodPut, "/v1/config/providers/"+url.PathEscape(strings.TrimSpace(id)), struct {
+		Enabled bool `json:"enabled"`
+	}{Enabled: enabled}, &response)
+	return response.Provider, err
 }
 
 func (c *agentHubClient) CreateSession(ctx context.Context, request agentHubCreateSessionRequest) (agentHubSession, error) {

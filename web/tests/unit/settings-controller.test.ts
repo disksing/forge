@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createSettingsController, configWithAgentHubCatalog, normalizeWorkspaceConfig } from "../../src/controllers/settings-controller";
-import type { SettingsControllerDependencies } from "../../src/controllers/settings-controller";
+import type { AgentHubData, SettingsControllerDependencies } from "../../src/controllers/settings-controller";
 import type { SettingsModel } from "../../src/components/models";
 import { createSettingsDraft } from "../../src/components/settings-draft";
 import type { PUASettingsConfig } from "../../src/controllers/settings-controller";
@@ -186,6 +186,66 @@ describe("SettingsController", () => {
 		expect(published.at(-1)?.workspaces[0]?.name).toBe("Named Workspace");
 		expect(workspaceRenders).toBeGreaterThan(0);
 		expect(toasts).toContain("Workspace name saved.");
+	});
+
+	it("saves AgentHub providers and agents through the AgentHub-backed settings endpoint", async () => {
+		const published: SettingsModel[] = [];
+		const base: PUASettingsConfig = {
+			activeId: "workspace-a",
+			workspaces: [{ id: "workspace-a", name: "a", path: "/tmp/a" }],
+			agents: [],
+			agentProfiles: [],
+		};
+		let hub: AgentHubData = {
+			mode: "external",
+			configuredEndpoint: "http://127.0.0.1:4646/agenthub",
+			connected: true,
+			compatible: true,
+			status: { apiVersion: "1", version: "test", capabilities: [] },
+			catalog: { providers: [{ id: "codex", name: "Codex", type: "codex", enabled: true }], agents: [], probes: [] },
+			config: { agentProfiles: [] },
+			agentConfig: {
+				providers: [{ id: "codex", name: "Codex", type: "codex", enabled: true }],
+				agents: [{ name: "Default", providerId: "codex" }],
+			},
+		};
+		const requests: Array<{ path: string; body?: unknown }> = [];
+		const dependencies = settingsDependencies("workspace-a", base, (model) => published.push(model));
+		dependencies.request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+			if (path === "/api/workspaces") return base as T;
+			if (path === "/api/settings/agenthub" && init?.method === "PUT") {
+				const body = JSON.parse(String(init.body));
+				requests.push({ path, body });
+				hub = { ...hub, configuredEndpoint: body.endpoint, config: { agentProfiles: body.agentProfiles }, agentConfig: { providers: body.agentProviders, agents: body.agents } };
+				return hub as T;
+			}
+			if (path === "/api/settings/agenthub/providers/codex" && init?.method === "PUT") {
+				const body = JSON.parse(String(init.body));
+				requests.push({ path, body });
+				const currentProvider = hub.agentConfig?.providers?.[0];
+				if (!currentProvider) throw new Error("missing test provider");
+				const provider = { ...currentProvider, enabled: body.enabled };
+				hub = { ...hub, agentConfig: { ...hub.agentConfig!, providers: [provider] } };
+				return { provider } as T;
+			}
+			if (path === "/api/settings/agenthub") return hub as T;
+			throw new Error(`Unexpected request: ${path}`);
+		};
+		const controller = createSettingsController(dependencies);
+		await controller.open("agenthub");
+
+		const draft = createSettingsDraft(published.at(-1)!);
+		draft.agentProviders[0]!.command = "/opt/homebrew/bin/codex";
+		draft.agentConfigs[0]!.name = "Worker";
+		draft.dirty = true;
+		await published.at(-1)!.onSaveAgentHub(draft);
+		const savedBody = requests.find((request) => request.path === "/api/settings/agenthub")?.body as Record<string, unknown>;
+		expect(savedBody.agentProviders).toEqual([{ id: "codex", name: "Codex", type: "codex", enabled: true, command: "/opt/homebrew/bin/codex" }]);
+		expect(savedBody.agents).toEqual([{ name: "Worker", providerId: "codex" }]);
+
+		await published.at(-1)!.onToggleProvider("codex", false);
+		expect(requests.at(-1)).toEqual({ path: "/api/settings/agenthub/providers/codex", body: { enabled: false } });
+		expect(published.at(-1)?.agentHub.agentConfig?.providers[0]?.enabled).toBe(false);
 	});
 
 	it("externalSync refreshes an open modal with the latest server settings", async () => {

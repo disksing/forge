@@ -1,4 +1,4 @@
-import type { AgentOption, AppearanceSettings, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
+import type { AgentHubConfigAgent, AgentHubConfigProvider, AgentOption, AppearanceSettings, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
 import { confirmDialog } from "./confirm-dialog-controller";
 import type { AgentConfig, AgentProfile, WorkspaceConfig } from "../models/workspace";
 
@@ -17,11 +17,16 @@ export interface AgentHubData {
 	error?: string;
 	status?: { apiVersion?: string; version?: string; capabilities?: string[] };
 	catalog?: {
-		providers?: Array<{ id: string; name?: string }>;
-		agents?: Array<{ name: string; providerId?: string; available?: boolean; unavailableReason?: string }>;
+		providers?: Array<{ id: string; name?: string; type?: string; enabled?: boolean; command?: string }>;
+		agents?: Array<{ name: string; providerId?: string; options?: Record<string, string>; environment?: Record<string, string>; available?: boolean; unavailableReason?: string }>;
+		probes?: Array<{ providerId: string; type?: string; command?: string; available?: boolean }>;
 	};
 	config?: {
 		agentProfiles?: SettingsProfile[];
+	};
+	agentConfig?: {
+		providers?: AgentHubConfigProvider[];
+		agents?: AgentHubConfigAgent[];
 	};
 }
 
@@ -150,7 +155,12 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 				version: status.version || "",
 				capabilities: status.capabilities || [],
 				providers: catalog.providers || [],
-				agents: catalog.agents || []
+				agents: catalog.agents || [],
+				probes: catalog.probes || [],
+				agentConfig: {
+					providers: hub.agentConfig?.providers || [],
+					agents: hub.agentConfig?.agents || []
+				}
 			},
 			profiles: (data.agentProfiles || []).map((profile) => ({ ...profile })),
 			agents: dependencies.agentOptions(),
@@ -184,6 +194,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 				render();
 			},
 			onSaveAgentHub: async (draft) => { syncDraft(draft); await saveAgentSettings(); },
+			onToggleProvider: toggleProvider,
 			onBrowserNotifications: dependencies.setBrowserNotifications,
 			onCompletionSound: dependencies.setCompletionSound,
 			onToast: dependencies.toast
@@ -229,14 +240,36 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			...state.data,
 			agentHub: {
 				...state.data?.agentHub,
-				configuredEndpoint: String(draft.endpoint || "")
+				configuredEndpoint: String(draft.endpoint || ""),
+				agentConfig: {
+					providers: (draft.agentProviders || []).map((provider) => ({ ...provider })),
+					agents: (draft.agentConfigs || []).map((agent) => ({
+						...agent,
+						options: agent.options ? { ...agent.options } : undefined,
+						environment: agent.environment ? { ...agent.environment } : undefined
+					}))
+				}
 			},
 			agentProfiles: (draft.profiles || []).map((profile) => ({ ...profile }))
 		};
 	}
 
 	function snapshotAgentDraft() {
-		return { agents: state.data?.agents || [], agentProfiles: state.data?.agentProfiles || [] };
+		const agentConfig = state.data?.agentHub?.agentConfig || { providers: [], agents: [] };
+		return {
+			agentHub: {
+				...state.data?.agentHub,
+				agentConfig: {
+					providers: (agentConfig.providers || []).map((provider) => ({ ...provider })),
+					agents: (agentConfig.agents || []).map((agent) => ({
+						...agent,
+						options: agent.options ? { ...agent.options } : undefined,
+						environment: agent.environment ? { ...agent.environment } : undefined
+					}))
+				}
+			},
+			agentProfiles: (state.data?.agentProfiles || []).map((profile) => ({ ...profile }))
+		};
 	}
 
 	async function refreshPreservingAgentDraft(): Promise<void> {
@@ -336,7 +369,13 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			method: "PUT",
 			body: JSON.stringify({
 				endpoint: state.data?.agentHub?.configuredEndpoint || "http://127.0.0.1:4646/agenthub",
-				agentProfiles: (state.data?.agentProfiles || []).map((profile) => ({ ...profile }))
+				agentProfiles: (state.data?.agentProfiles || []).map((profile) => ({ ...profile })),
+				agentProviders: (state.data?.agentHub?.agentConfig?.providers || []).map((provider) => ({ ...provider })),
+				agents: (state.data?.agentHub?.agentConfig?.agents || []).map((agent) => ({
+					...agent,
+					options: agent.options ? { ...agent.options } : undefined,
+					environment: agent.environment ? { ...agent.environment } : undefined
+				}))
 			})
 		});
 		await refresh();
@@ -345,6 +384,28 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		dependencies.renderAgentViews();
 		render();
 		dependencies.toast("AgentHub settings saved.");
+	}
+
+	async function toggleProvider(providerID: string, enabled: boolean): Promise<AgentHubConfigProvider> {
+		const response = await dependencies.request<{ provider: AgentHubConfigProvider }>(`/api/settings/agenthub/providers/${encodeURIComponent(providerID)}`, {
+			method: "PUT",
+			body: JSON.stringify({ enabled })
+		});
+		const current = state.data?.agentHub?.agentConfig || { providers: [], agents: [] };
+		const providers = (current.providers || []).map((provider) => provider.id === response.provider.id ? { ...response.provider } : { ...provider });
+		if (!providers.some((provider) => provider.id === response.provider.id)) providers.push({ ...response.provider });
+		state.data = {
+			...state.data,
+			agentHub: {
+				...state.data?.agentHub,
+				agentConfig: { providers, agents: (current.agents || []).map((agent) => ({ ...agent })) }
+			}
+		};
+		await refreshPreservingAgentDraft();
+		dependencies.setConfig(configWithAgentHubCatalog(await dependencies.request("/api/workspaces"), state.data?.agentHub || {}));
+		dependencies.renderAgentViews();
+		render();
+		return response.provider;
 	}
 
 	return {

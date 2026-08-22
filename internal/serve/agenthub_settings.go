@@ -10,21 +10,29 @@ import (
 )
 
 type agentHubSettingsResponse struct {
-	Mode               string              `json:"mode"`
-	Config             agentHubServeConfig `json:"config"`
-	ConfiguredEndpoint string              `json:"configuredEndpoint"`
-	EffectiveEndpoint  string              `json:"effectiveEndpoint"`
-	Connected          bool                `json:"connected"`
-	Compatible         bool                `json:"compatible"`
-	Status             *agentHubStatus     `json:"status,omitempty"`
-	Catalog            agentHubCatalog     `json:"catalog"`
-	Revision           string              `json:"revision,omitempty"`
-	Error              string              `json:"error,omitempty"`
+	Mode               string                 `json:"mode"`
+	Config             agentHubServeConfig    `json:"config"`
+	AgentConfig        agentHubSettingsConfig `json:"agentConfig"`
+	ConfiguredEndpoint string                 `json:"configuredEndpoint"`
+	EffectiveEndpoint  string                 `json:"effectiveEndpoint"`
+	Connected          bool                   `json:"connected"`
+	Compatible         bool                   `json:"compatible"`
+	Status             *agentHubStatus        `json:"status,omitempty"`
+	Catalog            agentHubCatalog        `json:"catalog"`
+	Revision           string                 `json:"revision,omitempty"`
+	Error              string                 `json:"error,omitempty"`
+}
+
+type agentHubSettingsConfig struct {
+	AgentProviders []agentHubConfiguredProvider `json:"providers"`
+	Agents         []agentHubConfiguredAgent    `json:"agents"`
 }
 
 type updateAgentHubSettingsRequest struct {
-	Endpoint      string                 `json:"endpoint"`
-	AgentProfiles []agentHubProfileRoute `json:"agentProfiles"`
+	Endpoint       string                       `json:"endpoint"`
+	AgentProfiles  []agentHubProfileRoute       `json:"agentProfiles"`
+	AgentProviders []agentHubConfiguredProvider `json:"agentProviders"`
+	Agents         []agentHubConfiguredAgent    `json:"agents"`
 }
 
 func (s *server) handleAgentHubSettings(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +125,12 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 		return response, nil
 	}
 	response.Catalog = catalog
+	configuredAgentHub, err := client.Config(ctx)
+	if err != nil {
+		response.Error = err.Error()
+		return response, nil
+	}
+	response.AgentConfig = projectAgentHubSettingsConfig(configuredAgentHub)
 	cfg, err = normalizeAgentHubConfig(cfg, catalog)
 	if err != nil {
 		return agentHubSettingsResponse{}, err
@@ -162,6 +176,23 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	if err != nil {
 		return agentHubSettingsResponse{}, fmt.Errorf("validate AgentHub catalog: %w", err)
 	}
+	var configuredAgentHub agentHubConfiguredConfig
+	if request.AgentProviders != nil || request.Agents != nil {
+		configuredAgentHub, err = client.Config(ctx)
+		if err != nil {
+			return agentHubSettingsResponse{}, fmt.Errorf("read AgentHub config: %w", err)
+		}
+		if request.AgentProviders != nil {
+			configuredAgentHub.AgentProviders = request.AgentProviders
+		}
+		if request.Agents != nil {
+			configuredAgentHub.Agents = request.Agents
+		}
+		configuredAgentHub, err = client.SaveConfig(ctx, configuredAgentHub)
+		if err != nil {
+			return agentHubSettingsResponse{}, fmt.Errorf("save AgentHub config: %w", err)
+		}
+	}
 	cfg.AgentHubEndpoint = configured
 	cfg.AgentProfiles = request.AgentProfiles
 	cfg, err = normalizeAgentHubConfig(cfg, catalog)
@@ -174,6 +205,7 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	return agentHubSettingsResponse{
 		Mode:               s.agentHubMode,
 		Config:             cfg,
+		AgentConfig:        projectAgentHubSettingsConfig(configuredAgentHub),
 		ConfiguredEndpoint: configured,
 		EffectiveEndpoint:  effective,
 		Connected:          true,
@@ -182,6 +214,68 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		Catalog:            catalog,
 		Revision:           s.settingsRevisionOrEmpty(),
 	}, nil
+}
+
+func projectAgentHubSettingsConfig(config agentHubConfiguredConfig) agentHubSettingsConfig {
+	return agentHubSettingsConfig{
+		AgentProviders: config.AgentProviders,
+		Agents:         config.Agents,
+	}
+}
+
+func (s *server) handleAgentHubProviderSettings(w http.ResponseWriter, r *http.Request, providerID string) {
+	if r.Method != http.MethodPut {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var request struct {
+		Enabled *bool `json:"enabled"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil || request.Enabled == nil {
+		if err == nil {
+			err = fmt.Errorf("enabled is required")
+		}
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	cfg, err := readAgentHubConfigFile(s.config)
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	configured := cfg.AgentHubEndpoint
+	if configured == "" {
+		configured = defaultAgentHubEndpoint
+	}
+	effective, err := s.effectiveAgentHubEndpoint(configured)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	client, err := newAgentHubClient(effective, nil)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	status, err := client.Status(r.Context())
+	if err != nil {
+		writeError(w, fmt.Errorf("validate AgentHub status: %w", err), http.StatusBadRequest)
+		return
+	}
+	if err := validateAgentHubStatus(status); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	provider, err := client.SetProviderEnabled(r.Context(), providerID, *request.Enabled)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, struct {
+		Provider agentHubConfiguredProvider `json:"provider"`
+	}{Provider: provider})
 }
 
 // settingsRevisionOrEmpty best-effort computes the settings revision after a

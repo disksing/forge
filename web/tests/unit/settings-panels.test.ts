@@ -28,6 +28,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     userName: "User",
     appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 }, theme: "default", themeOptions: [{ id: "default", label: "Default", description: "The standard PUA appearance" }] },
     agentHub: {
+      mode: "external",
       configuredEndpoint: "http://127.0.0.1:4646",
       connected: true,
       compatible: true,
@@ -37,6 +38,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
       capabilities: ["sessions"],
       providers: [{ id: "codex" }],
       agents: [{ name: "Codex", providerId: "codex", available: true }],
+      probes: [],
     },
     profiles: [
       { key: "default", description: "Default", agentName: "codex" },
@@ -55,6 +57,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onResetFontScales: vi.fn(),
     onThemePreference: vi.fn(),
     onSaveAgentHub: vi.fn(async () => undefined),
+    onToggleProvider: vi.fn(async (providerId, enabled) => ({ id: providerId, name: providerId, type: providerId, enabled })),
     onBrowserNotifications: vi.fn(),
     onCompletionSound: vi.fn(),
     onToast: vi.fn(),
@@ -299,7 +302,7 @@ describe("settings domain panels", () => {
     expect(target.querySelector<HTMLButtonElement>(".appearance-reset")?.disabled).toBe(true);
   });
 
-  it("owns AgentHub draft dirtiness, read-only catalog projection, save pending, and errors", async () => {
+  it("owns AgentHub connection, provider switches, agent draft dirtiness, save pending, and errors", async () => {
     const save = deferred<void>();
     const onSaveAgentHub = vi.fn()
       .mockImplementationOnce(() => save.promise)
@@ -313,7 +316,14 @@ describe("settings domain panels", () => {
 
     expect(target.textContent).toContain("Compatible");
     expect(target.textContent).toContain("Codex");
-    expect(target.textContent).toContain("1 agents · 1 providers");
+    expect(target.textContent).toContain("1 providers · switches immediate, paths on Save All");
+    expect(target.textContent).toContain("1 agents");
+    expect(target.textContent).not.toContain("API v1 · AgentHub 1.2.3");
+    expect(target.querySelector(".settings-capability-list")).toBeNull();
+
+    input(target.querySelector<HTMLInputElement>('input[aria-label$="executable path"]')!, "/opt/homebrew/bin/codex");
+    await tick();
+    expect(target.querySelector(".settings-save-hint.visible")).toBeTruthy();
 
     input(target.querySelector<HTMLInputElement>("#settingsAgentHubEndpoint")!, "http://127.0.0.1:5656");
     await tick();
@@ -323,7 +333,11 @@ describe("settings domain panels", () => {
     saveButton.click();
     await tick();
     expect(onSaveAgentHub).toHaveBeenCalledTimes(1);
-    expect(onSaveAgentHub).toHaveBeenCalledWith(expect.objectContaining({ endpoint: "http://127.0.0.1:5656", dirty: true }));
+    expect(onSaveAgentHub).toHaveBeenCalledWith(expect.objectContaining({
+      endpoint: "http://127.0.0.1:5656",
+      dirty: true,
+      agentProviders: [expect.objectContaining({ id: "codex", command: "/opt/homebrew/bin/codex" })],
+    }));
     expect(saveButton.disabled).toBe(true);
 
     save.resolve();
@@ -333,6 +347,45 @@ describe("settings domain panels", () => {
     saveButton.click();
     await vi.waitFor(() => expect(current.onToast).toHaveBeenCalledWith("hub save failed"));
     expect(target.querySelector(".settings-save-hint.visible")).toBeTruthy();
+  });
+
+  it("hides the external endpoint when PUA uses the embedded AgentHub", async () => {
+    const current = model({ agentHub: { ...model().agentHub, mode: "embedded" } });
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "agenthub", model: current, initialDraft: createSettingsDraft(current) } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector("#settingsAgentHubEndpoint")).toBeNull();
+    expect(target.textContent).toContain("not applicable in this mode");
+  });
+
+  it("toggles providers immediately and edits agent cards in the shared draft", async () => {
+    const toggle = vi.fn(async (providerId: string, enabled: boolean) => ({ id: providerId, name: "Codex", type: "codex", enabled }));
+    const current = model({ onToggleProvider: toggle });
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "agenthub", model: current, initialDraft: createSettingsDraft(current) } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    input(target.querySelector<HTMLInputElement>('input[aria-label$="executable path"]')!, "/opt/homebrew/bin/codex");
+    await tick();
+    target.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
+    await vi.waitFor(() => expect(toggle).toHaveBeenCalledWith("codex", false));
+    await tick();
+    expect(target.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+    expect(target.querySelector<HTMLInputElement>('input[aria-label$="executable path"]')?.value).toBe("/opt/homebrew/bin/codex");
+
+    target.querySelector<HTMLButtonElement>("#settingsAddAgent")!.click();
+    await tick();
+    expect(target.textContent).toContain("Agent");
+    const names = target.querySelectorAll<HTMLInputElement>('[aria-label="Agent name"]');
+    input(names[0]!, "Worker");
+    await tick();
+    expect(target.querySelector(".settings-save-hint.visible")).toBeTruthy();
+    target.querySelector<HTMLButtonElement>('[aria-label="Delete Worker"]')!.click();
+    await tick();
+    expect(target.querySelectorAll(".settings-agent-card")).toHaveLength(1);
   });
 
   it("enforces system/custom profile rules, unavailable routes, and shared save pending", async () => {

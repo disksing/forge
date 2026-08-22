@@ -12,7 +12,7 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
+  function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
   return {
     open: true,
     identity: "settings-1",
@@ -25,6 +25,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     userName: "User",
     appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 }, theme: "default", themeOptions: [{ id: "default", label: "Default", description: "The standard PUA appearance" }] },
     agentHub: {
+      mode: "external",
       configuredEndpoint: "http://127.0.0.1:4646",
       connected: true,
       compatible: true,
@@ -34,6 +35,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
       capabilities: [],
       providers: [],
       agents: [],
+      probes: [],
     },
     profiles: [{ key: "default", description: "Default", agentName: "codex" }],
     agents: [{ id: "codex", label: "Codex", summary: "Primary" }],
@@ -49,6 +51,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onResetFontScales: vi.fn(),
     onThemePreference: vi.fn(),
     onSaveAgentHub: vi.fn(async () => undefined),
+    onToggleProvider: vi.fn(async (providerId, enabled) => ({ id: providerId, name: providerId, type: providerId, enabled })),
     onBrowserNotifications: vi.fn(),
     onCompletionSound: vi.fn(),
     onToast: vi.fn(),
@@ -135,8 +138,8 @@ describe("SettingsModal coordination", () => {
     await tick();
 
     const tabs = [...target.querySelectorAll<HTMLButtonElement>(".settings-tab")];
-    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Workspace", "User", "Appearance", "AgentHub", "Profiles", "Notifications"]);
-    tabs.find((tab) => tab.textContent?.includes("AgentHub"))!.click();
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Workspace", "User", "Appearance", "Agents", "Profiles", "Notifications"]);
+    tabs.find((tab) => tab.textContent?.includes("Agents"))!.click();
     await tick();
 
     const endpoint = target.querySelector<HTMLInputElement>("#settingsAgentHubEndpoint")!;
